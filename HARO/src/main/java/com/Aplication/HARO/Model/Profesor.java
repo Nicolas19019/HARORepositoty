@@ -16,7 +16,7 @@ public class Profesor {
     @Column(name = "apellido")
     private String apellido;
 
-    @Enumerated(EnumType.STRING)
+ 
     @Column(name = "especialidad")
     private String especialidad; // ENUM(Teórico, Práctico)
     @Column(name = "telefono")

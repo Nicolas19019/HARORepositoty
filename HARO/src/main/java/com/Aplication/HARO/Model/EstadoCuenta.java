@@ -24,8 +24,8 @@ public class EstadoCuenta {
     @Column(name = "monto_pagado", precision = 14, scale = 2)
     private BigDecimal montoPagado;
 
-    @Enumerated(EnumType.STRING)
-    private EstadoCuenta estado; // ENUM(Pendiente, Parcial, PazYSalvo)
+    @Column(name = "estado")
+    private String estado; // ENUM(Pendiente, Parcial, PazYSalvo)
 
     @OneToMany(mappedBy = "estadoCuenta", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Pagos> pagos = new ArrayList<>();
@@ -62,11 +62,12 @@ public class EstadoCuenta {
 		this.montoPagado = montoPagado;
 	}
 
-	public EstadoCuenta getEstado() {
+
+	public String getEstado() {
 		return estado;
 	}
 
-	public void setEstado(EstadoCuenta estado) {
+	public void setEstado(String estado) {
 		this.estado = estado;
 	}
 

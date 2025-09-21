@@ -24,7 +24,7 @@ public class Pagos {
     @Column(precision = 14, scale = 2)
     private BigDecimal monto;
 
-    @Enumerated(EnumType.STRING)
+    @Column(name = "metodo")
     private String metodo; // ENUM
 
 	public Long getId() {

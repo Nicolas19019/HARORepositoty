@@ -1,9 +1,11 @@
 package com.Aplication.HARO.Service;
 
+
 import java.time.LocalDate;
-import java.time.LocalTime;
+
 import java.util.List;
 import java.util.Optional;
+
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -15,6 +17,14 @@ import com.Aplication.HARO.Repository.ClaseRepository;
 @Service
 public class ClaseService {
 
+	 public List<Clase> listarPorFecha(LocalDate fecha) {
+	        return repository.findByFecha(fecha);
+	    }
+
+	    public List<Clase> listarPorRango(LocalDate desde, LocalDate hasta) {
+	        return repository.findByFechaBetween(desde, hasta);
+	    }
+    
     @Autowired
     private ClaseRepository repository;
 

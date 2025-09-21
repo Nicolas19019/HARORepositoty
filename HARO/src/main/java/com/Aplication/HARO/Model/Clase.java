@@ -3,8 +3,11 @@ package com.Aplication.HARO.Model;
 import jakarta.persistence.*;
 import java.time.*;
 
+
 @Entity
 @Table(name = "clase")
+
+
 public class Clase {
 
     @Id
@@ -37,8 +40,8 @@ public class Clase {
     @Column(name = "hora_fin")
     private LocalTime horaFin;
 
-    @Enumerated(EnumType.STRING)
-    private EstadoCuenta estado; // ENUM
+    @Column(name = "estado", length = 30, nullable = false)
+    private String estado;
 
 	public Long getId() {
 		return id;
@@ -96,13 +99,15 @@ public class Clase {
 		this.horaFin = horaFin;
 	}
 
-	public EstadoCuenta getEstado() {
+	public String getEstado() {
 		return estado;
 	}
 
-	public void setEstado(EstadoCuenta estado) {
+	public void setEstado(String estado) {
 		this.estado = estado;
 	}
+
+
 
  
 }

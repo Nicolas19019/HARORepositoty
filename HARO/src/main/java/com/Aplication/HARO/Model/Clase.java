@@ -1,47 +1,54 @@
 package com.Aplication.HARO.Model;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.*;
 import java.time.*;
 
-
 @Entity
 @Table(name = "clase")
-
-
 public class Clase {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id_clase")
-	public Long id;
 
-    
-    @ManyToOne(optional = false)
-    @JoinColumn(name = "id_estudiante", nullable = false,
-                foreignKey = @ForeignKey(name = "fk_clase_estudiante"))
-    private Estudiante estudiante;
+	  @Id
+	  @GeneratedValue(strategy = GenerationType.IDENTITY)
+	  @Column(name = "id_clase")
+	  @JsonProperty(access = JsonProperty.Access.READ_ONLY)                 // <- no editable en POST
+	  @Schema(accessMode = Schema.AccessMode.READ_ONLY, example = "1")      // <- Swagger lo oculta en request
+	  private Long id;
 
-    @ManyToOne(optional = false)
-    @JoinColumn(name = "id_profesor", nullable = false,
-                foreignKey = @ForeignKey(name = "fk_clase_profesor"))
-    private Profesor profesor;
+	  @Column(name = "id_estudiante", nullable = false)
+	  @Schema(example = "1")
+	  private Long id_estudiante;
 
-    // El diagrama muestra PK=placa en Vehiculo, por eso relacionamos por placa (String).
-    @ManyToOne(optional = false)
-    @JoinColumn(name = "placa_vehiculo", nullable = false,
-                foreignKey = @ForeignKey(name = "fk_clase_vehiculo"))
-    private Vehiculo vehiculo;
-    @Column(name = "fecha")
-    private LocalDate fecha;
+	  @Column(name = "id_profesor", nullable = false)
+	  @Schema(example = "2")
+	  private Long id_profesor;
 
-    @Column(name = "hora_inicio")
-    private LocalTime horaInicio;
+	  @Column(name = "placa_vehiculo", nullable = false, length = 20)
+	  @Schema(example = "ABC123")
+	  private String placa_vehiculo;
 
-    @Column(name = "hora_fin")
-    private LocalTime horaFin;
+	  @Column(name = "fecha", nullable = false)
+	  @JsonFormat(pattern = "yyyy-MM-dd")                                   // <- string en JSON
+	  @Schema(type = "string", format = "date", example = "2025-10-01")
+	  private LocalDate fecha;
 
-    @Column(name = "estado", length = 30, nullable = false)
-    private String estado;
+	  @Column(name = "hora_inicio", nullable = false)
+	  @JsonFormat(pattern = "HH:mm")                                        // <- string en JSON
+	  @Schema(type = "string", example = "08:00")
+	  private LocalTime horaInicio;
+
+	  @Column(name = "hora_fin", nullable = false)
+	  @JsonFormat(pattern = "HH:mm")                                        // <- string en JSON
+	  @Schema(type = "string", example = "10:00")
+	  private LocalTime horaFin;
+
+	  @Column(name = "estado", length = 30, nullable = false)
+	  @Schema(example = "Programada")
+	  private String estado;
 
 	public Long getId() {
 		return id;
@@ -51,28 +58,28 @@ public class Clase {
 		this.id = id;
 	}
 
-	public Estudiante getEstudiante() {
-		return estudiante;
+	public Long getId_estudiante() {
+		return id_estudiante;
 	}
 
-	public void setEstudiante(Estudiante estudiante) {
-		this.estudiante = estudiante;
+	public void setId_estudiante(Long id_estudiante) {
+		this.id_estudiante = id_estudiante;
 	}
 
-	public Profesor getProfesor() {
-		return profesor;
+	public Long getId_profesor() {
+		return id_profesor;
 	}
 
-	public void setProfesor(Profesor profesor) {
-		this.profesor = profesor;
+	public void setId_profesor(Long id_profesor) {
+		this.id_profesor = id_profesor;
 	}
 
-	public Vehiculo getVehiculo() {
-		return vehiculo;
+	public String getPlaca_vehiculo() {
+		return placa_vehiculo;
 	}
 
-	public void setVehiculo(Vehiculo vehiculo) {
-		this.vehiculo = vehiculo;
+	public void setPlaca_vehiculo(String placa_vehiculo) {
+		this.placa_vehiculo = placa_vehiculo;
 	}
 
 	public LocalDate getFecha() {
@@ -107,7 +114,4 @@ public class Clase {
 		this.estado = estado;
 	}
 
-
-
- 
 }

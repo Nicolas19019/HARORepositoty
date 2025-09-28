@@ -3,14 +3,17 @@ package com.Aplication.HARO.Model;
 import jakarta.persistence.*;
 import java.util.*;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 @Entity
 @Table(name = "estudiante", indexes = {
 		@Index(name = "idx_estudiante_numdoc", columnList = "numero_documento", unique = true) })
 public class Estudiante {
 
 	@Id
-	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	@Column(name = "id_estudiante")
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id_estudiante")
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY) // <-- evita que el cliente setee
 	private Long id;
 	@Column(name = "nombre")
 	private String nombre;
@@ -36,12 +39,6 @@ public class Estudiante {
 	@Column(name = "contrasena", nullable = false)
 	private String contrasena;
 
-	// Relaciones
-	@OneToMany(mappedBy = "estudiante", cascade = CascadeType.ALL, orphanRemoval = false)
-	private List<Clase> clases = new ArrayList<>();
-
-	@OneToOne(mappedBy = "estudiante", cascade = CascadeType.ALL, optional = true)
-	private EstadoCuenta estadoCuenta;
 
 	public Long getId() {
 		return id;
@@ -123,21 +120,15 @@ public class Estudiante {
 		this.usuario = usuario;
 	}
 
-	public List<Clase> getClases() {
-		return clases;
+	public String getContrasena() {
+		return contrasena;
 	}
 
-	public void setClases(List<Clase> clases) {
-		this.clases = clases;
+	public void setContrasena(String contrasena) {
+		this.contrasena = contrasena;
 	}
 
-	public EstadoCuenta getEstadoCuenta() {
-		return estadoCuenta;
-	}
-
-	public void setEstadoCuenta(EstadoCuenta estadoCuenta) {
-		this.estadoCuenta = estadoCuenta;
-	}
+	
 
 
 }

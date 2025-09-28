@@ -4,31 +4,35 @@ import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.util.*;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+
 @Entity
 @Table(name = "estado_cuenta")
 public class EstadoCuenta {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id_estado")
-    private Long id;
+	// import com.fasterxml.jackson.annotation.JsonProperty;
+	// import io.swagger.v3.oas.annotations.media.Schema;
 
-    @OneToOne(optional = false)
-    @JoinColumn(name = "id_estudiante", nullable = false,
-                foreignKey = @ForeignKey(name = "fk_estado_estudiante"))
-    private Estudiante estudiante;
+	@Id
+	@GeneratedValue(strategy = GenerationType.IDENTITY)
+	@Column(name = "id_estado") // o el que corresponda
+	@JsonProperty(access = JsonProperty.Access.READ_ONLY) // <- no se acepta en requests
+	@Schema(accessMode = Schema.AccessMode.READ_ONLY) // <- Swagger lo muestra solo en responses
+	private Long id;
 
-    @Column(name = "monto_total", precision = 14, scale = 2)
-    private BigDecimal montoTotal;
+	@Column(name = "id_estudiante")
+	private long idEstudiante;
 
-    @Column(name = "monto_pagado", precision = 14, scale = 2)
-    private BigDecimal montoPagado;
+	@Column(name = "monto_total", precision = 14, scale = 2)
+	private BigDecimal montoTotal;
 
-    @Column(name = "estado")
-    private String estado; // ENUM(Pendiente, Parcial, PazYSalvo)
+	@Column(name = "monto_pagado", precision = 14, scale = 2)
+	private BigDecimal montoPagado;
 
-    @OneToMany(mappedBy = "estadoCuenta", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<Pagos> pagos = new ArrayList<>();
+	@Column(name = "estado")
+	private String estado; // ENUM(Pendiente, Parcial, PazYSalvo)
 
 	public Long getId() {
 		return id;
@@ -38,12 +42,12 @@ public class EstadoCuenta {
 		this.id = id;
 	}
 
-	public Estudiante getEstudiante() {
-		return estudiante;
+	public long getIdEstudiante() {
+		return idEstudiante;
 	}
 
-	public void setEstudiante(Estudiante estudiante) {
-		this.estudiante = estudiante;
+	public void setIdEstudiante(long idEstudiante) {
+		this.idEstudiante = idEstudiante;
 	}
 
 	public BigDecimal getMontoTotal() {
@@ -62,7 +66,6 @@ public class EstadoCuenta {
 		this.montoPagado = montoPagado;
 	}
 
-
 	public String getEstado() {
 		return estado;
 	}
@@ -71,15 +74,4 @@ public class EstadoCuenta {
 		this.estado = estado;
 	}
 
-	public List<Pagos> getPagos() {
-		return pagos;
-	}
-
-	public void setPagos(List<Pagos> pagos) {
-		this.pagos = pagos;
-	}
-
-    
-    
-    
 }

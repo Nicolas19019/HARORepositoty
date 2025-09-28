@@ -35,8 +35,9 @@ public class EstadoCuentaController {
 
     @PostMapping
     public ResponseEntity<EstadoCuenta> create(@RequestBody EstadoCuenta e) {
+        e.setId(null);                       // <- forzar INSERT sin id del cliente
         EstadoCuenta created = service.createEstadoCuenta(e);
-        return ResponseEntity.created(URI.create("/api/estados-cuenta/" + created.getId())).body(created);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     @PutMapping("/{id}")

@@ -11,6 +11,5 @@ import java.util.List;
 
 @Repository
 public interface EstadoCuentaRepository extends JpaRepository<EstadoCuenta, Long> {
-    Optional<EstadoCuenta> findByEstudianteId(Long idEstudiante);
-    List<String> findByEstado(String estado);
+    Optional<EstadoCuenta> findByIdEstudiante(Long idEstudiante); // 👈 ahora sí coincide
 }

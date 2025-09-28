@@ -7,25 +7,22 @@ import java.time.LocalDate;
 @Entity
 @Table(name = "pago")
 public class Pagos {
+	@Id
+	@GeneratedValue(strategy = GenerationType.IDENTITY)
+	@Column(name = "id_pago")
+	private Long id;
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id_pago")
-    private Long id;
+	@Column(name = "id_estado", nullable = false)
+	private Long estadoCuenta; // <- Wrapper, puede ser null hasta validar
 
-    @ManyToOne(optional = false)
-    @JoinColumn(name = "id_estado", nullable = false,
-                foreignKey = @ForeignKey(name = "fk_pago_estado"))
-    private EstadoCuenta estadoCuenta;
+	@Column(name = "fecha_pago")
+	private LocalDate fechaPago;
 
-    @Column(name = "fecha_pago")
-    private LocalDate fechaPago;
+	@Column(precision = 14, scale = 2)
+	private BigDecimal monto;
 
-    @Column(precision = 14, scale = 2)
-    private BigDecimal monto;
-
-    @Column(name = "metodo")
-    private String metodo; // ENUM
+	@Column(name = "metodo")
+	private String metodo;
 
 	public Long getId() {
 		return id;
@@ -35,11 +32,11 @@ public class Pagos {
 		this.id = id;
 	}
 
-	public EstadoCuenta getEstadoCuenta() {
+	public Long getEstadoCuenta() {
 		return estadoCuenta;
 	}
 
-	public void setEstadoCuenta(EstadoCuenta estadoCuenta) {
+	public void setEstadoCuenta(Long estadoCuenta) {
 		this.estadoCuenta = estadoCuenta;
 	}
 
@@ -67,5 +64,4 @@ public class Pagos {
 		this.metodo = metodo;
 	}
 
-  
 }

@@ -21,9 +21,7 @@ public class Vehiculo {
     @Column(name = "estado")
     private String estado;
 
-    @OneToMany(mappedBy = "vehiculo", cascade = CascadeType.ALL, orphanRemoval = false)
-    private List<Clase> clases = new ArrayList<>();
-
+  
 	public String getPlaca() {
 		return placa;
 	}
@@ -64,13 +62,7 @@ public class Vehiculo {
 		this.estado = estado;
 	}
 
-	public List<Clase> getClases() {
-		return clases;
-	}
 
-	public void setClases(List<Clase> clases) {
-		this.clases = clases;
-	}
 
    
 }

@@ -15,7 +15,6 @@ public class Profesor {
     private String nombre;
     @Column(name = "apellido")
     private String apellido;
-
  
     @Column(name = "especialidad")
     private String especialidad; // ENUM(Teórico, Práctico)
@@ -24,8 +23,6 @@ public class Profesor {
     @Column(name = "email")
     private String email;
 
-    @OneToMany(mappedBy = "profesor", cascade = CascadeType.ALL, orphanRemoval = false)
-    private List<Clase> clases = new ArrayList<>();
 
 	public Long getId() {
 		return id;
@@ -73,14 +70,6 @@ public class Profesor {
 
 	public void setEmail(String email) {
 		this.email = email;
-	}
-
-	public List<Clase> getClases() {
-		return clases;
-	}
-
-	public void setClases(List<Clase> clases) {
-		this.clases = clases;
 	}
 
   

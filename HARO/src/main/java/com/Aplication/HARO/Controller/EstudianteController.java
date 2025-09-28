@@ -28,13 +28,14 @@ public class EstudianteController {
     }
 
     @GetMapping("/{id}")
-    public Estudiante getById(@PathVariable int id) {
+    public Estudiante getById(@PathVariable long id) { // <-- long
         return service.getEstudianteById(id)
                 .orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado: " + id));
     }
 
     @PostMapping
     public ResponseEntity<Estudiante> create(@RequestBody Estudiante e) {
+        e.setId(null); // <-- CLAVE: garantiza INSERT
         Estudiante created = service.createEstudiante(e);
         return ResponseEntity.created(URI.create("/api/estudiantes/" + created.getId()))
                 .body(created);
@@ -42,13 +43,12 @@ public class EstudianteController {
 
     @PutMapping("/{id}")
     public Estudiante update(@PathVariable long id, @RequestBody Estudiante e) {
-        // Forzar ID del path
-        e.setId(id);
-        return service.updateEstudiante(e);
+        // Mejor flujo: leer y aplicar cambios (ver service abajo)
+        return service.updateEstudiante(id, e);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable int id) {
+    public ResponseEntity<Void> delete(@PathVariable long id) { // <-- long
         service.deleteEstudiante(id);
         return ResponseEntity.noContent().build();
     }

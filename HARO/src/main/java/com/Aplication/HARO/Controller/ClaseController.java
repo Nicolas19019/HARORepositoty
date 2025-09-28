@@ -37,12 +37,16 @@ public class ClaseController {
 		return service.getClaseById(id).orElseThrow(() -> new NoSuchElementException("Clase no encontrada: " + id));
 	}
 
+	// ClaseController.java (solo el método POST)
 	@PostMapping
 	public ResponseEntity<Clase> create(@RequestBody Clase c) {
-		Clase created = service.createClase(c);
-		return ResponseEntity.status(HttpStatus.CREATED).body(created); // sin Location
+	  c.setId(null);
+	  var created = service.createClase(c);
+	  return ResponseEntity.status(HttpStatus.CREATED).body(created);
 	}
 
+
+	
 	@PutMapping("/{id}")
 	public Clase update(@PathVariable long id, @RequestBody Clase e) {
 		e.setId(id);

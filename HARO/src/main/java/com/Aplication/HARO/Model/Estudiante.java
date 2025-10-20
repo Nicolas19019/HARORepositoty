@@ -26,6 +26,8 @@ public class Estudiante {
 
 	@Column(name = "numero_documento", nullable = false, unique = true)
 	private String numeroDocumento;
+	@Column(name = "catgoria")
+	private String categoria;
 	@Column(name = "telefono")
 	private String telefono;
 	@Column(name = "email")
@@ -137,7 +139,15 @@ public class Estudiante {
 		this.tipoEstudiante = tipoEstudiante;
 	}
 
-	
+	public String getCategoria() {
+		return categoria;
+	}
 
+	public void setCategoria(String categoria) {
+		this.categoria = categoria;
+	}
+
+	
+	
 
 }

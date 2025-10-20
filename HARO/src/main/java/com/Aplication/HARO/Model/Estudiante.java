@@ -26,7 +26,7 @@ public class Estudiante {
 
 	@Column(name = "numero_documento", nullable = false, unique = true)
 	private String numeroDocumento;
-	@Column(name = "catgoria")
+	@Column(name = "categoria")
 	private String categoria;
 	@Column(name = "telefono")
 	private String telefono;

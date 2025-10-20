@@ -3,14 +3,23 @@ package com.Aplication.HARO.Model;
 import jakarta.persistence.*;
 import java.util.*;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+
 @Entity
 @Table(name = "profesor")
 public class Profesor {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Schema(accessMode = Schema.AccessMode.READ_ONLY)
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     @Column(name = "id_profesor")
     private Long id;
+    
+    @Column(name = "cedula", unique = true)
+    private String cedula;
     @Column(name = "nombre")
     private String nombre;
     @Column(name = "apellido")
@@ -72,5 +81,13 @@ public class Profesor {
 		this.email = email;
 	}
 
-  
+	public String getCedula() {
+		return cedula;
+	}
+
+	public void setCedula(String cedula) {
+		this.cedula = cedula;
+	}
+
+	
 }

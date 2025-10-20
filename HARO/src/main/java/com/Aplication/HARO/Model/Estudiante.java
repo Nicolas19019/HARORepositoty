@@ -19,7 +19,8 @@ public class Estudiante {
 	private String nombre;
 	@Column(name = "apellido")
 	private String apellido;
-
+	@Column(name = "tipo_estudiante")
+	private String tipoEstudiante;
 	@Column(name = "tipo_documento")
 	private String tipoDocumento;
 
@@ -126,6 +127,14 @@ public class Estudiante {
 
 	public void setContrasena(String contrasena) {
 		this.contrasena = contrasena;
+	}
+
+	public String getTipoEstudiante() {
+		return tipoEstudiante;
+	}
+
+	public void setTipoEstudiante(String tipoEstudiante) {
+		this.tipoEstudiante = tipoEstudiante;
 	}
 
 	

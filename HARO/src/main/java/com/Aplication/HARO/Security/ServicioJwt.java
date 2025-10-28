@@ -1,16 +1,16 @@
-// src/main/java/com/Aplication/HARO/Seguridad/ServicioJwt.java
+// src/main/java/com/Aplication/HARO/Security/ServicioJwt.java
 package com.Aplication.HARO.Security;
 
 import io.jsonwebtoken.*;
+import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
-import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class ServicioJwt {
@@ -23,36 +23,39 @@ public class ServicioJwt {
   public ServicioJwt(
       @Value("${app.jwt.secret}") String secreto,
       @Value("${app.jwt.issuer:HARO}") String emisor,
-      @Value("${app.jwt.access.minutes:60}") long minutosAcceso,
-      @Value("${app.jwt.refresh.days:7}") long diasRefresh
+      @Value("${app.jwt.access.minutes:15}") long minutosAcceso,
+      @Value("${app.jwt.refresh.days:30}") long diasRefresh
   ) {
     byte[] raw;
     if (secreto.startsWith("base64:")) {
-      raw = io.jsonwebtoken.io.Decoders.BASE64.decode(secreto.substring("base64:".length()));
+      raw = Decoders.BASE64.decode(secreto.substring("base64:".length()));
     } else {
-      raw = secreto.getBytes(StandardCharsets.UTF_8);
+      raw = secreto.getBytes(StandardCharsets.UTF_8); // recomienda ≥32 bytes reales
     }
-    this.llave = Keys.hmacShaKeyFor(raw); // ≥ 256 bits
+    this.llave = Keys.hmacShaKeyFor(raw);
     this.milisAcceso = minutosAcceso * 60_000L;
     this.milisRefresh = diasRefresh * 24L * 60L * 60L * 1000L;
     this.emisor = emisor;
   }
 
-  public String emitirTokenAcceso(String login, String rol, Long uid, Map<String, Object> extraClaims) {
+  // ACCESS: typ=access + jti; incluye rol/uid si se pasan
+  public String emitirTokenAcceso(String login, String rol, Long uid, String jti) {
     long ahora = System.currentTimeMillis();
-    JwtBuilder builder = Jwts.builder()
+    JwtBuilder b = Jwts.builder()
         .setSubject(login)
         .setIssuer(emisor)
         .setIssuedAt(new Date(ahora))
         .setExpiration(new Date(ahora + milisAcceso))
+        .setId(jti != null ? jti : UUID.randomUUID().toString())
+        .claim("typ", "access")
         .signWith(llave, SignatureAlgorithm.HS256);
 
-    if (rol != null) builder.claim("rol", rol);
-    if (uid != null) builder.claim("uid", uid);
-    if (extraClaims != null) builder.addClaims(extraClaims);
-    return builder.compact();
+    if (rol != null) b.claim("rol", rol);
+    if (uid != null) b.claim("uid", uid);
+    return b.compact();
   }
 
+  // REFRESH: typ=refresh + jti
   public String emitirTokenRefresco(String login) {
     long ahora = System.currentTimeMillis();
     return Jwts.builder()
@@ -60,21 +63,26 @@ public class ServicioJwt {
         .setIssuer(emisor)
         .setIssuedAt(new Date(ahora))
         .setExpiration(new Date(ahora + milisRefresh))
+        .setId(UUID.randomUUID().toString())
         .claim("typ", "refresh")
         .signWith(llave, SignatureAlgorithm.HS256)
         .compact();
   }
 
+  public Claims claims(String token) {
+    return Jwts.parserBuilder().setSigningKey(llave).build().parseClaimsJws(token).getBody();
+  }
+
   public String extraerLogin(String token) {
-    try { return parse(token).getBody().getSubject(); }
+    try { return claims(token).getSubject(); }
     catch (JwtException | IllegalArgumentException e) { return null; }
   }
 
-  public boolean tokenValido(String token, UserDetails user) {
+  public boolean tokenValido(String token, org.springframework.security.core.userdetails.UserDetails user) {
     try {
-      Claims claims = parse(token).getBody();
-      String subject = claims.getSubject();
-      Date exp = claims.getExpiration();
+      Claims c = claims(token);
+      String subject = c.getSubject();
+      Date exp = c.getExpiration();
       return subject != null
           && subject.equals(user.getUsername())
           && exp != null
@@ -84,11 +92,6 @@ public class ServicioJwt {
     }
   }
 
-  public Claims claims(String token) {
-    return parse(token).getBody();
-  }
-
-  private Jws<Claims> parse(String token) {
-    return Jwts.parserBuilder().setSigningKey(llave).build().parseClaimsJws(token);
-  }
+  public long getAccessTtlSeconds()  { return milisAcceso  / 1000L; }
+  public long getRefreshTtlSeconds() { return milisRefresh / 1000L; }
 }

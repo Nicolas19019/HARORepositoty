@@ -1,6 +1,5 @@
 package com.Aplication.HARO.Controller;
 
-
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,40 +15,52 @@ import java.util.NoSuchElementException;
 @CrossOrigin(origins = "*")
 public class EstudianteController {
 
-    private final EstudianteService service;
+	private final EstudianteService service;
 
-    public EstudianteController(EstudianteService service) {
-        this.service = service;
-    }
+	public EstudianteController(EstudianteService service) {
+		this.service = service;
+	}
 
-    @GetMapping
-    public List<Estudiante> getAll() {
-        return service.getAllEstudiantes();
-    }
+	@GetMapping
+	public List<Estudiante> getAll() {
+		return service.getAllEstudiantes();
+	}
 
-    @GetMapping("/{id}")
-    public Estudiante getById(@PathVariable long id) { // <-- long
-        return service.getEstudianteById(id)
-                .orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado: " + id));
-    }
+	@GetMapping("/{id}")
+	public Estudiante getById(@PathVariable long id) { // <-- long
+		return service.getEstudianteById(id)
+				.orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado: " + id));
+	}
 
-    @PostMapping
-    public ResponseEntity<Estudiante> create(@RequestBody Estudiante e) {
-        e.setId(null); // <-- CLAVE: garantiza INSERT
-        Estudiante created = service.createEstudiante(e);
-        return ResponseEntity.created(URI.create("/api/estudiantes/" + created.getId()))
-                .body(created);
-    }
+	@PostMapping
+	public ResponseEntity<Estudiante> create(@RequestBody Estudiante e) {
+		e.setId(null); // <-- CLAVE: garantiza INSERT
+		Estudiante created = service.createEstudiante(e);
+		return ResponseEntity.created(URI.create("/api/estudiantes/" + created.getId())).body(created);
+	}
 
-    @PutMapping("/{id}")
-    public Estudiante update(@PathVariable long id, @RequestBody Estudiante e) {
-        // Mejor flujo: leer y aplicar cambios (ver service abajo)
-        return service.updateEstudiante(id, e);
-    }
+	@PutMapping("/{id}")
+	public Estudiante update(@PathVariable long id, @RequestBody Estudiante e) {
+		// Mejor flujo: leer y aplicar cambios (ver service abajo)
+		return service.updateEstudiante(id, e);
+	}
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable long id) { // <-- long
-        service.deleteEstudiante(id);
-        return ResponseEntity.noContent().build();
-    }
+	@DeleteMapping("/{id}")
+	public ResponseEntity<Void> delete(@PathVariable long id) { // <-- long
+		service.deleteEstudiante(id);
+		return ResponseEntity.noContent().build();
+	}
+
+	@GetMapping("/por-documento/{numeroDocumento}")
+	public ResponseEntity<?> getPorDocumento(@PathVariable String numeroDocumento) {
+		return service.buscarPorNumeroDocumento(numeroDocumento).<ResponseEntity<?>>map(ResponseEntity::ok)
+				.orElseGet(() -> ResponseEntity.notFound().build());
+	}
+
+	@RequestMapping(value = "/por-documento/{numeroDocumento}/existe", method = RequestMethod.HEAD)
+	public ResponseEntity<Void> existePorDocumento(@PathVariable String numeroDocumento) {
+		return service.existePorNumeroDocumento(numeroDocumento) ? ResponseEntity.ok().build()
+				: ResponseEntity.notFound().build();
+	}
+
 }

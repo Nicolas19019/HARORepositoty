@@ -19,7 +19,8 @@ public class EstadoCuenta {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	@Column(name = "id_estado") // o el que corresponda
 	@JsonProperty(access = JsonProperty.Access.READ_ONLY) // <- no se acepta en requests
-	@Schema(accessMode = Schema.AccessMode.READ_ONLY) // <- Swagger lo muestra solo en responses
+
+
 	private Long id;
 
 	@Column(name = "id_estudiante")

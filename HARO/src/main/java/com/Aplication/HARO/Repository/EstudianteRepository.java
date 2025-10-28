@@ -17,6 +17,8 @@ public interface EstudianteRepository extends JpaRepository<Estudiante, Long> {
   """)
   Optional<Estudiante> findByLogin(@Param("login") String login);
 
+  boolean existsByNumeroDocumento(String numeroDocumento);
+
   boolean existsByUsuarioIgnoreCase(String usuario);
   boolean existsByEmailIgnoreCase(String email);
   Optional<Estudiante> findByUsuarioIgnoreCase(String u);

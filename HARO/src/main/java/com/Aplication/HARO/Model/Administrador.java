@@ -6,6 +6,8 @@ import java.time.Instant;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 @Entity
 @Table(name = "administrador",
        uniqueConstraints = {
@@ -15,13 +17,15 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public class Administrador {
 
   @Id
+  @Schema(accessMode = Schema.AccessMode.READ_ONLY) // <- Swagger lo muestra solo en responses
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
   // Puedes usar uno u otro para iniciar sesión (correo o usuario)
   @Column(length = 120)
   private String correo;
-
+  @Column(name = "cedula")
+  private String cedula;
   @Column(length = 60)
   private String usuario;
   @JsonProperty(access = JsonProperty.Access.WRITE_ONLY) 
@@ -106,6 +110,14 @@ public class Administrador {
 
   public void setActualizadoEn(Instant actualizadoEn) {
 	this.actualizadoEn = actualizadoEn;
+  }
+
+  public String getCedula() {
+	return cedula;
+  }
+
+  public void setCedula(String cedula) {
+	this.cedula = cedula;
   }
 
   

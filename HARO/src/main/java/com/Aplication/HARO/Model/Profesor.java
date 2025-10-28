@@ -24,13 +24,19 @@ public class Profesor {
     private String nombre;
     @Column(name = "apellido")
     private String apellido;
- 
+    @Column(name = "correo")
+    private String correo;
     @Column(name = "especialidad")
     private String especialidad; // ENUM(Teórico, Práctico)
     @Column(name = "telefono")
     private String telefono;
     @Column(name = "email")
     private String email;
+    @Column(name = "usuario")
+    private String usuario;
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY) 
+    @Column(name = "contrasena")
+    private String contrasena;
 
 
 	public Long getId() {
@@ -89,5 +95,29 @@ public class Profesor {
 		this.cedula = cedula;
 	}
 
+	public String getCorreo() {
+		return correo;
+	}
+
+	public void setCorreo(String correo) {
+		this.correo = correo;
+	}
+
+	public String getUsuario() {
+		return usuario;
+	}
+
+	public void setUsuario(String usuario) {
+		this.usuario = usuario;
+	}
+
+	public String getContrasena() {
+		return contrasena;
+	}
+
+	public void setContrasena(String contrasena) {
+		this.contrasena = contrasena;
+	}
+	
 	
 }

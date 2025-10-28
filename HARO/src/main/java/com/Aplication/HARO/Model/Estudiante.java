@@ -38,7 +38,7 @@ public class Estudiante {
 	private String estado;
 	@Column(name = "usuario", nullable = false, unique = true)
 	private String usuario;
-
+	@JsonProperty(access = JsonProperty.Access.WRITE_ONLY) 
 	@Column(name = "contrasena", nullable = false)
 	private String contrasena;
 

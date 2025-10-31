@@ -17,7 +17,7 @@ public interface ProfesorRepository extends JpaRepository<Profesor, Long> {
        OR (p.cedula  IS NOT NULL AND p.cedula = :login)
   """)
   Optional<Profesor> findByLogin(@Param("login") String login);
-
+  boolean existsByCedula(String cedula);
   boolean existsByUsuarioIgnoreCase(String usuario);
   boolean existsByCorreoIgnoreCase(String correo);
   boolean existsByEmailIgnoreCase(String email);

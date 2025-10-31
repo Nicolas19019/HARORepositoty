@@ -42,7 +42,7 @@ public class ProfesorController {
     @PutMapping("/{id}")
     public Profesor update(@PathVariable long id, @RequestBody Profesor p) {
         p.setId(id);
-        return service.updateProfesor(p);
+        return service.updateProfesor(id, p);
     }
 
     @DeleteMapping("/{id}")

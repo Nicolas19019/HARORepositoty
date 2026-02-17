@@ -8,9 +8,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @Transactional
@@ -30,17 +33,17 @@ public class EstudianteService {
      ========================== */
   @Transactional(readOnly = true)
   public List<Estudiante> getAllEstudiantes() {
-    return repo.findAll();
+    return repo.findAll().stream().filter(this::esVisible).toList();
   }
 
   @Transactional(readOnly = true)
   public Optional<Estudiante> getEstudianteById(long id) {
-    return repo.findById(id);
+    return repo.findById(id).filter(this::esVisible);
   }
 
   @Transactional(readOnly = true)
   public Optional<Estudiante> buscarPorNumeroDocumento(String numeroDocumento) {
-    return repo.findByNumeroDocumento(numeroDocumento);
+    return repo.findByNumeroDocumento(numeroDocumento).filter(this::esVisible);
   }
 
   @Transactional(readOnly = true)
@@ -78,6 +81,25 @@ public class EstudianteService {
 
     // Contraseña:
     // El front podría enviar en claro o ya hasheada. Si NO es bcrypt, se hashea aquí.
+    // Horas del curso
+    if (in.getHoras() != null && in.getHoras() < 0) {
+      throw new IllegalArgumentException("Las horas no pueden ser negativas.");
+    }
+    if (in.getHoras() == null) {
+      in.setHoras(0);
+    }
+
+    // Tipo de pase: carro, moto o carro,moto
+    in.setTipoPase(normalizarTipoPase(in.getTipoPase()));
+
+    // Estado del examen teorico (false por defecto)
+    if (in.getAproboExamenTeorico() == null) {
+      in.setAproboExamenTeorico(false);
+    }
+
+    // En API, todo registro nuevo nace visible.
+    in.setVisible(true);
+
     String rawOrHash = in.getContrasena();
     if (rawOrHash == null || rawOrHash.isBlank()) {
       rawOrHash = "Cambiar123*"; // fallback seguro mínimo
@@ -133,6 +155,22 @@ public class EstudianteService {
     if (incoming.getCategoria() != null) db.setCategoria(incoming.getCategoria());
     if (incoming.getTipoEstudiante() != null) db.setTipoEstudiante(incoming.getTipoEstudiante());
     if (incoming.getEstado() != null) db.setEstado(incoming.getEstado());
+    if (incoming.getSede() != null) db.setSede(incoming.getSede());
+    if (incoming.getHoras() != null) {
+      if (incoming.getHoras() < 0) {
+        throw new IllegalArgumentException("Las horas no pueden ser negativas.");
+      }
+      db.setHoras(incoming.getHoras());
+    }
+    if (incoming.getTipoPase() != null) {
+      db.setTipoPase(normalizarTipoPase(incoming.getTipoPase()));
+    }
+    if (incoming.getAproboExamenTeorico() != null) {
+      db.setAproboExamenTeorico(incoming.getAproboExamenTeorico());
+    }
+    if (incoming.getVisible() != null) {
+      db.setVisible(incoming.getVisible());
+    }
 
     // Contraseña: si llega algo, se procesa como en crear()
     if (incoming.getContrasena() != null && !incoming.getContrasena().isBlank()) {
@@ -148,10 +186,10 @@ public class EstudianteService {
      Eliminación
      ========================== */
   public void deleteEstudiante(long id) {
-    if (!repo.existsById(id)) {
-      throw new NoSuchElementException("Estudiante no encontrado: " + id);
-    }
-    repo.deleteById(id);
+    Estudiante e = repo.findById(id)
+        .orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado: " + id));
+    e.setVisible(false);
+    repo.save(e);
   }
 
   /* ==========================
@@ -159,5 +197,30 @@ public class EstudianteService {
      ========================== */
   private boolean esBcrypt(String s) {
     return s != null && (s.startsWith("$2a$") || s.startsWith("$2b$") || s.startsWith("$2y$"));
+  }
+
+  private boolean esVisible(Estudiante e) {
+    return e != null && !Boolean.FALSE.equals(e.getVisible());
+  }
+
+  private String normalizarTipoPase(String raw) {
+    if (raw == null) return null;
+    String input = raw.trim().toLowerCase(Locale.ROOT);
+    if (input.isBlank()) return null;
+
+    Set<String> tipos = new LinkedHashSet<>();
+    for (String token : input.split("[,;/|\\s]+")) {
+      if (token.isBlank()) continue;
+      if (!"carro".equals(token) && !"moto".equals(token)) {
+        throw new IllegalArgumentException("tipoPase solo permite: carro, moto o carro,moto");
+      }
+      tipos.add(token);
+    }
+
+    if (tipos.isEmpty()) return null;
+    boolean carro = tipos.contains("carro");
+    boolean moto = tipos.contains("moto");
+    if (carro && moto) return "carro,moto";
+    return carro ? "carro" : "moto";
   }
 }

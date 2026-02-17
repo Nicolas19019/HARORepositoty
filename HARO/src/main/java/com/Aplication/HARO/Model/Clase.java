@@ -50,6 +50,10 @@ public class Clase {
 	  @Schema(example = "Programada")
 	  private String estado;
 
+	  @Column(name = "estado_clase", length = 50)
+	  @Schema(example = "Pendiente")
+	  private String estadoClase;
+
 	public Long getId() {
 		return id;
 	}
@@ -112,6 +116,14 @@ public class Clase {
 
 	public void setEstado(String estado) {
 		this.estado = estado;
+	}
+
+	public String getEstadoClase() {
+		return estadoClase;
+	}
+
+	public void setEstadoClase(String estadoClase) {
+		this.estadoClase = estadoClase;
 	}
 
 }

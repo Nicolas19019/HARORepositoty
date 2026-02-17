@@ -26,6 +26,9 @@ public class EstadoCuenta {
     @Column(name = "monto_pagado", nullable = false, precision = 14, scale = 2)
     private BigDecimal montoPagado = BigDecimal.ZERO;
 
+    @Column(name = "multas", precision = 14, scale = 2)
+    private BigDecimal multas = BigDecimal.ZERO;
+
     @Column(name = "estado", nullable = false, length = 50)
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private String estado = "Pendiente"; // valor por defecto en el objeto
@@ -78,6 +81,14 @@ public class EstadoCuenta {
 		this.montoPagado = montoPagado;
 	}
 
+	public BigDecimal getMultas() {
+		return multas;
+	}
+
+	public void setMultas(BigDecimal multas) {
+		this.multas = multas;
+	}
+
 
 
 	public String getEstado() {
@@ -97,20 +108,22 @@ public class EstadoCuenta {
     public void calcularEstadoYValidar() {
         if (montoTotal == null) montoTotal = BigDecimal.ZERO;
         if (montoPagado == null) montoPagado = BigDecimal.ZERO;
+        if (multas == null) multas = BigDecimal.ZERO;
 
-        if (montoTotal.signum() < 0 || montoPagado.signum() < 0) {
+        if (montoTotal.signum() < 0 || montoPagado.signum() < 0 || multas.signum() < 0) {
             throw new IllegalArgumentException("Los montos no pueden ser negativos.");
         }
-        if (montoPagado.compareTo(montoTotal) > 0) {
+        BigDecimal totalConMultas = montoTotal.add(multas);
+        if (montoPagado.compareTo(totalConMultas) > 0) {
             // Si NO quieres permitir sobrepago (recomendado):
-            throw new IllegalArgumentException("El monto_pagado no puede superar el monto_total.");
+            throw new IllegalArgumentException("El monto_pagado no puede superar el monto_total + multas.");
             // Si SÍ quieres permitir sobrepago, comenta la línea de arriba
             // y descomenta esta:
             // estado = "Saldo a favor";
             // return;
         }
 
-        int cmp = montoPagado.compareTo(montoTotal);
+        int cmp = montoPagado.compareTo(totalConMultas);
         if (cmp == 0) estado = "Pagado";
         else estado = "En deuda"; // cuando pagado < total
     }

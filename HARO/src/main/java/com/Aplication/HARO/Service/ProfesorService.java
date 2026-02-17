@@ -25,12 +25,12 @@ public class ProfesorService {
      ========================== */
   @Transactional(readOnly = true)
   public List<Profesor> getAllProfesores() {
-    return repository.findAll();
+    return repository.findAll().stream().filter(this::esVisible).toList();
   }
 
   @Transactional(readOnly = true)
   public Optional<Profesor> getProfesorById(long id) {
-    return repository.findById(id);
+    return repository.findById(id).filter(this::esVisible);
   }
 
   /* ==========================
@@ -47,6 +47,8 @@ public class ProfesorService {
     if (p.getUsuario() != null && existsByUsuarioIgnoreCase(p.getUsuario())) {
       throw new IllegalStateException("El usuario ya existe: " + p.getUsuario());
     }
+    // En API, todo registro nuevo nace visible.
+    p.setVisible(true);
     // setea otros defaults si aplica (activo, estado, etc.)
     return repository.save(p);
   }
@@ -83,6 +85,7 @@ public class ProfesorService {
     if (incoming.getApellido() != null) db.setApellido(incoming.getApellido());
     if (incoming.getTelefono() != null) db.setTelefono(incoming.getTelefono());
     if (incoming.getEspecialidad() != null) db.setEspecialidad(incoming.getEspecialidad());
+    if (incoming.getVisible() != null) db.setVisible(incoming.getVisible());
    
 
     return repository.save(db);
@@ -92,10 +95,10 @@ public class ProfesorService {
      Eliminación
      ========================== */
   public void deleteProfesor(long id) {
-    if (!repository.existsById(id)) {
-      throw new NoSuchElementException("Profesor no encontrado: " + id);
-    }
-    repository.deleteById(id);
+    Profesor p = repository.findById(id)
+        .orElseThrow(() -> new NoSuchElementException("Profesor no encontrado: " + id));
+    p.setVisible(false);
+    repository.save(p);
   }
 
   /* ==========================
@@ -126,5 +129,9 @@ public class ProfesorService {
     } catch (Exception e) {
       return false;
     }
+  }
+
+  private boolean esVisible(Profesor p) {
+    return p != null && !Boolean.FALSE.equals(p.getVisible());
   }
 }

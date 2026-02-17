@@ -28,6 +28,14 @@ public class Estudiante {
 	private String numeroDocumento;
 	@Column(name = "categoria")
 	private String categoria;
+	@Column(name = "sede", length = 120)
+	private String sede;
+	@Column(name = "horas")
+	private Integer horas;
+	@Column(name = "tipo_pase", length = 20)
+	private String tipoPase; // valores permitidos: carro, moto, carro,moto
+	@Column(name = "aprobo_examen_teorico")
+	private Boolean aproboExamenTeorico = false;
 	@Column(name = "telefono")
 	private String telefono;
 	@Column(name = "email")
@@ -36,6 +44,8 @@ public class Estudiante {
 	private String direccion;
 	@Column(name = "estado")
 	private String estado;
+	@Column(name = "visible", columnDefinition = "boolean default true")
+	private Boolean visible = true;
 	@Column(name = "usuario", nullable = false, unique = true)
 	private String usuario;
 	@JsonProperty(access = JsonProperty.Access.WRITE_ONLY) 
@@ -123,6 +133,14 @@ public class Estudiante {
 		this.usuario = usuario;
 	}
 
+	public Boolean getVisible() {
+		return visible;
+	}
+
+	public void setVisible(Boolean visible) {
+		this.visible = visible;
+	}
+
 	public String getContrasena() {
 		return contrasena;
 	}
@@ -147,7 +165,42 @@ public class Estudiante {
 		this.categoria = categoria;
 	}
 
-	
-	
+	public String getSede() {
+		return sede;
+	}
+
+	public void setSede(String sede) {
+		this.sede = sede;
+	}
+
+	public Integer getHoras() {
+		return horas;
+	}
+
+	public void setHoras(Integer horas) {
+		this.horas = horas;
+	}
+
+	public String getTipoPase() {
+		return tipoPase;
+	}
+
+	public void setTipoPase(String tipoPase) {
+		this.tipoPase = tipoPase;
+	}
+
+	public Boolean getAproboExamenTeorico() {
+		return aproboExamenTeorico;
+	}
+
+	public void setAproboExamenTeorico(Boolean aproboExamenTeorico) {
+		this.aproboExamenTeorico = aproboExamenTeorico;
+	}
+
+	@PrePersist
+	@PreUpdate
+	public void normalizarVisibilidad() {
+		if (visible == null) visible = true;
+	}
 
 }

@@ -18,8 +18,12 @@ public class Vehiculo {
 
     @Column(name = "anio")
     private Integer anio; // usar Integer en lugar de java.time.Year por compatibilidad JPA
+    @Column(name = "sede", length = 120)
+    private String sede;
     @Column(name = "estado")
     private String estado;
+    @Column(name = "visible", columnDefinition = "boolean default true")
+    private Boolean visible = true;
 
   
 	public String getPlaca() {
@@ -62,6 +66,27 @@ public class Vehiculo {
 		this.estado = estado;
 	}
 
+	public String getSede() {
+		return sede;
+	}
+
+	public void setSede(String sede) {
+		this.sede = sede;
+	}
+
+	public Boolean getVisible() {
+		return visible;
+	}
+
+	public void setVisible(Boolean visible) {
+		this.visible = visible;
+	}
+
+    @PrePersist
+    @PreUpdate
+    public void normalizarVisibilidad() {
+        if (visible == null) visible = true;
+    }
 
 
    

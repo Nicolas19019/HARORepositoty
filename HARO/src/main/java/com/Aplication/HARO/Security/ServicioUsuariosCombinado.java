@@ -61,7 +61,7 @@ public ServicioUsuariosCombinado(EstudianteRepository estRepo,
         profRepo.save(p);
       }
       if (hash == null) hash = encoder.encode("cambiar123*");
-      boolean activo = true;
+      boolean activo = !Boolean.FALSE.equals(p.getVisible());
       return new DetallesUsuarioAplicacion(p.getId(), login, hash, "PROFESOR", activo);
     }
 
@@ -78,7 +78,7 @@ public ServicioUsuariosCombinado(EstudianteRepository estRepo,
         estRepo.save(e);
       }
       if (hash == null) hash = encoder.encode("cambiar123*");
-      boolean activo = !"INACTIVO".equalsIgnoreCase(e.getEstado());
+      boolean activo = !Boolean.FALSE.equals(e.getVisible()) && !"INACTIVO".equalsIgnoreCase(e.getEstado());
       return new DetallesUsuarioAplicacion(e.getId(), login, hash, "ESTUDIANTE", activo);
     }
 

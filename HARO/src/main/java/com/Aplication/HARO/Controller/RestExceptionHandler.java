@@ -24,4 +24,9 @@ public class RestExceptionHandler {
     public ResponseEntity<?> handleState(IllegalStateException ex) {
         return ResponseEntity.badRequest().body(ex.getMessage());
     }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<?> handleArgument(IllegalArgumentException ex) {
+        return ResponseEntity.badRequest().body(ex.getMessage());
+    }
 }

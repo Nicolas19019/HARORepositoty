@@ -36,9 +36,12 @@ public class EstadoCuentaService {
         e.setId(null);
 
         // Validación defensiva adicional (además del @PrePersist en la entidad)
+        if (e.getMultas() == null) {
+            e.setMultas(java.math.BigDecimal.ZERO);
+        }
         if (e.getMontoPagado() != null && e.getMontoTotal() != null
-                && e.getMontoPagado().compareTo(e.getMontoTotal()) > 0) {
-            throw new IllegalArgumentException("El monto_pagado no puede superar el monto_total.");
+                && e.getMontoPagado().compareTo(e.getMontoTotal().add(e.getMultas())) > 0) {
+            throw new IllegalArgumentException("El monto_pagado no puede superar el monto_total + multas.");
         }
 
         try {
@@ -66,12 +69,18 @@ public class EstadoCuentaService {
         if (e.getMontoPagado() != null) {
             actual.setMontoPagado(e.getMontoPagado());
         }
+        if (e.getMultas() != null) {
+            actual.setMultas(e.getMultas());
+        }
         // 'estado' es calculado en la entidad; ignoramos lo que venga del cliente
 
         // Validación defensiva
+        if (actual.getMultas() == null) {
+            actual.setMultas(java.math.BigDecimal.ZERO);
+        }
         if (actual.getMontoPagado() != null && actual.getMontoTotal() != null
-                && actual.getMontoPagado().compareTo(actual.getMontoTotal()) > 0) {
-            throw new IllegalArgumentException("El monto_pagado no puede superar el monto_total.");
+                && actual.getMontoPagado().compareTo(actual.getMontoTotal().add(actual.getMultas())) > 0) {
+            throw new IllegalArgumentException("El monto_pagado no puede superar el monto_total + multas.");
         }
 
         try {

@@ -1,0 +1,17 @@
+# Build outputs
+target/
+
+# Local secret files
+.env
+.env.*
+.envrc
+
+# Keep shareable template
+!.env.example
+
+# Local Google credentials
+secrets/
+google-calendar-credentials.json
+
+# Local OAuth tokens
+.tokens/

@@ -34,6 +34,8 @@ public class Profesor {
     private String email;
     @Column(name = "usuario")
     private String usuario;
+    @Column(name = "visible", columnDefinition = "boolean default true")
+    private Boolean visible = true;
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY) 
     @Column(name = "contrasena")
     private String contrasena;
@@ -111,6 +113,14 @@ public class Profesor {
 		this.usuario = usuario;
 	}
 
+	public Boolean getVisible() {
+		return visible;
+	}
+
+	public void setVisible(Boolean visible) {
+		this.visible = visible;
+	}
+
 	public String getContrasena() {
 		return contrasena;
 	}
@@ -118,6 +128,12 @@ public class Profesor {
 	public void setContrasena(String contrasena) {
 		this.contrasena = contrasena;
 	}
+
+    @PrePersist
+    @PreUpdate
+    public void normalizarVisibilidad() {
+        if (visible == null) visible = true;
+    }
 	
 	
 }

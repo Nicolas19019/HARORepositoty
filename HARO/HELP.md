@@ -1,5 +1,28 @@
 # Getting Started
 
+## Local Secrets Setup
+
+This project now reads sensitive values from environment variables (and supports a local `.env` file through `spring.config.import`).
+
+1. Create a local file from the template:
+   - Windows PowerShell: `Copy-Item .env.example .env`
+2. Replace placeholder values in `.env`.
+3. Run the app normally (`mvn spring-boot:run`).
+
+Important:
+- `.env` is ignored by git.
+- Only `.env.example` should be committed.
+
+## Google Calendar (Meet)
+
+This project exposes `POST /api/calendar/reuniones` to create a Calendar event with Google Meet link.
+
+Required `.env` variables:
+- `GOOGLE_CALENDAR_CREDENTIALS_PATH`
+- `GOOGLE_CALENDAR_ID` (default `primary`)
+- `GOOGLE_CALENDAR_APP_NAME`
+- `GOOGLE_CALENDAR_TIMEZONE`
+
 ### Reference Documentation
 For further reference, please consider the following sections:
 

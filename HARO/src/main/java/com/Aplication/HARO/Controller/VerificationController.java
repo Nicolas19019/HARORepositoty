@@ -26,11 +26,26 @@ public class VerificationController {
   }
 
   public static record VerifyReq(@Email String email, @NotBlank String code) {}
+  public static record ContractLinkReq(@Email String email, String baseUrl) {}
 
   @PostMapping("/email/verify")
   public ResponseEntity<?> verify(@RequestBody VerifyReq req) {
     boolean ok = svc.verifyEmailOtp(req.email(), req.code());
     return ok ? ResponseEntity.ok().build()
+              : ResponseEntity.badRequest().body("Código inválido o vencido");
+  }
+
+  @PostMapping("/contract/link")
+  public ResponseEntity<VerificationService.ContractLinkResult> createContractLink(@RequestBody ContractLinkReq req) {
+    VerificationService.ContractLinkResult out = svc.createContractVerificationLink(req.email(), req.baseUrl());
+    return ResponseEntity.ok(out);
+  }
+
+  @GetMapping("/contract/verify")
+  public ResponseEntity<?> verifyContract(@RequestParam @Email String email,
+                                          @RequestParam @NotBlank String code) {
+    boolean ok = svc.verifyContractCode(email, code);
+    return ok ? ResponseEntity.ok("Código válido")
               : ResponseEntity.badRequest().body("Código inválido o vencido");
   }
 }

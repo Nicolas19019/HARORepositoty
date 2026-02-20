@@ -12,6 +12,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -53,6 +55,19 @@ public class VerificationService {
     /** CID usado dentro del HTML: <img src="cid:logoHaro"> */
     private static final String CID = "logoHaro";
 
+    // ===== Contract verification config =====
+    @Value("${app.contract.verify.code.length:10}")
+    private int contractCodeLength;
+
+    @Value("${app.contract.verify.ttlSeconds:2400}") // 40 min
+    private long contractTtlSeconds;
+
+    @Value("${app.contract.verify.base-url:http://localhost:8081}")
+    private String contractVerifyBaseUrl;
+
+    @Value("${app.contract.verify.path:/api/verification/contract/verify}")
+    private String contractVerifyPath;
+
     public VerificationService(OtpTokenRepository repo, MailService mail) {
         this.repo = repo;
         this.mail = mail;
@@ -64,6 +79,8 @@ public class VerificationService {
         ttlSeconds = Math.max(60, ttlSeconds);
         cooldownSeconds = Math.max(5, cooldownSeconds);
         maxAttempts = Math.max(1, maxAttempts);
+        contractCodeLength = Math.max(8, contractCodeLength);
+        contractTtlSeconds = Math.max(60, contractTtlSeconds);
     }
 
     /* =========================================================
@@ -177,6 +194,95 @@ public class VerificationService {
         }
     }
 
+    public record ContractLinkResult(
+            String email,
+            String code,
+            String url,
+            Instant expiresAt
+    ) {}
+
+    /** Genera cÃ³digo alfanumÃ©rico para firma y devuelve URL verificable. */
+    @Transactional
+    public ContractLinkResult createContractVerificationLink(String rawEmail, String rawBaseUrl) {
+        final String email = normalizeEmail(rawEmail);
+        final Instant now = Instant.now();
+        final String purpose = "CONTRACT_SIGN";
+
+        // Limpiar expirados del mismo flujo
+        repo.deleteByEmailAndPurposeAndExpiresAtBefore(email, purpose, now);
+
+        String code = generateAlphaNumericCode(contractCodeLength);
+        OtpToken token = new OtpToken();
+        token.setEmail(email);
+        token.setPurpose(purpose);
+        token.setOtpHash(OtpHasher.sha256(code));
+        token.setExpiresAt(now.plus(contractTtlSeconds, ChronoUnit.SECONDS));
+        token.setSentAt(now);
+        token.setAttempts(0);
+        token.setConsumedAt(null);
+        repo.save(token);
+
+        String base = trim(rawBaseUrl);
+        if (base.isBlank()) {
+            base = trim(contractVerifyBaseUrl);
+        }
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+
+        String path = trim(contractVerifyPath);
+        if (path.isBlank()) {
+            path = "/api/verification/contract/verify";
+        }
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+
+        String url = base + path
+                + "?email=" + URLEncoder.encode(email, StandardCharsets.UTF_8)
+                + "&code=" + URLEncoder.encode(code, StandardCharsets.UTF_8);
+
+        return new ContractLinkResult(email, code, url, token.getExpiresAt());
+    }
+
+    /** Valida y consume cÃ³digo de firma de contrato. */
+    @Transactional
+    public boolean verifyContractCode(String rawEmail, String rawCode) {
+        final String email = normalizeEmail(rawEmail);
+        final String code = trim(rawCode);
+        final Instant now = Instant.now();
+        final String purpose = "CONTRACT_SIGN";
+
+        Optional<OtpToken> lastOpt =
+                repo.findTopByEmailAndPurposeAndConsumedAtIsNullOrderByIdDesc(email, purpose);
+        if (lastOpt.isEmpty()) return false;
+
+        OtpToken token = lastOpt.get();
+        if (token.getExpiresAt() == null || now.isAfter(token.getExpiresAt())) {
+            token.setConsumedAt(now);
+            repo.save(token);
+            return false;
+        }
+
+        int attempts = Optional.ofNullable(token.getAttempts())
+                .map(Number::intValue)
+                .orElse(0);
+
+        if (attempts >= maxAttempts) {
+            token.setConsumedAt(now);
+            repo.save(token);
+            return false;
+        }
+
+        token.setAttempts(attempts + 1);
+        boolean ok = OtpHasher.sha256(code).equals(token.getOtpHash());
+        if (ok || (attempts + 1) >= maxAttempts) {
+            token.setConsumedAt(now); // one-time use
+        }
+        repo.save(token);
+        return ok;
+    }
+
     /* =========================================================
        Helpers
        ========================================================= */
@@ -185,6 +291,15 @@ public class VerificationService {
         int mod = (int) Math.pow(10, Math.max(4, length));
         int code = rng.nextInt(mod);
         return String.format("%0" + Math.max(4, length) + "d", code);
+    }
+
+    private String generateAlphaNumericCode(int length) {
+        final char[] alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
+        StringBuilder sb = new StringBuilder(Math.max(8, length));
+        for (int i = 0; i < Math.max(8, length); i++) {
+            sb.append(alphabet[rng.nextInt(alphabet.length)]);
+        }
+        return sb.toString();
     }
 
     /** NORMALIZA y VALIDA el email: quita comillas externas, invisibles y valida con InternetAddress estricto. */

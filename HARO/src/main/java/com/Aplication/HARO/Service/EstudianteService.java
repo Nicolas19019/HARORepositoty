@@ -51,6 +51,11 @@ public class EstudianteService {
     return repo.existsByNumeroDocumento(numeroDocumento);
   }
 
+  @Transactional(readOnly = true)
+  public boolean existePorCorreo(String email) {
+    return repo.existsByEmailIgnoreCase(email);
+  }
+
   /* ==========================
      Creación
      ========================== */

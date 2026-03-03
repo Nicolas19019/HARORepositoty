@@ -5,6 +5,7 @@ import com.Aplication.HARO.Model.Profesor;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface ProfesorRepository extends JpaRepository<Profesor, Long> {
@@ -25,4 +26,6 @@ public interface ProfesorRepository extends JpaRepository<Profesor, Long> {
   Optional<Profesor> findByEmailIgnoreCase(String e);
   Optional<Profesor> findByCorreoIgnoreCase(String c);
   Optional<Profesor> findByCedula(String d);
+  Optional<Profesor> findFirstByVisibleTrueOrderByIdAsc();
+  List<Profesor> findByVisibleTrueOrderByIdAsc();
 }

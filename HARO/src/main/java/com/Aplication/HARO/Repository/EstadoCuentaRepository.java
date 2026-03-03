@@ -7,7 +7,7 @@ import org.springframework.stereotype.Repository;
 import com.Aplication.HARO.Model.EstadoCuenta;
 
 import java.util.Optional;
-import java.util.List;
+
 
 @Repository
 public interface EstadoCuentaRepository extends JpaRepository<EstadoCuenta, Long> {

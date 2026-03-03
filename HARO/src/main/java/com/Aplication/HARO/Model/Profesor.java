@@ -1,7 +1,6 @@
 package com.Aplication.HARO.Model;
 
 import jakarta.persistence.*;
-import java.util.*;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 

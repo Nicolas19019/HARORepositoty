@@ -1,7 +1,7 @@
 package com.Aplication.HARO.Model;
 
 import jakarta.persistence.*;
-import java.util.*;
+
 
 @Entity
 @Table(name = "vehiculo")

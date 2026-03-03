@@ -25,6 +25,7 @@ public class VerificationService {
 
     private final OtpTokenRepository repo;
     private final MailService mail;
+    private final ChatbotProcesoService chatbotProcesoService;
     private final SecureRandom rng = new SecureRandom();
 
     // ===== Config =====
@@ -68,9 +69,12 @@ public class VerificationService {
     @Value("${app.contract.verify.path:/api/verification/contract/verify}")
     private String contractVerifyPath;
 
-    public VerificationService(OtpTokenRepository repo, MailService mail) {
+    public VerificationService(OtpTokenRepository repo,
+                               MailService mail,
+                               ChatbotProcesoService chatbotProcesoService) {
         this.repo = repo;
         this.mail = mail;
+        this.chatbotProcesoService = chatbotProcesoService;
     }
 
     @PostConstruct
@@ -280,6 +284,13 @@ public class VerificationService {
             token.setConsumedAt(now); // one-time use
         }
         repo.save(token);
+        if (ok) {
+            try {
+                chatbotProcesoService.markContractSignedByEmail(email);
+            } catch (Exception ignored) {
+                // Si no hay proceso de chatbot para ese email, no bloquea la verificación del contrato.
+            }
+        }
         return ok;
     }
 

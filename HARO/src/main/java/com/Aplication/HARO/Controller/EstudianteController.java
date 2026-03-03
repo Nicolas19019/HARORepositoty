@@ -63,4 +63,10 @@ public class EstudianteController {
 				: ResponseEntity.notFound().build();
 	}
 
+	@RequestMapping(value = "/por-correo/{email}/existe", method = RequestMethod.HEAD)
+	public ResponseEntity<Void> existePorCorreo(@PathVariable String email) {
+		return service.existePorCorreo(email) ? ResponseEntity.ok().build()
+				: ResponseEntity.notFound().build();
+	}
+
 }

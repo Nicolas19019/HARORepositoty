@@ -10,6 +10,11 @@
       "type": "javax.sql.DataSource",
       "sourceType": "com.Aplication.HARO.Config.PostgresConfig",
       "sourceMethod": "postgresDataSource(org.springframework.boot.autoconfigure.jdbc.DataSourceProperties)"
+    },
+    {
+      "name": "whatsapp",
+      "type": "com.Aplication.HARO.Config.WhatsAppProperties",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties"
     }
   ],
   "properties": [
@@ -27,6 +32,91 @@
       "name": "epayco.validation-url",
       "type": "java.lang.String",
       "sourceType": "com.Aplication.HARO.Config.EpaycoProperties"
+    },
+    {
+      "name": "whatsapp.access-token",
+      "type": "java.lang.String",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties"
+    },
+    {
+      "name": "whatsapp.api-base-url",
+      "type": "java.lang.String",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties",
+      "defaultValue": "https:\/\/graph.facebook.com"
+    },
+    {
+      "name": "whatsapp.api-version",
+      "type": "java.lang.String",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties",
+      "defaultValue": "v21.0"
+    },
+    {
+      "name": "whatsapp.app-secret",
+      "type": "java.lang.String",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties"
+    },
+    {
+      "name": "whatsapp.bot-enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties",
+      "defaultValue": false
+    },
+    {
+      "name": "whatsapp.bot-fallback-reply",
+      "type": "java.lang.String",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties",
+      "defaultValue": "Gracias por escribir a CEA HARO. Escribe MENU para ver opciones."
+    },
+    {
+      "name": "whatsapp.bot-welcome-reply",
+      "type": "java.lang.String",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties",
+      "defaultValue": "Bienvenido a CEA HARO. Soy tu asistente virtual. Escribe MENU para continuar."
+    },
+    {
+      "name": "whatsapp.connect-timeout-ms",
+      "type": "java.lang.Integer",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties",
+      "defaultValue": 10000
+    },
+    {
+      "name": "whatsapp.default-language-code",
+      "type": "java.lang.String",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties",
+      "defaultValue": "es_CO"
+    },
+    {
+      "name": "whatsapp.default-to",
+      "type": "java.lang.String",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties"
+    },
+    {
+      "name": "whatsapp.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties",
+      "defaultValue": false
+    },
+    {
+      "name": "whatsapp.phone-number-id",
+      "type": "java.lang.String",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties"
+    },
+    {
+      "name": "whatsapp.read-timeout-ms",
+      "type": "java.lang.Integer",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties",
+      "defaultValue": 20000
+    },
+    {
+      "name": "whatsapp.restrict-to-default",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties",
+      "defaultValue": true
+    },
+    {
+      "name": "whatsapp.webhook-verify-token",
+      "type": "java.lang.String",
+      "sourceType": "com.Aplication.HARO.Config.WhatsAppProperties"
     }
   ],
   "hints": [],

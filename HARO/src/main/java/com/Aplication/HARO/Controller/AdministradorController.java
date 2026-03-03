@@ -5,7 +5,7 @@ import com.Aplication.HARO.Model.Administrador;
 import com.Aplication.HARO.Service.AdministradorService;
 
 import org.springframework.http.*;
-import org.springframework.security.access.prepost.PreAuthorize;
+
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;

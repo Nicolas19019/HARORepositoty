@@ -1,13 +1,10 @@
 package com.Aplication.HARO.Controller;
 
-import org.hibernate.query.Page;
-import org.springframework.data.web.PageableDefault;
+
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 // ✅
-import org.springframework.data.domain.Pageable; // ✅
-
 import com.Aplication.HARO.Model.Clase;
 
 import com.Aplication.HARO.Service.ClaseService;

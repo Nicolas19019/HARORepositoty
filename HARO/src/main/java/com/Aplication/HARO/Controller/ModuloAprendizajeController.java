@@ -63,6 +63,16 @@ public class ModuloAprendizajeController {
         return service.getEstudiantesConUsoModulo();
     }
 
+    @GetMapping({
+            "/admin/resultados-examen",
+            "/admin/resultados-examen/",
+            "/admin/resultados-simulacro",
+            "/admin/resultados_examen"
+    })
+    public List<ModuloAprendizajeService.ResultadoExamenAdmin> getResultadosExamen() {
+        return service.getResultadosExamenPresentados();
+    }
+
     @GetMapping("/estudiante/{idEstudiante}/favoritos")
     public List<String> getFavoritos(@PathVariable Long idEstudiante,
                                      @RequestParam String curso) {

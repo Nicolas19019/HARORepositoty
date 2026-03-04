@@ -49,6 +49,19 @@ public class ModuloAprendizajeService {
             LocalDate ultimaActividad
     ) {}
 
+    public record ResultadoExamenAdmin(
+            Long idRegistro,
+            Long idEstudiante,
+            String nombreEstudiante,
+            String categoria,
+            int puntaje,
+            int aciertos,
+            int totalPreguntas,
+            int intento,
+            String estado,
+            LocalDate fecha
+    ) {}
+
     private final ModuloAprendizajeRepository repository;
     private final EstudianteRepository estudianteRepository;
 
@@ -395,6 +408,73 @@ public class ModuloAprendizajeService {
         return out;
     }
 
+    @Transactional(readOnly = true)
+    public List<ResultadoExamenAdmin> getResultadosExamenPresentados() {
+        List<ModuloAprendizaje> all = repository.findAll();
+        if (all.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, ModuloAprendizaje> latestExamByStudent = new LinkedHashMap<>();
+        for (ModuloAprendizaje row : all) {
+            if (!esRegistroExamenPresentado(row)) {
+                continue;
+            }
+            Long idEstudiante = row.getIdEstudiante();
+            if (idEstudiante == null || idEstudiante <= 0) {
+                continue;
+            }
+
+            ModuloAprendizaje actual = latestExamByStudent.get(idEstudiante);
+            if (actual == null || esMasReciente(row, actual)) {
+                latestExamByStudent.put(idEstudiante, row);
+            }
+        }
+
+        if (latestExamByStudent.isEmpty()) {
+            return List.of();
+        }
+
+        List<ResultadoExamenAdmin> out = new ArrayList<>();
+        final int totalPreguntas = 10;
+        for (Map.Entry<Long, ModuloAprendizaje> entry : latestExamByStudent.entrySet()) {
+            Long idEstudiante = entry.getKey();
+            ModuloAprendizaje row = entry.getValue();
+
+            Estudiante estudiante = estudianteRepository.findByIdAndVisibleTrue(idEstudiante).orElse(null);
+            if (estudiante == null) {
+                continue;
+            }
+
+            int puntaje = clampPct(resolveExamScore(row));
+            int aciertos = Math.round((puntaje * totalPreguntas) / 100.0f);
+            int intento = row.getIntentos() != null && row.getIntentos() > 0 ? row.getIntentos() : 1;
+            boolean aprobado = Boolean.TRUE.equals(row.getAprobado()) || puntaje >= 80;
+            LocalDate fecha = toLocalDateActividad(row);
+
+            out.add(new ResultadoExamenAdmin(
+                    row.getId(),
+                    idEstudiante,
+                    nombreCompleto(estudiante),
+                    trim(estudiante.getCategoria()),
+                    puntaje,
+                    aciertos,
+                    totalPreguntas,
+                    intento,
+                    aprobado ? "Aprobado" : "No aprobado",
+                    fecha
+            ));
+        }
+
+        out.sort(
+                Comparator
+                        .comparing(ResultadoExamenAdmin::fecha, Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(ResultadoExamenAdmin::puntaje, Comparator.reverseOrder())
+                        .thenComparing(ResultadoExamenAdmin::idRegistro, Comparator.nullsLast(Comparator.reverseOrder()))
+        );
+        return out;
+    }
+
     public void delete(Long id) {
         try {
             repository.deleteById(id);
@@ -430,6 +510,50 @@ public class ModuloAprendizajeService {
     private String estadoEstudiante(Estudiante e) {
         String estado = trim(e == null ? null : e.getEstado());
         return estado.isBlank() ? "Activo" : estado;
+    }
+
+    private boolean esRegistroExamenPresentado(ModuloAprendizaje row) {
+        if (row == null) return false;
+        String modulo = trim(row.getModulo()).toLowerCase();
+        boolean esExamen = modulo.contains("examen") || modulo.contains("simulacro") || modulo.contains("simulador");
+        if (!esExamen) return false;
+
+        if (row.getIntentos() != null && row.getIntentos() > 0) return true;
+        if (row.getPuntajeTeorico() != null) return true;
+        if (row.getPuntajeSimulador() != null) return true;
+        if (row.getPuntajeFinal() != null) return true;
+        if (row.getPorcentajeCompletadoModulo() != null) return true;
+        if (row.getPorcentajeAvance() != null) return true;
+        return Boolean.TRUE.equals(row.getAprobado());
+    }
+
+    private boolean esMasReciente(ModuloAprendizaje candidate, ModuloAprendizaje current) {
+        if (candidate == null) return false;
+        if (current == null) return true;
+        if (candidate.getActualizadoEn() != null && current.getActualizadoEn() != null) {
+            int cmp = candidate.getActualizadoEn().compareTo(current.getActualizadoEn());
+            if (cmp != 0) return cmp > 0;
+        } else if (candidate.getActualizadoEn() != null) {
+            return true;
+        } else if (current.getActualizadoEn() != null) {
+            return false;
+        }
+        return safeId(candidate) > safeId(current);
+    }
+
+    private int resolveExamScore(ModuloAprendizaje row) {
+        if (row == null) return 0;
+        Integer score = firstNonNull(
+                row.getPuntajeSimulador(),
+                firstNonNull(
+                        row.getPuntajeTeorico(),
+                        firstNonNull(
+                                row.getPuntajeFinal(),
+                                firstNonNull(row.getPorcentajeCompletadoModulo(), row.getPorcentajeAvance())
+                        )
+                )
+        );
+        return score == null ? 0 : score;
     }
 
     private void validarYNormalizar(ModuloAprendizaje row) {

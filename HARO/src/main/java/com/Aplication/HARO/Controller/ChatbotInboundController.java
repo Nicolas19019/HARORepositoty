@@ -38,6 +38,7 @@ import java.util.regex.Pattern;
 public class ChatbotInboundController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatbotInboundController.class);
+    private static final String ADVISOR_WHATSAPP_LINK = "https://wa.me/573202114876";
 
     private static final Duration SESSION_TTL = Duration.ofHours(6);
     private static final int MAX_SESSIONS = 5000;
@@ -223,6 +224,14 @@ public class ChatbotInboundController {
                 return ResponseEntity.ok(new BotResponse(actions));
             }
 
+            // Contactar asesor por comando textual en cualquier estado
+            if (isAdvisorCommand(text)) {
+                actions.add(textMsg(advisorContactText()));
+                actions.add(textMsg("Opciones: MENU"));
+                session.lastSeen = now;
+                return ResponseEntity.ok(new BotResponse(actions));
+            }
+
             // Cancelar
             if (isCancelCommand(text)) {
                 if (session.state == ChatState.MAIN_MENU) {
@@ -300,6 +309,10 @@ public class ChatbotInboundController {
                                 "Primero escribe tu número de documento (solo números) y te enviaremos un OTP a tu correo.\n\n" +
                                 "Ejemplo: 12345678"
                 ));
+                actions.add(textMsg("Opciones: MENU"));
+            }
+            case "5", "asesor", "contactar asesor", "contactar un asesor", "hablar con asesor" -> {
+                actions.add(textMsg(advisorContactText()));
                 actions.add(textMsg("Opciones: MENU"));
             }
             default -> actions.add(textMsg(mainMenuText()));
@@ -1240,22 +1253,58 @@ public class ChatbotInboundController {
     }
 
     private boolean isMenuCommand(String text) {
-        return "menu".equals(text) || "inicio".equals(text) || "start".equals(text);
+        String cmd = normalizeCommandText(text);
+        return "menu".equals(cmd) || "inicio".equals(cmd) || "start".equals(cmd);
     }
 
     private boolean isHelpCommand(String text) {
-        return "ayuda".equals(text) || "help".equals(text);
+        String cmd = normalizeCommandText(text);
+        return "ayuda".equals(cmd) || "help".equals(cmd);
+    }
+
+    private boolean isAdvisorCommand(String text) {
+        String cmd = normalizeCommandText(text);
+        return "asesor".equals(cmd)
+                || "contactar asesor".equals(cmd)
+                || "contactar un asesor".equals(cmd)
+                || "hablar con asesor".equals(cmd);
     }
 
     private boolean isCancelCommand(String text) {
-        return "cancelar".equals(text) || "salir".equals(text);
+        String cmd = normalizeCommandText(text);
+        return "cancelar".equals(cmd) || "salir".equals(cmd);
     }
 
     private boolean isEndCommand(String text) {
-        return "terminar".equals(text)
-                || "finalizar".equals(text)
-                || "fin".equals(text)
-                || "cerrar".equals(text);
+        String cmd = normalizeCommandText(text);
+        if (cmd.isBlank()) return false;
+
+        // Comandos exactos
+        if ("terminar".equals(cmd)
+                || "finalizar".equals(cmd)
+                || "fin".equals(cmd)
+                || "cerrar".equals(cmd)
+                || "adios".equals(cmd)
+                || "chao".equals(cmd)
+                || "bye".equals(cmd)) {
+            return true;
+        }
+
+        // Variantes comunes
+        return cmd.startsWith("terminar ")
+                || cmd.startsWith("finalizar ")
+                || cmd.startsWith("cerrar ")
+                || "salir del chat".equals(cmd)
+                || "cerrar conversacion".equals(cmd)
+                || "cerrar chat".equals(cmd);
+    }
+
+    private String normalizeCommandText(String text) {
+        return collapseSpaces(
+                trim(text)
+                        .toLowerCase(Locale.ROOT)
+                        .replaceAll("[^a-z0-9\\s]+", " ")
+        );
     }
 
     private boolean isConversationExpired(SessionData session, Instant now) {
@@ -1283,6 +1332,10 @@ public class ChatbotInboundController {
             displayName = "estudiante";
         }
         return "👋 Hola " + displayName + ", ¿qué quieres hacer hoy?";
+    }
+
+    private String advisorContactText() {
+        return "🤝 Para contactar un asesor, escribe aquí:\n" + ADVISOR_WHATSAPP_LINK;
     }
 
     // =========================
@@ -1373,7 +1426,8 @@ public class ChatbotInboundController {
                 "1️⃣ Nuestros servicios (cursos y recategorización)\n" +
                 "2️⃣ Iniciar matrícula\n" +
                 "3️⃣ Horarios de atención y sedes\n" +
-                "4️⃣ Soy un estudiante (consultas y reservas)\n\n" +
+                "4️⃣ Soy un estudiante (consultas y reservas)\n" +
+                "5️⃣ Contactar un asesor\n\n" +
                 "Comandos: MENU | AYUDA | CANCELAR | TERMINAR";
     }
 
@@ -1526,6 +1580,7 @@ public class ChatbotInboundController {
                 "Comandos:\n" +
                 "- MENU: volver al inicio\n" +
                 "- AYUDA: ver esta ayuda\n" +
+                "- ASESOR: contactar un asesor\n" +
                 "- CANCELAR: cancelar el proceso actual\n" +
                 "- TERMINAR: finalizar la conversación\n\n" +
                 "Inactividad:\n" +

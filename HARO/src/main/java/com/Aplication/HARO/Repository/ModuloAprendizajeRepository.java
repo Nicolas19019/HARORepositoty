@@ -23,11 +23,11 @@ public interface ModuloAprendizajeRepository extends JpaRepository<ModuloAprendi
     );
 
     @Query("""
-        SELECT DISTINCT m.idEstudiante
-        FROM ModuloAprendizaje m
-        WHERE m.idEstudiante IS NOT NULL
-        ORDER BY m.idEstudiante ASC
-    """)
+            SELECT DISTINCT m.idEstudiante
+            FROM ModuloAprendizaje m
+            WHERE m.idEstudiante IS NOT NULL
+            ORDER BY m.idEstudiante ASC
+            """)
     List<Long> findDistinctIdEstudianteOrderByIdEstudianteAsc();
 
     Optional<ModuloAprendizaje> findTopByIdEstudianteOrderByActualizadoEnDescIdDesc(Long idEstudiante);

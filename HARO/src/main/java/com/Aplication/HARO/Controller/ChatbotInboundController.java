@@ -159,8 +159,10 @@ public class ChatbotInboundController {
 
         // Subflujo estudiante + OTP
         StudentAction pendingStudentAction = StudentAction.NONE;
+        Long studentId;
         String studentDocumento;
         String studentEmail;
+        String studentNombre;
         String studentBookingDate;
 
         Instant lastSeen = Instant.now();
@@ -292,8 +294,12 @@ public class ChatbotInboundController {
             }
             case "4", "estudiante", "soy estudiante" -> {
                 clearStudentAccessData(session);
-                session.state = ChatState.STUDENT_MENU;
-                actions.add(textMsg(studentMenuText()));
+                session.state = ChatState.STUDENT_DOC_CAPTURE;
+                actions.add(textMsg(
+                        "🎓 ¡Perfecto! Vamos a validar tu acceso como estudiante.\n\n" +
+                                "Primero escribe tu número de documento (solo números) y te enviaremos un OTP a tu correo.\n\n" +
+                                "Ejemplo: 12345678"
+                ));
                 actions.add(textMsg("Opciones: MENU"));
             }
             default -> actions.add(textMsg(mainMenuText()));
@@ -676,58 +682,59 @@ public class ChatbotInboundController {
     }
 
     private void handleStudentMenu(String text, SessionData session, List<BotAction> actions) {
+        if (session.studentId == null) {
+            session.state = ChatState.STUDENT_DOC_CAPTURE;
+            actions.add(textMsg(
+                    "🔐 Para continuar como estudiante, primero valida tu identidad.\n\n" +
+                            "Escribe tu número de documento (solo números) y te enviaremos un OTP."
+            ));
+            actions.add(textMsg("Opciones: MENU"));
+            return;
+        }
+
         switch (text) {
             case "1", "calendario" -> {
-                session.pendingStudentAction = StudentAction.VIEW_CALENDAR;
-                session.state = ChatState.STUDENT_DOC_CAPTURE;
-                actions.add(textMsg(
-                        "📅 Vamos a consultar tu calendario.\n\n" +
-                                "Pasos a seguir:\n" +
-                                "1️⃣ Escribe tu número de documento (solo números).\n" +
-                                "2️⃣ Espera el código OTP en tu correo.\n" +
-                                "3️⃣ Escribe ese código aquí.\n\n" +
-                                "Ejemplo de documento: 12345678"
-                ));
+                List<Clase> agenda = procesoService.listAgendaByStudentId(session.studentId);
+                actions.add(textMsg(formatAgenda(session.studentDocumento, agenda)));
                 actions.add(textMsg("Opciones: MENU"));
             }
             case "2", "reservar" -> {
-                session.pendingStudentAction = StudentAction.BOOK_CLASS;
-                session.state = ChatState.STUDENT_DOC_CAPTURE;
+                session.pendingStudentAction = StudentAction.NONE;
+                session.studentBookingDate = null;
+                session.state = ChatState.STUDENT_BOOKING_SLOT;
                 actions.add(textMsg(
                         "🚘 Vamos a reservar tu práctica.\n\n" +
                                 "Pasos a seguir:\n" +
-                                "1️⃣ Escribe tu número de documento (solo números).\n" +
-                                "2️⃣ Revisa tu correo y copia el código OTP.\n" +
-                                "3️⃣ Escribe el OTP aquí.\n" +
-                                "4️⃣ Luego envía fecha y hora para agendar.\n\n" +
-                                "Ejemplo de documento: 12345678"
+                                "1️⃣ Escribe la fecha de la clase.\n" +
+                                "2️⃣ Puedes escribir: hoy, mañana o YYYY-MM-DD.\n" +
+                                "3️⃣ Después te mostraré opciones de hora para elegir.\n\n" +
+                                "Ejemplos de fecha: hoy | mañana | 2026-03-15"
                 ));
                 actions.add(textMsg("Opciones: MENU"));
             }
             case "3", "horario" -> {
-                session.pendingStudentAction = StudentAction.VIEW_SCHEDULE;
-                session.state = ChatState.STUDENT_DOC_CAPTURE;
-                actions.add(textMsg(
-                        "🗓️ Vamos a ver tu horario.\n\n" +
-                                "Pasos a seguir:\n" +
-                                "1️⃣ Escribe tu número de documento (solo números).\n" +
-                                "2️⃣ Revisa tu correo y toma el OTP.\n" +
-                                "3️⃣ Escríbelo aquí para validar tu acceso.\n\n" +
-                                "Ejemplo de documento: 12345678"
-                ));
+                List<Clase> agenda = procesoService.listAgendaByStudentId(session.studentId);
+                actions.add(textMsg(formatAgenda(session.studentDocumento, agenda)));
                 actions.add(textMsg("Opciones: MENU"));
             }
             case "4", "cancelar clase", "cancelar" -> {
-                session.pendingStudentAction = StudentAction.CANCEL_CLASS;
-                session.state = ChatState.STUDENT_DOC_CAPTURE;
+                List<Clase> agenda = procesoService.listUpcomingClassesForCancellationByStudentId(session.studentId);
+                if (agenda.isEmpty()) {
+                    actions.add(textMsg(
+                            "ℹ️ No tienes clases futuras para cancelar.\n\n" +
+                                    "Si agendas una nueva clase, podrás verla aquí."
+                    ));
+                    actions.add(textMsg("Opciones: MENU"));
+                    return;
+                }
+
+                session.pendingStudentAction = StudentAction.NONE;
+                session.state = ChatState.STUDENT_CANCEL_CLASS_PICK;
                 actions.add(textMsg(
-                        "🛑 Vamos a cancelar una clase práctica.\n\n" +
-                                "Pasos a seguir:\n" +
-                                "1️⃣ Escribe tu número de documento (solo números).\n" +
-                                "2️⃣ Revisa tu correo y copia el código OTP.\n" +
-                                "3️⃣ Te mostraré tus clases futuras para cancelar por ID.\n\n" +
-                                "Regla importante:\n" +
-                                "- Si cancelas con menos de 48 horas, se aplicará multa."
+                        "🛑 Estas son tus clases futuras:\n\n" +
+                                formatCancelableClasses(agenda) + "\n\n" +
+                                "Escribe el ID de la clase que deseas cancelar.\n" +
+                                "Regla: con menos de 48 horas se aplica multa."
                 ));
                 actions.add(textMsg("Opciones: MENU"));
             }
@@ -761,8 +768,10 @@ public class ChatbotInboundController {
             ChatbotProcesoService.StudentAccessData access = procesoService.requireStudentAccessData(doc);
             sendVerificationEmailAsync(access.email());
 
+            session.studentId = access.studentId();
             session.studentDocumento = access.documento();
             session.studentEmail = access.email();
+            session.studentNombre = access.nombreCompleto();
             session.state = ChatState.STUDENT_OTP_VERIFY;
 
             actions.add(textMsg(
@@ -810,55 +819,11 @@ public class ChatbotInboundController {
                 return;
             }
 
-            switch (session.pendingStudentAction) {
-                case VIEW_CALENDAR, VIEW_SCHEDULE -> {
-                    List<Clase> agenda = procesoService.listAgendaByDocumento(session.studentDocumento);
-                    actions.add(textMsg(formatAgenda(session.studentDocumento, agenda)));
-                    actions.add(textMsg("Opciones: MENU"));
-                    session.state = ChatState.STUDENT_MENU;
-                    session.pendingStudentAction = StudentAction.NONE;
-                }
-                case BOOK_CLASS -> {
-                    session.state = ChatState.STUDENT_BOOKING_SLOT;
-                    actions.add(textMsg(
-                            "✅ ¡Código verificado!\n\n" +
-                                    "Pasos a seguir:\n" +
-                                    "1️⃣ Escribe la fecha de la clase.\n" +
-                                    "2️⃣ Puedes escribir: hoy, mañana o YYYY-MM-DD.\n" +
-                                    "3️⃣ Después te mostraré opciones de hora para elegir.\n\n" +
-                                    "Ejemplos de fecha: hoy | mañana | 2026-03-15"
-                    ));
-                    actions.add(textMsg("Opciones: MENU"));
-                }
-                case CANCEL_CLASS -> {
-                    List<Clase> agenda = procesoService.listUpcomingClassesForCancellation(session.studentDocumento);
-                    if (agenda.isEmpty()) {
-                        session.state = ChatState.STUDENT_MENU;
-                        session.pendingStudentAction = StudentAction.NONE;
-                        actions.add(textMsg(
-                                "ℹ️ No tienes clases futuras para cancelar.\n\n" +
-                                        "Si agendas una nueva clase, podrás verla aquí."
-                        ));
-                        actions.add(textMsg("Opciones: MENU"));
-                        return;
-                    }
-
-                    session.state = ChatState.STUDENT_CANCEL_CLASS_PICK;
-                    actions.add(textMsg(
-                            "✅ ¡Código verificado!\n\n" +
-                                    "Estas son tus clases futuras:\n\n" +
-                                    formatCancelableClasses(agenda) + "\n\n" +
-                                    "Escribe el ID de la clase que deseas cancelar.\n" +
-                                    "Regla: con menos de 48 horas se aplica multa."
-                    ));
-                    actions.add(textMsg("Opciones: MENU"));
-                }
-                default -> {
-                    session.state = ChatState.STUDENT_MENU;
-                    actions.add(textMsg(studentMenuText()));
-                    actions.add(textMsg("Opciones: MENU"));
-                }
-            }
+            actions.add(textMsg(studentGreetingText(session.studentNombre)));
+            session.state = ChatState.STUDENT_MENU;
+            session.pendingStudentAction = StudentAction.NONE;
+            actions.add(textMsg(studentMenuText()));
+            actions.add(textMsg("Opciones: MENU"));
         } catch (Exception e) {
             actions.add(textMsg("⚠️ No pude validar OTP: " + e.getMessage()));
             actions.add(textMsg("Opciones: MENU"));
@@ -866,6 +831,15 @@ public class ChatbotInboundController {
     }
 
     private void handleStudentBookingSlot(String rawText, SessionData session, List<BotAction> actions) {
+        if (session.studentId == null) {
+            session.state = ChatState.STUDENT_DOC_CAPTURE;
+            actions.add(textMsg(
+                    "🔐 Tu sesión de estudiante expiró. Escribe tu documento para validar OTP nuevamente."
+            ));
+            actions.add(textMsg("Opciones: MENU"));
+            return;
+        }
+
         String trimmed = trim(rawText);
 
         if (session.studentBookingDate == null) {
@@ -910,7 +884,7 @@ public class ChatbotInboundController {
             session.studentBookingDate = fecha.toString();
             actions.add(textMsg(
                     "📅 Fecha registrada: " + fecha + "\n\n" +
-                            bookingSlotsAvailabilityText(session.studentDocumento, fecha)
+                            bookingSlotsAvailabilityText(session.studentId, fecha)
             ));
             actions.add(textMsg("Opciones: MENU"));
             return;
@@ -926,31 +900,35 @@ public class ChatbotInboundController {
                             "2️⃣ O escribe la hora en formato HH:mm.\n\n" +
                             "Ejemplos: 2 | 08:30"
             ));
-            actions.add(textMsg(bookingSlotsAvailabilityText(session.studentDocumento, fecha)));
+            actions.add(textMsg(bookingSlotsAvailabilityText(session.studentId, fecha)));
             actions.add(textMsg("Opciones: MENU"));
             return;
         }
 
         try {
-            if (!procesoService.isPracticalSlotAvailable(session.studentDocumento, fecha, hora)) {
-                actions.add(textMsg(
-                        "⛔ Ese horario está ocupado.\n\n" +
-                                bookingSlotsAvailabilityText(session.studentDocumento, fecha)
-                ));
-                actions.add(textMsg("Opciones: MENU"));
-                return;
-            }
             completeStudentBooking(fecha, hora, session, actions);
         } catch (Exception e) {
-            actions.add(textMsg("⚠️ No pude agendar la clase: " + e.getMessage()));
+            actions.add(textMsg(
+                    "⚠️ No pude agendar la clase: " + e.getMessage() + "\n\n" +
+                            bookingSlotsAvailabilityText(session.studentId, fecha)
+            ));
             actions.add(textMsg("Opciones: MENU"));
         }
     }
 
     private void handleStudentCancelClassPick(String text, SessionData session, List<BotAction> actions) {
+        if (session.studentId == null) {
+            session.state = ChatState.STUDENT_DOC_CAPTURE;
+            actions.add(textMsg(
+                    "🔐 Tu sesión de estudiante expiró. Escribe tu documento para validar OTP nuevamente."
+            ));
+            actions.add(textMsg("Opciones: MENU"));
+            return;
+        }
+
         String input = trim(text);
         if (!input.matches("^\\d+$")) {
-            List<Clase> agenda = procesoService.listUpcomingClassesForCancellation(session.studentDocumento);
+            List<Clase> agenda = procesoService.listUpcomingClassesForCancellationByStudentId(session.studentId);
             if (agenda.isEmpty()) {
                 session.state = ChatState.STUDENT_MENU;
                 session.pendingStudentAction = StudentAction.NONE;
@@ -972,7 +950,7 @@ public class ChatbotInboundController {
         try {
             Long idClase = Long.parseLong(input);
             ChatbotProcesoService.CancellationResult result =
-                    procesoService.cancelPracticalClass(session.studentDocumento, idClase);
+                    procesoService.cancelPracticalClassByStudentId(session.studentId, idClase);
 
             session.state = ChatState.STUDENT_MENU;
             session.pendingStudentAction = StudentAction.NONE;
@@ -1093,9 +1071,10 @@ public class ChatbotInboundController {
         }
     }
 
-    private String bookingSlotsAvailabilityText(String documento, LocalDate fecha) {
+    private String bookingSlotsAvailabilityText(Long studentId, LocalDate fecha) {
         try {
-            List<ChatbotProcesoService.SlotAvailability> slots = procesoService.listPracticalSlotAvailability(documento, fecha);
+            List<ChatbotProcesoService.SlotAvailability> slots =
+                    procesoService.listPracticalSlotAvailabilityByStudentId(studentId, fecha);
             if (slots.isEmpty()) {
                 return "No hay horarios disponibles para esa fecha.\nEscribe otra fecha para consultar.";
             }
@@ -1159,7 +1138,8 @@ public class ChatbotInboundController {
                                         LocalTime hora,
                                         SessionData session,
                                         List<BotAction> actions) {
-        ChatbotProcesoService.BookingResult booking = procesoService.bookPracticalClass(session.studentDocumento, fecha, hora);
+        ChatbotProcesoService.BookingResult booking =
+                procesoService.bookPracticalClassByStudentId(session.studentId, fecha, hora);
         Clase clase = booking.clase();
         String calendarLink = booking.reunionCalendario() == null ? "" : trim(booking.reunionCalendario().htmlLink());
         String meetLink = booking.reunionCalendario() == null ? "" : trim(booking.reunionCalendario().meetLink());
@@ -1252,8 +1232,10 @@ public class ChatbotInboundController {
 
     private void clearStudentAccessData(SessionData session) {
         session.pendingStudentAction = StudentAction.NONE;
+        session.studentId = null;
         session.studentDocumento = null;
         session.studentEmail = null;
+        session.studentNombre = null;
         session.studentBookingDate = null;
     }
 
@@ -1293,6 +1275,14 @@ public class ChatbotInboundController {
         return "👋 Conversación finalizada.\n\n" +
                 "Gracias por escribir a CEA HARO.\n" +
                 "Si deseas iniciar de nuevo, escribe MENU.";
+    }
+
+    private String studentGreetingText(String studentName) {
+        String displayName = collapseSpaces(trim(studentName));
+        if (displayName.isBlank()) {
+            displayName = "estudiante";
+        }
+        return "👋 Hola " + displayName + ", ¿qué quieres hacer hoy?";
     }
 
     // =========================
@@ -1499,23 +1489,35 @@ public class ChatbotInboundController {
     }
 
     private String infoText() {
-        return "Horarios de Atención\n" +
-                "Administrativo de Lunes a Sábado: 8:00 AM - 6:00 PM\n\n" +
-                "Clases teóricas y prácticas: 6:00 AM - 10:00 PM\n\n" +
-                "Según disponibilidad\n\n" +
-                "¡Nos adaptamos a tu tiempo!\n\n" +
-                "Sedes disponibles:\n" +
-                "1) Kennedy – Av. 1 de Mayo #68D-23 Piso 2\n" +
-                "2) CC El Edén – Local L2-094A";
+        return "📌 *Horarios de Atención*\n\n" +
+                "*🗂️ Administrativo*\n" +
+                "Lunes a Sábado\n" +
+                "🕗 8:00 AM - 6:00 PM\n\n" +
+
+                "*📚 Clases Teóricas*\n" +
+                "🗓️ Lunes y Viernes: 6:00 AM - 2:00 PM\n" +
+                "🗓️ Martes, Miércoles y Jueves: 2:00 PM - 10:00 PM\n" +
+                "⏳ Puedes ver mínimo 2 y máximo 8 horas al día\n\n" +
+
+                "*🚗 Clases Prácticas*\n" +
+                "🗓️ Domingo a Domingo\n" +
+                "🕕 6:00 AM - 10:00 PM\n" +
+                "(Sujeto a disponibilidad)\n\n" +
+
+                "✨ ¡Nos adaptamos a tu tiempo!\n\n" +
+
+                "*📍 Sedes disponibles:*\n" +
+                "1️⃣ Kennedy – Av. 1 de Mayo #68D-23 Piso 2\n" +
+                "2️⃣ CC El Edén – Local L2-094A";
     }
 
     private String studentMenuText() {
-        return "Soy estudiante\n\n" +
-                "1) Ver calendario de prácticas\n" +
-                "2) Reservar clase práctica\n" +
-                "3) Ver mi horario\n" +
-                "4) Cancelar clase práctica\n" +
-                "5) Volver";
+        return "🎓✨ Soy estudiante CEA HARO\n\n" +
+                "1️⃣ Consultar calendario de prácticas\n" +
+                "2️⃣ Agendar clase práctica\n" +
+                "3️⃣ Consultar mi horario\n" +
+                "4️⃣ Cancelar clase práctica\n" +
+                "5️⃣ ⬅️ Volver al menú";
     }
 
     private String helpText(ChatState state) {

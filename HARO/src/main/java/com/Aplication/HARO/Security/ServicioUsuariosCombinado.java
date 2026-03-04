@@ -39,19 +39,22 @@ public ServicioUsuariosCombinado(EstudianteRepository estRepo,
   @Override
   @Transactional
   public DetallesUsuarioAplicacion loadUserByUsername(String login) throws UsernameNotFoundException {
+    String raw = login == null ? "" : login.trim();
+
     // ADMIN
-    Optional<Administrador> admin = adminRepo.findByUsuarioIgnoreCase(login);
-    if (admin.isEmpty()) admin = adminRepo.findByCorreoIgnoreCase(login);
+    Optional<Administrador> admin = adminRepo.findByCorreoNormalizado(raw);
+    if (admin.isEmpty()) admin = adminRepo.findByUsuarioIgnoreCase(raw);
+    if (admin.isEmpty()) admin = adminRepo.findByCorreoIgnoreCase(raw);
     if (admin.isPresent()) {
       var a = admin.get();
-      return new DetallesUsuarioAplicacion(a.getId(), login, a.getContrasenaHash(), "ADMIN", a.getActivo());
+      return new DetallesUsuarioAplicacion(a.getId(), raw, a.getContrasenaHash(), "ADMIN", a.getActivo());
     }
 
     // PROFESOR
-    Optional<Profesor> prof = profRepo.findByUsuarioIgnoreCase(login);
-    if (prof.isEmpty()) prof = profRepo.findByEmailIgnoreCase(login);
-    if (prof.isEmpty()) prof = profRepo.findByCorreoIgnoreCase(login);
-    if (prof.isEmpty()) prof = profRepo.findByCedula(login);
+    Optional<Profesor> prof = profRepo.findByUsuarioIgnoreCase(raw);
+    if (prof.isEmpty()) prof = profRepo.findByEmailIgnoreCase(raw);
+    if (prof.isEmpty()) prof = profRepo.findByCorreoIgnoreCase(raw);
+    if (prof.isEmpty()) prof = profRepo.findByCedula(raw);
     if (prof.isPresent()) {
       var p = prof.get();
       String hash = p.getContrasena();
@@ -62,13 +65,14 @@ public ServicioUsuariosCombinado(EstudianteRepository estRepo,
       }
       if (hash == null) hash = encoder.encode("cambiar123*");
       boolean activo = !Boolean.FALSE.equals(p.getVisible());
-      return new DetallesUsuarioAplicacion(p.getId(), login, hash, "PROFESOR", activo);
+      return new DetallesUsuarioAplicacion(p.getId(), raw, hash, "PROFESOR", activo);
     }
 
     // ESTUDIANTE
-    Optional<Estudiante> est = estRepo.findByUsuarioIgnoreCase(login);
-    if (est.isEmpty()) est = estRepo.findByEmailIgnoreCase(login);
-    if (est.isEmpty()) est = estRepo.findByNumeroDocumento(login);
+    Optional<Estudiante> est = estRepo.findByEmailNormalizado(raw);
+    if (est.isEmpty()) est = estRepo.findByUsuarioIgnoreCase(raw);
+    if (est.isEmpty()) est = estRepo.findByEmailIgnoreCase(raw);
+    if (est.isEmpty()) est = estRepo.findByNumeroDocumento(raw);
     if (est.isPresent()) {
       var e = est.get();
       String hash = e.getContrasena();
@@ -79,9 +83,9 @@ public ServicioUsuariosCombinado(EstudianteRepository estRepo,
       }
       if (hash == null) hash = encoder.encode("cambiar123*");
       boolean activo = !Boolean.FALSE.equals(e.getVisible()) && !"INACTIVO".equalsIgnoreCase(e.getEstado());
-      return new DetallesUsuarioAplicacion(e.getId(), login, hash, "ESTUDIANTE", activo);
+      return new DetallesUsuarioAplicacion(e.getId(), raw, hash, "ESTUDIANTE", activo);
     }
 
-    throw new UsernameNotFoundException("Usuario no encontrado: " + login);
+    throw new UsernameNotFoundException("Usuario no encontrado: " + raw);
   }
 }

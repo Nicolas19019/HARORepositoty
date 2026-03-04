@@ -27,12 +27,13 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 @Service
 @Transactional
@@ -80,7 +81,11 @@ public class ChatbotProcesoService {
     @Value("${chatbot.pricing.a2b1c1:0}")
     private BigDecimal pricingA2B1C1;
 
-    public record StudentAccessData(String documento, String email, String emailMasked) {}
+    public record StudentAccessData(String documento,
+                                    String email,
+                                    String emailMasked,
+                                    String nombreCompleto,
+                                    Long studentId) {}
     public record BookingResult(Clase clase, GoogleCalendarService.ReunionCreada reunionCalendario) {}
     public record SlotAvailability(int opcion, String hora, boolean disponible) {}
     public record CancellationResult(Clase clase,
@@ -285,36 +290,49 @@ public class ChatbotProcesoService {
             throw new IllegalStateException("El estudiante no tiene correo registrado para verificación OTP");
         }
 
+        String nombreCompleto = buildStudentDisplayName(estudiante);
+
         return new StudentAccessData(
                 estudiante.getNumeroDocumento(),
                 email,
-                maskEmail(email)
+                maskEmail(email),
+                nombreCompleto,
+                estudiante.getId()
         );
     }
 
     @Transactional(readOnly = true)
     public List<Clase> listAgendaByDocumento(String documento) {
-        Estudiante estudiante = estudianteRepository.findByNumeroDocumento(normalizeDoc(documento))
-                .filter(e -> !Boolean.FALSE.equals(e.getVisible()))
-                .orElseThrow(() -> new NoSuchElementException("No existe un estudiante activo con ese documento"));
-        return claseRepository.findAgendaByIdEstudiante(estudiante.getId());
+        return listAgendaByStudentId(resolveStudentIdByDocumento(documento));
+    }
+
+    @Transactional(readOnly = true)
+    public List<Clase> listAgendaByStudentId(Long studentId) {
+        return claseRepository.findAgendaByIdEstudiante(requireStudentId(studentId));
     }
 
     @Transactional(readOnly = true)
     public List<Clase> listUpcomingClassesForCancellation(String documento) {
-        Estudiante estudiante = estudianteRepository.findByNumeroDocumento(normalizeDoc(documento))
-                .filter(e -> !Boolean.FALSE.equals(e.getVisible()))
-                .orElseThrow(() -> new NoSuchElementException("No existe un estudiante activo con ese documento"));
+        return listUpcomingClassesForCancellationByStudentId(resolveStudentIdByDocumento(documento));
+    }
+
+    @Transactional(readOnly = true)
+    public List<Clase> listUpcomingClassesForCancellationByStudentId(Long studentId) {
+        Long id = requireStudentId(studentId);
         ZoneId zone = resolveBookingZone();
         ZonedDateTime now = ZonedDateTime.now(zone);
 
-        return claseRepository.findAgendaByIdEstudiante(estudiante.getId()).stream()
+        return claseRepository.findAgendaByIdEstudiante(id).stream()
                 .filter(c -> !isCanceledState(c.getEstado()))
                 .filter(c -> ZonedDateTime.of(c.getFecha(), c.getHoraInicio(), zone).isAfter(now))
                 .toList();
     }
 
     public BookingResult bookPracticalClass(String documento, LocalDate fecha, LocalTime horaInicio) {
+        return bookPracticalClassByStudentId(resolveStudentIdByDocumento(documento), fecha, horaInicio);
+    }
+
+    public BookingResult bookPracticalClassByStudentId(Long studentId, LocalDate fecha, LocalTime horaInicio) {
         if (fecha == null || horaInicio == null) {
             throw new IllegalArgumentException("Fecha y hora son requeridas");
         }
@@ -322,30 +340,27 @@ public class ChatbotProcesoService {
             throw new IllegalArgumentException("La fecha debe ser hoy o futura");
         }
 
-        Estudiante estudiante = estudianteRepository.findByNumeroDocumento(normalizeDoc(documento))
+        Long id = requireStudentId(studentId);
+        Estudiante estudiante = estudianteRepository.findById(id)
                 .filter(e -> !Boolean.FALSE.equals(e.getVisible()))
-                .orElseThrow(() -> new NoSuchElementException("No existe un estudiante activo con ese documento"));
+                .orElseThrow(() -> new NoSuchElementException("No existe un estudiante activo con ese ID"));
 
-        validatePracticalClassEligibility(estudiante);
+        validatePracticalClassEligibility(id);
 
         LocalTime horaFin = horaInicio.plusMinutes(Math.max(30, bookingDurationMinutes));
 
-        if (claseRepository.existsStudentOverlap(estudiante.getId(), fecha, horaInicio, horaFin)) {
+        if (claseRepository.existsStudentOverlap(id, fecha, horaInicio, horaFin)) {
             throw new IllegalStateException("El estudiante ya tiene una clase en ese horario");
         }
 
-        if (!hasAvailableProfesor(fecha, horaInicio, horaFin) || !hasAvailableVehiculo(fecha, horaInicio, horaFin)) {
-            throw new IllegalStateException("Ese horario está ocupado. Elige otra hora.");
-        }
-
         Profesor profesor = pickAvailableProfesor(fecha, horaInicio, horaFin)
-                .orElseThrow(() -> new IllegalStateException("No hay profesor disponible para ese horario"));
+                .orElseThrow(() -> new IllegalStateException("Ese horario está ocupado. Elige otra hora."));
 
         Vehiculo vehiculo = pickAvailableVehiculo(fecha, horaInicio, horaFin)
-                .orElseThrow(() -> new IllegalStateException("No hay vehículo disponible para agendar la práctica"));
+                .orElseThrow(() -> new IllegalStateException("Ese horario está ocupado. Elige otra hora."));
 
         Clase clase = new Clase();
-        clase.setId_estudiante(estudiante.getId());
+        clase.setId_estudiante(id);
         clase.setId_profesor(profesor.getId());
         clase.setPlaca_vehiculo(vehiculo.getPlaca());
         clase.setFecha(fecha);
@@ -360,18 +375,19 @@ public class ChatbotProcesoService {
     }
 
     public CancellationResult cancelPracticalClass(String documento, Long idClase) {
+        return cancelPracticalClassByStudentId(resolveStudentIdByDocumento(documento), idClase);
+    }
+
+    public CancellationResult cancelPracticalClassByStudentId(Long studentId, Long idClase) {
         if (idClase == null || idClase <= 0) {
             throw new IllegalArgumentException("ID de clase invalido");
         }
 
-        Estudiante estudiante = estudianteRepository.findByNumeroDocumento(normalizeDoc(documento))
-                .filter(e -> !Boolean.FALSE.equals(e.getVisible()))
-                .orElseThrow(() -> new NoSuchElementException("No existe un estudiante activo con ese documento"));
-
+        Long id = requireStudentId(studentId);
         Clase clase = claseRepository.findById(idClase)
                 .orElseThrow(() -> new NoSuchElementException("No existe una clase con ID " + idClase));
 
-        if (!Objects.equals(clase.getId_estudiante(), estudiante.getId())) {
+        if (!Objects.equals(clase.getId_estudiante(), id)) {
             throw new IllegalStateException("Esa clase no pertenece al estudiante autenticado");
         }
 
@@ -394,9 +410,9 @@ public class ChatbotProcesoService {
         BigDecimal multasAcumuladas = BigDecimal.ZERO;
 
         if (aplicaMulta) {
-            EstadoCuenta estadoCuenta = estadoCuentaRepository.findByIdEstudiante(estudiante.getId())
+            EstadoCuenta estadoCuenta = estadoCuentaRepository.findByIdEstudiante(id)
                     .orElseGet(EstadoCuenta::new);
-            estadoCuenta.setIdEstudiante(estudiante.getId());
+            estadoCuenta.setIdEstudiante(id);
             if (estadoCuenta.getMontoTotal() == null) estadoCuenta.setMontoTotal(BigDecimal.ZERO);
             if (estadoCuenta.getMontoPagado() == null) estadoCuenta.setMontoPagado(BigDecimal.ZERO);
             if (estadoCuenta.getMultas() == null) estadoCuenta.setMultas(BigDecimal.ZERO);
@@ -414,6 +430,11 @@ public class ChatbotProcesoService {
 
     @Transactional(readOnly = true)
     public List<SlotAvailability> listPracticalSlotAvailability(String documento, LocalDate fecha) {
+        return listPracticalSlotAvailabilityByStudentId(resolveStudentIdByDocumento(documento), fecha);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SlotAvailability> listPracticalSlotAvailabilityByStudentId(Long studentId, LocalDate fecha) {
         if (fecha == null) {
             throw new IllegalArgumentException("Fecha requerida para consultar disponibilidad");
         }
@@ -421,17 +442,15 @@ public class ChatbotProcesoService {
             return List.of();
         }
 
-        Estudiante estudiante = estudianteRepository.findByNumeroDocumento(normalizeDoc(documento))
-                .filter(e -> !Boolean.FALSE.equals(e.getVisible()))
-                .orElseThrow(() -> new NoSuchElementException("No existe un estudiante activo con ese documento"));
-        validatePracticalClassEligibility(estudiante);
+        Long id = requireStudentId(studentId);
+        validatePracticalClassEligibility(id);
 
         List<LocalTime> slots = defaultPracticalSlots();
         List<SlotAvailability> out = new ArrayList<>();
         int idx = 1;
         for (LocalTime slot : slots) {
             LocalTime fin = slot.plusMinutes(Math.max(30, bookingDurationMinutes));
-            boolean disponible = isPracticalSlotAvailable(estudiante, fecha, slot, fin);
+            boolean disponible = isPracticalSlotAvailable(id, fecha, slot, fin);
             out.add(new SlotAvailability(idx, formatHour(slot), disponible));
             idx++;
         }
@@ -440,37 +459,36 @@ public class ChatbotProcesoService {
 
     @Transactional(readOnly = true)
     public boolean isPracticalSlotAvailable(String documento, LocalDate fecha, LocalTime horaInicio) {
+        return isPracticalSlotAvailableByStudentId(resolveStudentIdByDocumento(documento), fecha, horaInicio);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isPracticalSlotAvailableByStudentId(Long studentId, LocalDate fecha, LocalTime horaInicio) {
         if (fecha == null || horaInicio == null) return false;
         if (fecha.isBefore(LocalDate.now())) return false;
 
-        Estudiante estudiante = estudianteRepository.findByNumeroDocumento(normalizeDoc(documento))
-                .filter(e -> !Boolean.FALSE.equals(e.getVisible()))
-                .orElseThrow(() -> new NoSuchElementException("No existe un estudiante activo con ese documento"));
-        validatePracticalClassEligibility(estudiante);
+        Long id = requireStudentId(studentId);
+        validatePracticalClassEligibility(id);
 
         LocalTime horaFin = horaInicio.plusMinutes(Math.max(30, bookingDurationMinutes));
-        return isPracticalSlotAvailable(estudiante, fecha, horaInicio, horaFin);
+        return isPracticalSlotAvailable(id, fecha, horaInicio, horaFin);
     }
 
-    private boolean isPracticalSlotAvailable(Estudiante estudiante,
+    private boolean isPracticalSlotAvailable(Long studentId,
                                              LocalDate fecha,
                                              LocalTime horaInicio,
                                              LocalTime horaFin) {
-        if (claseRepository.existsStudentOverlap(estudiante.getId(), fecha, horaInicio, horaFin)) {
+        if (claseRepository.existsStudentOverlap(studentId, fecha, horaInicio, horaFin)) {
             return false;
         }
-        if (!hasAvailableProfesor(fecha, horaInicio, horaFin)) {
+        if (pickAvailableProfesor(fecha, horaInicio, horaFin).isEmpty()) {
             return false;
         }
-        return hasAvailableVehiculo(fecha, horaInicio, horaFin);
+        return pickAvailableVehiculo(fecha, horaInicio, horaFin).isPresent();
     }
 
-    private void validatePracticalClassEligibility(Estudiante estudiante) {
-        if (!Boolean.TRUE.equals(estudiante.getAproboExamenTeorico())) {
-            throw new IllegalStateException("Debes aprobar el examen teorico para agendar clases practicas");
-        }
-
-        EstadoCuenta estadoCuenta = estadoCuentaRepository.findByIdEstudiante(estudiante.getId())
+    private void validatePracticalClassEligibility(Long studentId) {
+        EstadoCuenta estadoCuenta = estadoCuentaRepository.findByIdEstudiante(requireStudentId(studentId))
                 .orElseThrow(() -> new IllegalStateException(
                         "No encontramos estado de cuenta del estudiante. Para agendar, el estado debe estar en Pagado."
                 ));
@@ -551,34 +569,35 @@ public class ChatbotProcesoService {
 
     private Optional<Profesor> pickAvailableProfesor(LocalDate fecha, LocalTime horaInicio, LocalTime horaFin) {
         List<Profesor> activos = profesorRepository.findByVisibleTrueOrderByIdAsc();
-        return activos.stream()
-                .filter(p -> !claseRepository.existsProfesorOverlap(p.getId(), fecha, horaInicio, horaFin))
-                .min(Comparator.comparing(Profesor::getId));
+        if (activos.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Set<Long> ocupados = new HashSet<>(claseRepository.findBusyProfesorIds(fecha, horaInicio, horaFin));
+        for (Profesor profesor : activos) {
+            if (!ocupados.contains(profesor.getId())) {
+                return Optional.of(profesor);
+            }
+        }
+        return Optional.empty();
     }
 
     private Optional<Vehiculo> pickAvailableVehiculo(LocalDate fecha, LocalTime horaInicio, LocalTime horaFin) {
+        Set<String> ocupados = new HashSet<>(claseRepository.findBusyVehiculoPlacas(fecha, horaInicio, horaFin));
         List<Vehiculo> disponibles = vehiculoRepository.findByVisibleTrueAndEstadoIgnoreCaseOrderByPlacaAsc("Disponible");
         for (Vehiculo v : disponibles) {
-            if (!claseRepository.existsVehiculoOverlap(v.getPlaca(), fecha, horaInicio, horaFin)) {
+            if (!ocupados.contains(v.getPlaca())) {
                 return Optional.of(v);
             }
         }
 
         List<Vehiculo> activos = vehiculoRepository.findByVisibleTrueOrderByPlacaAsc();
         for (Vehiculo v : activos) {
-            if (!claseRepository.existsVehiculoOverlap(v.getPlaca(), fecha, horaInicio, horaFin)) {
+            if (!ocupados.contains(v.getPlaca())) {
                 return Optional.of(v);
             }
         }
         return Optional.empty();
-    }
-
-    private boolean hasAvailableProfesor(LocalDate fecha, LocalTime horaInicio, LocalTime horaFin) {
-        return pickAvailableProfesor(fecha, horaInicio, horaFin).isPresent();
-    }
-
-    private boolean hasAvailableVehiculo(LocalDate fecha, LocalTime horaInicio, LocalTime horaFin) {
-        return pickAvailableVehiculo(fecha, horaInicio, horaFin).isPresent();
     }
 
     private ZoneId resolveBookingZone() {
@@ -766,6 +785,16 @@ public class ChatbotProcesoService {
         return v == null ? "" : v.trim();
     }
 
+    private String buildStudentDisplayName(Estudiante estudiante) {
+        if (estudiante == null) return "estudiante";
+
+        String fullName = collapseSpaces(trim(estudiante.getNombre()) + " " + trim(estudiante.getApellido()));
+        if (!fullName.isBlank()) return fullName;
+
+        String user = trim(estudiante.getUsuario());
+        return user.isBlank() ? "estudiante" : user;
+    }
+
     private String maskEmail(String email) {
         String e = trim(email).toLowerCase(Locale.ROOT);
         int at = e.indexOf('@');
@@ -773,5 +802,19 @@ public class ChatbotProcesoService {
         String user = e.substring(0, at);
         String domain = e.substring(at);
         return user.charAt(0) + "***" + domain;
+    }
+
+    private Long resolveStudentIdByDocumento(String documento) {
+        return estudianteRepository.findByNumeroDocumento(normalizeDoc(documento))
+                .filter(e -> !Boolean.FALSE.equals(e.getVisible()))
+                .map(Estudiante::getId)
+                .orElseThrow(() -> new NoSuchElementException("No existe un estudiante activo con ese documento"));
+    }
+
+    private Long requireStudentId(Long studentId) {
+        if (studentId == null || studentId <= 0) {
+            throw new IllegalArgumentException("ID de estudiante invalido");
+        }
+        return studentId;
     }
 }

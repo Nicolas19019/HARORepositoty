@@ -26,6 +26,7 @@ public interface ProfesorRepository extends JpaRepository<Profesor, Long> {
   Optional<Profesor> findByEmailIgnoreCase(String e);
   Optional<Profesor> findByCorreoIgnoreCase(String c);
   Optional<Profesor> findByCedula(String d);
+  Optional<Profesor> findByIdAndVisibleTrue(Long id);
   Optional<Profesor> findFirstByVisibleTrueOrderByIdAsc();
   List<Profesor> findByVisibleTrueOrderByIdAsc();
 }

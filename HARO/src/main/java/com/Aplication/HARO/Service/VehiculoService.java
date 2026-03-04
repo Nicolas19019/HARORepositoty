@@ -4,24 +4,30 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.Aplication.HARO.Model.Vehiculo;
 import com.Aplication.HARO.Repository.VehiculoRepository;
 
 @Service
+@Transactional
 public class VehiculoService {
 
-    @Autowired
-    private VehiculoRepository repository;
+    private final VehiculoRepository repository;
 
-    public List<Vehiculo> getAllVehiculos() {
-        return repository.findAll().stream().filter(this::esVisible).toList();
+    public VehiculoService(VehiculoRepository repository) {
+        this.repository = repository;
     }
 
+    @Transactional(readOnly = true)
+    public List<Vehiculo> getAllVehiculos() {
+        return repository.findByVisibleTrueOrderByPlacaAsc();
+    }
+
+    @Transactional(readOnly = true)
     public Optional<Vehiculo> getVehiculoByPlaca(String placa) {
-        return repository.findById(placa).filter(this::esVisible);
+        return repository.findByPlacaAndVisibleTrue(placa);
     }
 
     public Vehiculo createVehiculo(Vehiculo v) {
@@ -49,9 +55,5 @@ public class VehiculoService {
                 .orElseThrow(() -> new NoSuchElementException("Vehiculo no encontrado: " + placa));
         db.setVisible(false);
         repository.save(db);
-    }
-
-    private boolean esVisible(Vehiculo v) {
-        return v != null && !Boolean.FALSE.equals(v.getVisible());
     }
 }

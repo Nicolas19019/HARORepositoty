@@ -67,4 +67,28 @@ public interface ClaseRepository extends JpaRepository<Clase, Long> {
                                   @Param("fecha") LocalDate fecha,
                                   @Param("horaInicio") LocalTime horaInicio,
                                   @Param("horaFin") LocalTime horaFin);
+
+    @Query("""
+            SELECT DISTINCT c.id_profesor
+            FROM Clase c
+            WHERE c.id_profesor IS NOT NULL
+              AND c.fecha = :fecha
+              AND c.horaInicio < :horaFin
+              AND c.horaFin > :horaInicio
+            """)
+    List<Long> findBusyProfesorIds(@Param("fecha") LocalDate fecha,
+                                   @Param("horaInicio") LocalTime horaInicio,
+                                   @Param("horaFin") LocalTime horaFin);
+
+    @Query("""
+            SELECT DISTINCT c.placa_vehiculo
+            FROM Clase c
+            WHERE c.placa_vehiculo IS NOT NULL
+              AND c.fecha = :fecha
+              AND c.horaInicio < :horaFin
+              AND c.horaFin > :horaInicio
+            """)
+    List<String> findBusyVehiculoPlacas(@Param("fecha") LocalDate fecha,
+                                        @Param("horaInicio") LocalTime horaInicio,
+                                        @Param("horaFin") LocalTime horaFin);
 }

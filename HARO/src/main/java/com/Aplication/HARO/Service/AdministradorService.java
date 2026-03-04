@@ -4,6 +4,7 @@ package com.Aplication.HARO.Service;
 import com.Aplication.HARO.Model.Administrador;
 import com.Aplication.HARO.Repository.AdministradorRepository;
 
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -81,7 +82,13 @@ this.encoder = encoder;
 
   public void activar(Long id) { var a = obtenerPorId(id); a.setActivo(true); repo.save(a); }
   public void desactivar(Long id) { var a = obtenerPorId(id); a.setActivo(false); repo.save(a); }
-  public void eliminar(Long id) { if (!repo.existsById(id)) throw new IllegalArgumentException("No existe"); repo.deleteById(id); }
+  public void eliminar(Long id) {
+    try {
+      repo.deleteById(id);
+    } catch (EmptyResultDataAccessException ex) {
+      throw new IllegalArgumentException("No existe");
+    }
+  }
 
   private boolean esBcrypt(String s) { return s != null && (s.startsWith("$2a$") || s.startsWith("$2b$") || s.startsWith("$2y$")); }
 }

@@ -5,6 +5,7 @@ import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -94,9 +95,10 @@ public class EstadoCuentaService {
 
     @Transactional
     public void deleteEstadoCuenta(Long id) {
-        if (!repository.existsById(id)) {
+        try {
+            repository.deleteById(id);
+        } catch (EmptyResultDataAccessException ex) {
             throw new NoSuchElementException("Estado de cuenta no encontrado: " + id);
         }
-        repository.deleteById(id);
     }
 }

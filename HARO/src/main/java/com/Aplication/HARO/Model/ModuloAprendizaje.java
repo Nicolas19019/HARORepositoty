@@ -69,6 +69,9 @@ public class ModuloAprendizaje {
     @Column(name = "aprobado", nullable = false)
     private Boolean aprobado = false;
 
+    @Column(name = "favorito", nullable = false)
+    private Boolean favorito = false;
+
     @Column(name = "observaciones", length = 1000)
     private String observaciones;
 
@@ -88,6 +91,7 @@ public class ModuloAprendizaje {
         if (actualizadoEn == null) actualizadoEn = now;
         if (intentos == null) intentos = 0;
         if (aprobado == null) aprobado = false;
+        if (favorito == null) favorito = false;
     }
 
     @PreUpdate
@@ -229,6 +233,14 @@ public class ModuloAprendizaje {
 
     public void setAprobado(Boolean aprobado) {
         this.aprobado = aprobado;
+    }
+
+    public Boolean getFavorito() {
+        return favorito;
+    }
+
+    public void setFavorito(Boolean favorito) {
+        this.favorito = favorito;
     }
 
     public String getObservaciones() {

@@ -13,6 +13,7 @@ import java.util.Optional;
 public interface VehiculoRepository extends JpaRepository<Vehiculo, String> { // PK = placa
     
     List<Vehiculo> findByEstado(String estado);
+    Optional<Vehiculo> findByPlacaAndVisibleTrue(String placa);
     Optional<Vehiculo> findFirstByVisibleTrueAndEstadoIgnoreCaseOrderByPlacaAsc(String estado);
     Optional<Vehiculo> findFirstByVisibleTrueOrderByPlacaAsc();
     List<Vehiculo> findByVisibleTrueAndEstadoIgnoreCaseOrderByPlacaAsc(String estado);

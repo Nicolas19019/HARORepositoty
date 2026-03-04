@@ -49,6 +49,26 @@ public class EstudianteController {
 		return service.updateEstudiante(id, e);
 	}
 
+	@PatchMapping("/{id}/foto-perfil")
+	public Estudiante updateFotoPerfil(@PathVariable long id, @RequestBody Map<String, String> body) {
+		if (body == null || !body.containsKey("fotoPerfil")) {
+			throw new IllegalArgumentException("Debes enviar fotoPerfil");
+		}
+		Estudiante patch = new Estudiante();
+		patch.setFotoPerfil(body.get("fotoPerfil"));
+		return service.updateEstudiante(id, patch);
+	}
+
+	@PatchMapping("/{id}/aprobo-examen-teorico")
+	public Estudiante updateAproboExamenTeorico(@PathVariable long id, @RequestBody Map<String, Boolean> body) {
+		if (body == null || !body.containsKey("aproboExamenTeorico")) {
+			throw new IllegalArgumentException("Debes enviar aproboExamenTeorico");
+		}
+		Estudiante patch = new Estudiante();
+		patch.setAproboExamenTeorico(body.get("aproboExamenTeorico"));
+		return service.updateEstudiante(id, patch);
+	}
+
 	@DeleteMapping("/{id}")
 	public ResponseEntity<Void> delete(@PathVariable long id) { // <-- long
 		service.deleteEstudiante(id);
@@ -71,6 +91,12 @@ public class EstudianteController {
 	public ResponseEntity<Void> existePorCorreo(@PathVariable String email) {
 		return service.existePorCorreo(email) ? ResponseEntity.ok().build()
 				: ResponseEntity.notFound().build();
+	}
+
+	@GetMapping("/por-correo/{email}")
+	public ResponseEntity<?> getPorCorreo(@PathVariable String email) {
+		return service.buscarPorCorreo(email).<ResponseEntity<?>>map(ResponseEntity::ok)
+				.orElseGet(() -> ResponseEntity.notFound().build());
 	}
 
 	@GetMapping("/me")
@@ -99,7 +125,7 @@ public class EstudianteController {
 				"direccion", "usuario", "contrasena"));
 		out.put("opcionales", List.of(
 				"tipoEstudiante", "horas", "tipoPase",
-				"aproboExamenTeorico", "estado", "visible"));
+				"aproboExamenTeorico", "estado", "visible", "fotoPerfil"));
 
 		Map<String, String> reglas = new LinkedHashMap<>();
 		reglas.put("numeroDocumento", "Debe ser único");

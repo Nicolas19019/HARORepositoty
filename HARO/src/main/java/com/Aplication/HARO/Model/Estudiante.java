@@ -42,6 +42,8 @@ public class Estudiante {
 	private String email;
 	@Column(name = "direccion")
 	private String direccion;
+	@Column(name = "foto_perfil", columnDefinition = "TEXT")
+	private String fotoPerfil;
 	@Column(name = "estado")
 	private String estado;
 	@Column(name = "visible", columnDefinition = "boolean default true")
@@ -115,6 +117,14 @@ public class Estudiante {
 
 	public void setDireccion(String direccion) {
 		this.direccion = direccion;
+	}
+
+	public String getFotoPerfil() {
+		return fotoPerfil;
+	}
+
+	public void setFotoPerfil(String fotoPerfil) {
+		this.fotoPerfil = fotoPerfil;
 	}
 
 	public String getEstado() {

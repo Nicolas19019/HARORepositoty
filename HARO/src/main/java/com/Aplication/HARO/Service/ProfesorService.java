@@ -25,12 +25,12 @@ public class ProfesorService {
      ========================== */
   @Transactional(readOnly = true)
   public List<Profesor> getAllProfesores() {
-    return repository.findAll().stream().filter(this::esVisible).toList();
+    return repository.findByVisibleTrueOrderByIdAsc();
   }
 
   @Transactional(readOnly = true)
   public Optional<Profesor> getProfesorById(long id) {
-    return repository.findById(id).filter(this::esVisible);
+    return repository.findByIdAndVisibleTrue(id);
   }
 
   /* ==========================
@@ -131,7 +131,4 @@ public class ProfesorService {
     }
   }
 
-  private boolean esVisible(Profesor p) {
-    return p != null && !Boolean.FALSE.equals(p.getVisible());
-  }
 }

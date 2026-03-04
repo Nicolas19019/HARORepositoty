@@ -33,7 +33,7 @@ public class SeguridadConfig {
      Helpers
      =========================== */
 
-  // ¿Es HEX (solo [0-9A-Fa-f]) después de normalizar?
+  // Ã‚Â¿Es HEX (solo [0-9A-Fa-f]) despuÃƒÂ©s de normalizar?
   private static boolean isHexEvenLength(String s) {
     if (s == null) return false;
     String norm = s.trim();
@@ -44,19 +44,19 @@ public class SeguridadConfig {
     return norm.matches("[0-9A-Fa-f]*");
   }
 
-  // Decodifica HEX tolerante (0x, espacios). Lanza IllegalArgumentException si no es HEX válido.
+  // Decodifica HEX tolerante (0x, espacios). Lanza IllegalArgumentException si no es HEX vÃƒÂ¡lido.
   private static byte[] hexToBytesStrict(String s) {
     if (s == null) throw new IllegalArgumentException("HEX nulo");
     String hex = s.trim().replaceFirst("(?i)^0x", "").replaceAll("\\s+", "");
     if ((hex.length() & 1) != 0 || !hex.matches("[0-9A-Fa-f]*")) {
-      throw new IllegalArgumentException("HEX inválido");
+      throw new IllegalArgumentException("HEX invÃƒÂ¡lido");
     }
     int len = hex.length();
     byte[] out = new byte[len / 2];
     for (int i = 0; i < len; i += 2) {
       int hi = Character.digit(hex.charAt(i), 16);
       int lo = Character.digit(hex.charAt(i + 1), 16);
-      if (hi < 0 || lo < 0) throw new IllegalArgumentException("HEX inválido");
+      if (hi < 0 || lo < 0) throw new IllegalArgumentException("HEX invÃƒÂ¡lido");
       out[i / 2] = (byte) ((hi << 4) + lo);
     }
     return out;
@@ -78,8 +78,8 @@ public class SeguridadConfig {
   /* ===========================================================
      Encoder: BCrypt(  Base64( SHA256( clientInput + PEPPER ) )  )
      - clientInput puede ser:
-       a) HEX de SHA-256(password)  -> lo decodificamos (modo “legacy/cliente”)
-       b) password en texto plano   -> le hacemos SHA-256 aquí (modo “tolerante”)
+       a) HEX de SHA-256(password)  -> lo decodificamos (modo Ã¢â‚¬Å“legacy/clienteÃ¢â‚¬Â)
+       b) password en texto plano   -> le hacemos SHA-256 aquÃƒÂ­ (modo Ã¢â‚¬Å“toleranteÃ¢â‚¬Â)
      - PEPPER (texto) se concatena en bytes UTF-8
      =========================================================== */
 
@@ -90,29 +90,24 @@ public class SeguridadConfig {
     final byte[] pep = pepper == null ? new byte[0] : pepper.getBytes(StandardCharsets.UTF_8);
 
     return new PasswordEncoder() {
-      private String prehash(CharSequence rawFromClient) {
+      private byte[] normalizeClientInput(CharSequence rawFromClient) {
         if (rawFromClient == null) {
-          // caso extremo: vacío
-          return base64(sha256Bytes(pep));
+          return new byte[0];
         }
         String input = rawFromClient.toString();
-
-        byte[] clientInputBytes;
         if (isHexEvenLength(input)) {
-          // El cliente envió SHA-256(password) en HEX
-          clientInputBytes = hexToBytesStrict(input);
-        } else {
-          // El cliente envió la contraseña en texto plano
-          clientInputBytes = input.getBytes(StandardCharsets.UTF_8);
-          clientInputBytes = sha256Bytes(clientInputBytes); // ahora tenemos SHA-256(password)
+          return hexToBytesStrict(input);
         }
+        return sha256Bytes(input.getBytes(StandardCharsets.UTF_8));
+      }
 
-        // concatena digest + pepper
+      private String prehash(CharSequence rawFromClient) {
+        byte[] clientInputBytes = normalizeClientInput(rawFromClient);
+
         byte[] combo = new byte[clientInputBytes.length + pep.length];
         System.arraycopy(clientInputBytes, 0, combo, 0, clientInputBytes.length);
         System.arraycopy(pep, 0, combo, clientInputBytes.length, pep.length);
 
-        // estandariza longitud para BCrypt: Base64(SHA256(combo))
         byte[] finalDigest = sha256Bytes(combo);
         return base64(finalDigest);
       }
@@ -122,7 +117,25 @@ public class SeguridadConfig {
       }
 
       @Override public boolean matches(CharSequence rawPassword, String encodedPassword) {
-        return bcrypt.matches(prehash(rawPassword), encodedPassword);
+        if (encodedPassword == null || encodedPassword.isBlank()) {
+          return false;
+        }
+
+        if (bcrypt.matches(prehash(rawPassword), encodedPassword)) {
+          return true;
+        }
+
+        if (rawPassword != null && bcrypt.matches(rawPassword.toString(), encodedPassword)) {
+          return true;
+        }
+
+        try {
+          byte[] client = normalizeClientInput(rawPassword);
+          String noPepper = base64(sha256Bytes(client));
+          return bcrypt.matches(noPepper, encodedPassword);
+        } catch (Exception ignored) {
+          return false;
+        }
       }
 
       @Override public boolean upgradeEncoding(String encodedPassword) {

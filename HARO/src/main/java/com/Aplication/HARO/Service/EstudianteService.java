@@ -33,17 +33,23 @@ public class EstudianteService {
      ========================== */
   @Transactional(readOnly = true)
   public List<Estudiante> getAllEstudiantes() {
-    return repo.findAll().stream().filter(this::esVisible).toList();
+    return repo.findByVisibleTrueOrderByIdAsc();
   }
 
   @Transactional(readOnly = true)
   public Optional<Estudiante> getEstudianteById(long id) {
-    return repo.findById(id).filter(this::esVisible);
+    return repo.findByIdAndVisibleTrue(id);
   }
 
   @Transactional(readOnly = true)
   public Optional<Estudiante> buscarPorNumeroDocumento(String numeroDocumento) {
-    return repo.findByNumeroDocumento(numeroDocumento).filter(this::esVisible);
+    return repo.findByNumeroDocumentoAndVisibleTrue(numeroDocumento);
+  }
+
+  @Transactional(readOnly = true)
+  public Optional<Estudiante> buscarPorCorreo(String email) {
+    String normalizado = email == null ? "" : email.trim();
+    return repo.findByEmailNormalizadoVisible(normalizado);
   }
 
   @Transactional(readOnly = true)
@@ -53,7 +59,9 @@ public class EstudianteService {
 
   @Transactional(readOnly = true)
   public boolean existePorCorreo(String email) {
-    return repo.existsByEmailIgnoreCase(email);
+    String normalizado = email == null ? "" : email.trim();
+    if (normalizado.isBlank()) return false;
+    return repo.findByEmailNormalizadoVisible(normalizado).isPresent();
   }
 
   /* ==========================
@@ -104,6 +112,7 @@ public class EstudianteService {
 
     // En API, todo registro nuevo nace visible.
     in.setVisible(true);
+    in.setFotoPerfil(normalizarFotoPerfil(in.getFotoPerfil()));
 
     String rawOrHash = in.getContrasena();
     if (rawOrHash == null || rawOrHash.isBlank()) {
@@ -157,6 +166,7 @@ public class EstudianteService {
     if (incoming.getTipoDocumento() != null) db.setTipoDocumento(incoming.getTipoDocumento());
     if (incoming.getTelefono() != null) db.setTelefono(incoming.getTelefono());
     if (incoming.getDireccion() != null) db.setDireccion(incoming.getDireccion());
+    if (incoming.getFotoPerfil() != null) db.setFotoPerfil(normalizarFotoPerfil(incoming.getFotoPerfil()));
     if (incoming.getCategoria() != null) db.setCategoria(incoming.getCategoria());
     if (incoming.getTipoEstudiante() != null) db.setTipoEstudiante(incoming.getTipoEstudiante());
     if (incoming.getEstado() != null) db.setEstado(incoming.getEstado());
@@ -204,10 +214,6 @@ public class EstudianteService {
     return s != null && (s.startsWith("$2a$") || s.startsWith("$2b$") || s.startsWith("$2y$"));
   }
 
-  private boolean esVisible(Estudiante e) {
-    return e != null && !Boolean.FALSE.equals(e.getVisible());
-  }
-
   private String normalizarTipoPase(String raw) {
     if (raw == null) return null;
     String input = raw.trim().toLowerCase(Locale.ROOT);
@@ -227,5 +233,18 @@ public class EstudianteService {
     boolean moto = tipos.contains("moto");
     if (carro && moto) return "carro,moto";
     return carro ? "carro" : "moto";
+  }
+
+  private String normalizarFotoPerfil(String raw) {
+    if (raw == null) return null;
+    String v = raw.trim();
+    if (v.isBlank()) return null;
+    if (!v.startsWith("data:image/")) {
+      throw new IllegalArgumentException("fotoPerfil debe ser una imagen en formato data URL");
+    }
+    if (v.length() > 2_000_000) {
+      throw new IllegalArgumentException("fotoPerfil excede el tamaño permitido");
+    }
+    return v;
   }
 }

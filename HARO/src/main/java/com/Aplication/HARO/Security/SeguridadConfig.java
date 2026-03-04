@@ -15,6 +15,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.*;
 
 import jakarta.servlet.http.HttpServletResponse;
@@ -150,6 +151,11 @@ public class SeguridadConfig {
   }
 
   @Bean
+  public FiltroJwt filtroJwt(ServicioJwt servicioJwt, ServicioUsuariosCombinado usuarios) {
+    return new FiltroJwt(servicioJwt, usuarios);
+  }
+
+  @Bean
   public CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration cfg = new CorsConfiguration();
     cfg.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*", "null"));
@@ -174,13 +180,15 @@ public class SeguridadConfig {
   @Bean
   public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                  DaoAuthenticationProvider dao,
-                                                 AuthenticationEntryPoint api401EntryPoint) throws Exception {
+                                                 AuthenticationEntryPoint api401EntryPoint,
+                                                 FiltroJwt filtroJwt) throws Exception {
     http
       .cors(Customizer.withDefaults())
       .csrf(csrf -> csrf.disable())
       .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
       .exceptionHandling(eh -> eh.authenticationEntryPoint(api401EntryPoint))
       .authenticationProvider(dao)
+      .addFilterBefore(filtroJwt, UsernamePasswordAuthenticationFilter.class)
       .authorizeHttpRequests(auth -> auth
         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
         .anyRequest().permitAll()

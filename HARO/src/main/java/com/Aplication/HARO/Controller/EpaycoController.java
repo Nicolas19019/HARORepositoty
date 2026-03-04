@@ -1,19 +1,25 @@
 package com.Aplication.HARO.Controller;
 
 import com.Aplication.HARO.Service.EpaycoService;
+import com.Aplication.HARO.Service.ChatbotProcesoService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
+
+import java.math.BigDecimal;
 
 @RestController
 @RequestMapping("/epayco")
 public class EpaycoController {
 
     private final EpaycoService epaycoService;
+    private final ChatbotProcesoService chatbotProcesoService;
 
-    public EpaycoController(EpaycoService epaycoService) {
+    public EpaycoController(EpaycoService epaycoService,
+                            ChatbotProcesoService chatbotProcesoService) {
         this.epaycoService = epaycoService;
+        this.chatbotProcesoService = chatbotProcesoService;
     }
 
     // ---------------------------
@@ -63,6 +69,7 @@ public class EpaycoController {
         String xAmount = form.getFirst("x_amount");
         String xCurrencyCode = form.getFirst("x_currency_code");
         String xSignature = form.getFirst("x_signature");
+        String xDocumento = form.getFirst("x_extra1");
 
         boolean ok = epaycoService.isValidSignature(xRefPayco, xTransactionId, xAmount, xCurrencyCode, xSignature);
         if (!ok) {
@@ -75,6 +82,13 @@ public class EpaycoController {
 
         if ("Aceptada".equalsIgnoreCase(estado)) {
             System.out.println("Pago aprobado: " + form);
+            if (xDocumento != null && !xDocumento.isBlank()) {
+                try {
+                    chatbotProcesoService.markPaymentApproved(xDocumento, parseAmountOrNull(xAmount));
+                } catch (Exception ex) {
+                    System.out.println("No se pudo sincronizar pago chatbot: " + ex.getMessage());
+                }
+            }
             // TODO: actualizar orden en BD, habilitar servicio/matrícula, emitir factura, etc.
         } else if ("Rechazada".equalsIgnoreCase(estado)) {
             System.out.println("Pago rechazado: " + form);
@@ -86,5 +100,14 @@ public class EpaycoController {
 
         // ePayco necesita 200 OK
         return ResponseEntity.ok(java.util.Map.of("status", "ok"));
+    }
+
+    private BigDecimal parseAmountOrNull(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return new BigDecimal(raw.trim());
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 }

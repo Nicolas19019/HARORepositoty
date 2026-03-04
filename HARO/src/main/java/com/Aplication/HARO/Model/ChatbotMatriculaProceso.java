@@ -10,6 +10,7 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
@@ -51,6 +52,12 @@ public class ChatbotMatriculaProceso {
 
     @Column(name = "payment_status", nullable = false, length = 40)
     private String paymentStatus = "PENDING";
+
+    @Column(name = "expected_amount", precision = 14, scale = 2)
+    private BigDecimal expectedAmount;
+
+    @Column(name = "payment_amount", precision = 14, scale = 2)
+    private BigDecimal paymentAmount;
 
     @Column(name = "contract_status", nullable = false, length = 40)
     private String contractStatus = "PENDING_SIGNATURE";
@@ -173,6 +180,22 @@ public class ChatbotMatriculaProceso {
 
     public void setContractStatus(String contractStatus) {
         this.contractStatus = contractStatus;
+    }
+
+    public BigDecimal getExpectedAmount() {
+        return expectedAmount;
+    }
+
+    public void setExpectedAmount(BigDecimal expectedAmount) {
+        this.expectedAmount = expectedAmount;
+    }
+
+    public BigDecimal getPaymentAmount() {
+        return paymentAmount;
+    }
+
+    public void setPaymentAmount(BigDecimal paymentAmount) {
+        this.paymentAmount = paymentAmount;
     }
 
     public String getFlowStatus() {

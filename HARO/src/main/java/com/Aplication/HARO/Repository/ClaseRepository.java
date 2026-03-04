@@ -54,4 +54,17 @@ public interface ClaseRepository extends JpaRepository<Clase, Long> {
                                   @Param("fecha") LocalDate fecha,
                                   @Param("horaInicio") LocalTime horaInicio,
                                   @Param("horaFin") LocalTime horaFin);
+
+    @Query("""
+            SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END
+            FROM Clase c
+            WHERE c.placa_vehiculo = :placaVehiculo
+              AND c.fecha = :fecha
+              AND c.horaInicio < :horaFin
+              AND c.horaFin > :horaInicio
+            """)
+    boolean existsVehiculoOverlap(@Param("placaVehiculo") String placaVehiculo,
+                                  @Param("fecha") LocalDate fecha,
+                                  @Param("horaInicio") LocalTime horaInicio,
+                                  @Param("horaFin") LocalTime horaFin);
 }

@@ -26,7 +26,9 @@ public class Profesor {
     @Column(name = "correo")
     private String correo;
     @Column(name = "especialidad")
-    private String especialidad; // ENUM(Teórico, Práctico)
+    private String especialidad; // ENUM(TeÃ³rico, PrÃ¡ctico)
+    @Column(name = "categoria")
+    private String categoria;
     @Column(name = "telefono")
     private String telefono;
     @Column(name = "email")
@@ -71,6 +73,15 @@ public class Profesor {
 	public void setEspecialidad(String especialidad) {
 		this.especialidad = especialidad;
 	}
+
+
+    public String getCategoria() {
+        return categoria;
+    }
+
+    public void setCategoria(String categoria) {
+        this.categoria = categoria;
+    }
 
 	public String getTelefono() {
 		return telefono;

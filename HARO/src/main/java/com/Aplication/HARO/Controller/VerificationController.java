@@ -25,6 +25,12 @@ public class VerificationController {
     return ResponseEntity.ok().build();
   }
 
+  @PostMapping("/email/send/student-activation")
+  public ResponseEntity<?> sendStudentActivation(@RequestBody String emailRaw) {
+    svc.sendStudentActivationEmailVerification(emailRaw);
+    return ResponseEntity.ok().build();
+  }
+
   public static record VerifyReq(@Email String email, @NotBlank String code) {}
   public static record ContractLinkReq(@Email String email, String baseUrl) {}
 

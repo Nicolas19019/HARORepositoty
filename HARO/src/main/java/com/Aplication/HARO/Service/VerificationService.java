@@ -25,6 +25,7 @@ public class VerificationService {
 
     private final OtpTokenRepository repo;
     private final MailService mail;
+    private final EstudianteService estudianteService;
     private final ChatbotProcesoService chatbotProcesoService;
     private final SecureRandom rng = new SecureRandom();
 
@@ -71,9 +72,11 @@ public class VerificationService {
 
     public VerificationService(OtpTokenRepository repo,
                                MailService mail,
+                               EstudianteService estudianteService,
                                ChatbotProcesoService chatbotProcesoService) {
         this.repo = repo;
         this.mail = mail;
+        this.estudianteService = estudianteService;
         this.chatbotProcesoService = chatbotProcesoService;
     }
 
@@ -133,6 +136,60 @@ public class VerificationService {
         Resource logo = new ClassPathResource(LOGO_CLASSPATH);
 
         // 6) Enviar correo (HTML + plain + imagen inline si existe)
+        if (logo.exists()) {
+            mail.sendHtmlWithInlineImage(
+                email,
+                subject,
+                html,
+                plain,
+                CID,
+                logo,
+                "image/png"
+            );
+        } else {
+            mail.sendHtml(email, subject, html, plain);
+        }
+    }
+
+    /** EnvÃ­a OTP SOLO para activaciÃ³n de cuenta de estudiante del mÃ³dulo de aprendizaje. */
+    @Transactional
+    public void sendStudentActivationEmailVerification(String rawEmail) {
+        final String email = normalizeEmail(rawEmail);
+        if (!estudianteService.existePorCorreo(email)) {
+            throw new IllegalArgumentException("No existe un estudiante registrado con ese correo.");
+        }
+
+        final Instant now = Instant.now();
+
+        repo.deleteByEmailAndPurposeAndExpiresAtBefore(email, "EMAIL_VERIFY", now);
+
+        Optional<OtpToken> lastNotConsumed =
+                repo.findTopByEmailAndPurposeAndConsumedAtIsNullOrderByIdDesc(email, "EMAIL_VERIFY");
+        if (lastNotConsumed.isPresent()) {
+            OtpToken last = lastNotConsumed.get();
+            if (last.getSentAt() != null && now.isBefore(last.getSentAt().plusSeconds(cooldownSeconds))) {
+                long wait = Math.max(1, ChronoUnit.SECONDS.between(now, last.getSentAt().plusSeconds(cooldownSeconds)));
+                throw new IllegalStateException("Espera " + wait + "s para reenviar el cÃ³digo.");
+            }
+        }
+
+        String code = generateNumericOtp(otpLength);
+        String hash = OtpHasher.sha256(code);
+
+        OtpToken token = new OtpToken();
+        token.setEmail(email);
+        token.setPurpose("EMAIL_VERIFY");
+        token.setOtpHash(hash);
+        token.setExpiresAt(now.plus(ttlSeconds, ChronoUnit.SECONDS));
+        token.setSentAt(now);
+        token.setAttempts(0);
+        token.setConsumedAt(null);
+        repo.save(token);
+
+        String html = buildHtmlLearningActivation(email, code);
+        String plain = buildPlainLearningActivation(email, code);
+
+        Resource logo = new ClassPathResource(LOGO_CLASSPATH);
         if (logo.exists()) {
             mail.sendHtmlWithInlineImage(
                 email,
@@ -439,6 +496,89 @@ public class VerificationService {
             + "Tu código de verificación es: " + code + "\n\n"
             + "El código vence en " + mins + " minutos. Por seguridad, no lo compartas con nadie.\n\n"
             + "Si no solicitaste esta verificación, ignora este mensaje. Tu cuenta no se verá afectada.";
+    }
+
+    private String buildHtmlLearningActivation(String email, String code) {
+        String html = """
+<div style="background-color:#f4f4f4;padding:24px;font-family:'Segoe UI',Arial,sans-serif;color:#1a1a1a;">
+  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" style="max-width:480px;margin:0 auto;border-collapse:collapse;">
+    
+    <!-- ENCABEZADO CON LOGO -->
+    <tr>
+      <td style="text-align:center;background:#ffffff;border-radius:8px 8px 0 0;padding:0px 24px;">
+        <img src="cid:logoHaro"
+             alt="CEA HARO"
+             style="max-width:140px;height:auto;display:inline-block;border:0;outline:none;text-decoration:none;background:#ffffff;padding:8px 12px;border-radius:6px;">
+      </td>
+    </tr>
+
+    <!-- CUERPO TARJETA -->
+    <tr>
+      <td style="background-color:#ffffff;border-radius:0 0 8px 8px;box-shadow:0 4px 12px rgba(0,0,0,0.07);padding:24px;border-top:4px solid #ffcc00;">
+        
+        <h2 style="margin:0 0 12px 0;font-size:18px;font-weight:600;color:#111827;">
+          Activacion del modulo de gestion de aprendizaje
+        </h2>
+
+        <p style="margin:0 0 16px 0;font-size:14px;line-height:1.5;color:#374151;">
+          Hola,
+          <br><br>
+          Este correo y su codigo OTP se envian unicamente para activar el
+          <strong style="color:#d00000;">modulo de gestion de aprendizaje</strong>.
+        </p>
+
+        <p style="margin:0 0 8px 0;font-size:14px;line-height:1.5;color:#374151;">
+          Tu codigo de verificacion es:
+        </p>
+
+        <div style="font-size:26px;font-weight:700;letter-spacing:3px;
+                    text-align:center;color:#d00000;
+                    background-color:#ffffff;
+                    border:2px solid #d00000;
+                    border-radius:8px;
+                    padding:12px 16px;
+                    margin:0 0 16px 0;
+                    box-shadow:0 2px 6px rgba(0,0,0,0.08);">
+          %s
+        </div>
+
+        <p style="margin:0 0 16px 0;font-size:13px;line-height:1.5;color:#6b7280;">
+          Este codigo vence en <strong>%d minutos</strong>. Por seguridad, no lo compartas con nadie.
+        </p>
+
+        <p style="margin:0 0 16px 0;font-size:12px;line-height:1.5;color:#6b7280;">
+          Si no solicitaste esta activacion, puedes ignorar este mensaje. Tu cuenta no se vera afectada.
+        </p>
+
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+
+        <p style="margin:0;font-size:12px;line-height:1.4;color:#6b7280;">
+          Atentamente,<br>
+          <strong style="color:#d00000;">CEA HARO</strong><br>
+          Centro de Ensenanza Automovilistica<br>
+          Tel: (322) 329  2939
+        </p>
+
+        <div style="margin-top:16px;font-size:11px;line-height:1.4;color:#9ca3af;text-align:center;border-left:4px solid #ffcc00;padding-left:8px;">
+          Este es un mensaje automatico, por favor no respondas a este correo.
+        </div>
+
+      </td>
+    </tr>
+
+  </table>
+</div>
+        """.formatted(code, ttlSeconds / 60);
+        return html;
+    }
+
+    private String buildPlainLearningActivation(String email, String code) {
+        long mins = Math.max(1, ttlSeconds / 60);
+        return "CEA HARO - Activacion modulo de gestion de aprendizaje\n\n"
+            + "Este codigo OTP se envia unicamente para activar el modulo de gestion de aprendizaje.\n\n"
+            + "Tu codigo de verificacion es: " + code + "\n\n"
+            + "El codigo vence en " + mins + " minutos. Por seguridad, no lo compartas con nadie.\n\n"
+            + "Si no solicitaste esta activacion, ignora este mensaje. Tu cuenta no se vera afectada.";
     }
 
     private static String trim(String s) { return s == null ? "" : s.trim(); }

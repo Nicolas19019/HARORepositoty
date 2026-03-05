@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
@@ -47,6 +48,7 @@ public class ProfesorService {
     if (p.getUsuario() != null && existsByUsuarioIgnoreCase(p.getUsuario())) {
       throw new IllegalStateException("El usuario ya existe: " + p.getUsuario());
     }
+    p.setCategoria(normalizarCategoria(p.getCategoria()));
     // En API, todo registro nuevo nace visible.
     p.setVisible(true);
     // setea otros defaults si aplica (activo, estado, etc.)
@@ -85,6 +87,7 @@ public class ProfesorService {
     if (incoming.getApellido() != null) db.setApellido(incoming.getApellido());
     if (incoming.getTelefono() != null) db.setTelefono(incoming.getTelefono());
     if (incoming.getEspecialidad() != null) db.setEspecialidad(incoming.getEspecialidad());
+    if (incoming.getCategoria() != null) db.setCategoria(normalizarCategoria(incoming.getCategoria()));
     if (incoming.getVisible() != null) db.setVisible(incoming.getVisible());
    
 
@@ -129,6 +132,17 @@ public class ProfesorService {
     } catch (Exception e) {
       return false;
     }
+  }
+
+  private String normalizarCategoria(String raw) {
+    String c = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+    if (c.isBlank()) {
+      throw new IllegalArgumentException("La categoria del instructor es obligatoria (carro o moto).");
+    }
+    if (!"carro".equals(c) && !"moto".equals(c)) {
+      throw new IllegalArgumentException("La categoria del instructor solo permite: carro o moto.");
+    }
+    return c;
   }
 
 }

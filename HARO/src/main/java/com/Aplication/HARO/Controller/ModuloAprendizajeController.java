@@ -12,11 +12,7 @@ import java.util.NoSuchElementException;
 record FavoritosModuloRequest(String curso, List<String> modulos) {}
 
 @RestController
-@RequestMapping({
-        "/api/modulos-aprendizaje",
-        "/api/modulo-aprendizaje",
-        "/api/modulos-aprendisaje"
-})
+@RequestMapping("/api/modulos-aprendizaje")
 @CrossOrigin(origins = "*")
 public class ModuloAprendizajeController {
 

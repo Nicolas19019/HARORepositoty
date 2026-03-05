@@ -1,5 +1,6 @@
 package com.Aplication.HARO.Model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 
 import java.time.Instant;
@@ -134,5 +135,19 @@ public class ClaseAprendizaje {
     public void setActualizadoEn(Instant actualizadoEn) {
         this.actualizadoEn = actualizadoEn;
     }
-}
 
+    @JsonProperty("title")
+    public String getTitle() {
+        return titulo;
+    }
+
+    @JsonProperty("description")
+    public String getDescription() {
+        return descripcion;
+    }
+
+    @JsonProperty("publishedAt")
+    public LocalDate getPublishedAt() {
+        return fechaPublicacion;
+    }
+}

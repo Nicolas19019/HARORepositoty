@@ -145,4 +145,19 @@ public class ContenidoClase {
     public void setActualizadoEn(Instant actualizadoEn) {
         this.actualizadoEn = actualizadoEn;
     }
+
+    @JsonProperty("title")
+    public String getTitle() {
+        return titulo;
+    }
+
+    @JsonProperty("type")
+    public String getType() {
+        return tipo;
+    }
+
+    @JsonProperty("description")
+    public String getDescription() {
+        return descripcion;
+    }
 }

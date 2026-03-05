@@ -11,13 +11,20 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.List;
 
 record ClasePatchEstadoReq(Boolean publicada, Boolean visible) {}
 
 @RestController
-@RequestMapping("/api/clases")
+@RequestMapping({
+        "/api/clases",
+        "/api/clases_lms",
+        "/api/clases-learning",
+        "/api/clases-contenido",
+        "/api/clases-modulo"
+})
 @CrossOrigin(origins = "*")
 public class ClaseAprendizajeController {
 
@@ -59,30 +66,63 @@ public class ClaseAprendizajeController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ClaseAprendizaje update(@PathVariable Long id, @RequestBody ClaseAprendizaje in) {
-        return claseService.update(id, in);
+    public ClaseAprendizaje update(@PathVariable String id, @RequestBody ClaseAprendizaje in) {
+        return claseService.update(resolveClaseId(id), in);
     }
 
     @PatchMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ClaseAprendizaje patchEstado(@PathVariable Long id, @RequestBody ClasePatchEstadoReq req) {
+    public ClaseAprendizaje patchEstado(@PathVariable String id, @RequestBody ClasePatchEstadoReq req) {
         if (req == null) {
             throw new IllegalArgumentException("Body requerido");
         }
-        return claseService.patchEstado(id, req.publicada(), req.visible());
+        return claseService.patchEstado(resolveClaseId(id), req.publicada(), req.visible());
     }
 
     @GetMapping("/{id}/contenidos")
     @PreAuthorize("hasAnyRole('ADMIN','ESTUDIANTE')")
-    public List<ContenidoClase> getContenidos(@PathVariable Long id, Authentication authentication) {
+    public List<ContenidoClase> getContenidos(@PathVariable String id,
+                                              Authentication authentication,
+                                              HttpServletRequest request) {
         try {
+            Long claseId = resolveClaseId(id);
             boolean isAdmin = authentication != null && authentication.getAuthorities().stream()
                     .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
-            return isAdmin ? contenidoService.getByClaseForAdmin(id)
-                    : contenidoService.getByClasePublicada(id);
+            List<ContenidoClase> rows = isAdmin ? contenidoService.getByClaseForAdmin(claseId)
+                    : contenidoService.getByClasePublicada(claseId);
+            for (ContenidoClase row : rows) {
+                row.setUrl(toAbsoluteUrl(row.getUrl(), request));
+            }
+            return rows;
         } catch (RuntimeException ex) {
             log.error("Error listando contenidos de clase {}: {}", id, ex.getMessage(), ex);
             return List.of();
         }
+    }
+
+    private Long resolveClaseId(String raw) {
+        String in = raw == null ? "" : raw.trim();
+        if (in.matches("\\d+")) {
+            return Long.parseLong(in);
+        }
+        int dash = in.indexOf('-');
+        if (dash > 0) {
+            String head = in.substring(0, dash);
+            if (head.matches("\\d+")) {
+                return Long.parseLong(head);
+            }
+        }
+        throw new IllegalArgumentException("id de clase invalido: " + raw);
+    }
+
+    private String toAbsoluteUrl(String rawUrl, HttpServletRequest request) {
+        String url = rawUrl == null ? "" : rawUrl.trim();
+        if (url.isBlank()) return url;
+        if (url.startsWith("http://") || url.startsWith("https://")) return url;
+        if (url.startsWith("uploads/")) {
+            url = "/" + url;
+        }
+        if (!url.startsWith("/")) return url;
+        return request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort() + url;
     }
 }

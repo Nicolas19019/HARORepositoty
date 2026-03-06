@@ -68,12 +68,38 @@ public class RestExceptionHandler {
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<?> handleAccessDenied(AccessDeniedException ex) {
+    public ResponseEntity<?> handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
+        Object jwtError = request.getAttribute("jwt_error");
+        if ("TOKEN_EXPIRED".equals(jwtError)) {
+            return ResponseEntity.status(401).body(Map.of(
+                    "error", "SESSION_EXPIRED",
+                    "message", "Tu sesion expiro. Inicia sesion nuevamente."
+            ));
+        }
+        if ("TOKEN_INVALID".equals(jwtError)) {
+            return ResponseEntity.status(401).body(Map.of(
+                    "error", "INVALID_TOKEN",
+                    "message", "Token invalido. Inicia sesion nuevamente."
+            ));
+        }
         return ResponseEntity.status(403).body("FORBIDDEN");
     }
 
     @ExceptionHandler(AuthorizationDeniedException.class)
-    public ResponseEntity<?> handleAuthorizationDenied(AuthorizationDeniedException ex) {
+    public ResponseEntity<?> handleAuthorizationDenied(AuthorizationDeniedException ex, HttpServletRequest request) {
+        Object jwtError = request.getAttribute("jwt_error");
+        if ("TOKEN_EXPIRED".equals(jwtError)) {
+            return ResponseEntity.status(401).body(Map.of(
+                    "error", "SESSION_EXPIRED",
+                    "message", "Tu sesion expiro. Inicia sesion nuevamente."
+            ));
+        }
+        if ("TOKEN_INVALID".equals(jwtError)) {
+            return ResponseEntity.status(401).body(Map.of(
+                    "error", "INVALID_TOKEN",
+                    "message", "Token invalido. Inicia sesion nuevamente."
+            ));
+        }
         return ResponseEntity.status(403).body("FORBIDDEN");
     }
 

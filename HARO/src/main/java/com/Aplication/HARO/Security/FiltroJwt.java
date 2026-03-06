@@ -1,6 +1,9 @@
 // src/main/java/com/Aplication/HARO/Security/FiltroJwt.java
 package com.Aplication.HARO.Security;
 
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -38,7 +41,8 @@ public class FiltroJwt extends OncePerRequestFilter {
 
     String token = auth.substring(7).trim();
     try {
-      String login = servicioJwt.extraerLogin(token);
+      Claims c = servicioJwt.claims(token);
+      String login = c.getSubject();
       if (login != null && SecurityContextHolder.getContext().getAuthentication() == null) {
         var userDetails = usuarios.loadUserByUsername(login);
         if (servicioJwt.tokenValido(token, userDetails)) {
@@ -48,7 +52,13 @@ public class FiltroJwt extends OncePerRequestFilter {
           SecurityContextHolder.getContext().setAuthentication(authToken);
         }
       }
-    } catch (Exception ignored) { }
+    } catch (ExpiredJwtException ex) {
+      request.setAttribute("jwt_error", "TOKEN_EXPIRED");
+    } catch (JwtException | IllegalArgumentException ex) {
+      request.setAttribute("jwt_error", "TOKEN_INVALID");
+    } catch (Exception ex) {
+      request.setAttribute("jwt_error", "TOKEN_INVALID");
+    }
 
     filterChain.doFilter(request, response);
   }

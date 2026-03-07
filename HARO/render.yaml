@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: haro-api
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      - key: JAVA_OPTS
+        value: -Xms256m -Xmx512m

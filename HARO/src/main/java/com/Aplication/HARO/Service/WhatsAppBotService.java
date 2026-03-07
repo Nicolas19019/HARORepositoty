@@ -3,9 +3,11 @@ package com.Aplication.HARO.Service;
 import com.Aplication.HARO.Config.WhatsAppProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.Instant;
 import java.text.Normalizer;
 import java.util.Deque;
 import java.util.List;
@@ -26,6 +28,13 @@ public class WhatsAppBotService {
     private final ConcurrentHashMap<String, Boolean> processedSet = new ConcurrentHashMap<>();
     private final Deque<String> greetedOrder = new ConcurrentLinkedDeque<>();
     private final ConcurrentHashMap<String, Boolean> greetedSet = new ConcurrentHashMap<>();
+    private volatile Instant lastImageAttemptAt;
+    private volatile String lastImageAttemptTo;
+    private volatile String lastImageAttemptStatus;
+    private volatile String lastImageAttemptError;
+    private volatile String lastImageAttemptUrl;
+    @Value("${chatbot.enrollment.welcome-image-url:}")
+    private String enrollmentWelcomeImageUrl;
 
     public WhatsAppBotService(WhatsAppProperties props, WhatsAppTemplateService waService) {
         this.props = props;
@@ -37,7 +46,12 @@ public class WhatsAppBotService {
             int processedIds,
             int greetedSenders,
             String welcomeReply,
-            String fallbackReply
+            String fallbackReply,
+            Instant lastImageAttemptAt,
+            String lastImageAttemptTo,
+            String lastImageAttemptStatus,
+            String lastImageAttemptError,
+            String lastImageAttemptUrl
     ) {}
 
     public BotStatus status() {
@@ -46,7 +60,12 @@ public class WhatsAppBotService {
                 processedSet.size(),
                 greetedSet.size(),
                 props.getBotWelcomeReply(),
-                props.getBotFallbackReply()
+                props.getBotFallbackReply(),
+                lastImageAttemptAt,
+                lastImageAttemptTo,
+                lastImageAttemptStatus,
+                lastImageAttemptError,
+                lastImageAttemptUrl
         );
     }
 
@@ -79,6 +98,19 @@ public class WhatsAppBotService {
         }
 
         String fromKey = normalizePhone(msg.from());
+        String normalized = normalize(msg.text());
+        log.info("WhatsApp inbound from={} text={} enrollmentStart={}",
+                maskPhone(fromKey), normalized, isEnrollmentStart(normalized));
+
+        if (isEnrollmentStart(normalized)) {
+            log.info("Enviando bienvenida de matrícula con imagen a {} (text={})", maskPhone(fromKey), normalized);
+            sendEnrollmentWelcomeFlow(msg.from());
+            if (!syntheticTestId) {
+                markProcessed(messageId);
+            }
+            return;
+        }
+
         if (isFirstContact(fromKey)) {
             waService.sendTextMessage(msg.from(), welcomeText());
             if (!syntheticTestId) {
@@ -135,6 +167,52 @@ public class WhatsAppBotService {
         return true;
     }
 
+    private boolean isEnrollmentStart(String normalized) {
+        return "2".equals(normalized)
+                || normalized.contains("matricula")
+                || normalized.contains("inscripcion");
+    }
+
+    private void sendEnrollmentWelcomeFlow(String to) {
+        String maskedTo = maskPhone(to);
+        lastImageAttemptAt = Instant.now();
+        lastImageAttemptTo = maskedTo;
+        lastImageAttemptStatus = "PENDING";
+        lastImageAttemptError = null;
+        lastImageAttemptUrl = hasTextOrNull(enrollmentWelcomeImageUrl);
+
+        if (StringUtils.hasText(enrollmentWelcomeImageUrl)) {
+            try {
+                log.info("ALERTA_WHATSAPP_IMAGE: intentando enviar imagen de bienvenida a {}", maskedTo);
+                var result = waService.sendImageMessage(to, enrollmentWelcomeImageUrl);
+                if (result.ok()) {
+                    lastImageAttemptStatus = "OK";
+                    log.info("ALERTA_WHATSAPP_IMAGE: imagen enviada a {}. providerMessageId={}, statusCode={}, providerResponse={}",
+                            maskedTo, result.providerMessageId(), result.statusCode(), result.providerResponse());
+                } else {
+                    lastImageAttemptStatus = "FAILED_PROVIDER";
+                    log.warn("ALERTA_WHATSAPP_IMAGE: la imagen no se confirmó como enviada a {}. statusCode={} response={}",
+                            maskedTo, result.statusCode(), result.providerResponse());
+                }
+            } catch (Exception e) {
+                lastImageAttemptStatus = "FAILED_EXCEPTION";
+                lastImageAttemptError = e.getMessage();
+                log.error("ALERTA_WHATSAPP_IMAGE: no se pudo enviar imagen de bienvenida a {}: {}",
+                        maskedTo, e.getMessage(), e);
+            }
+        } else {
+            lastImageAttemptStatus = "SKIPPED_NO_URL";
+            lastImageAttemptError = "chatbot.enrollment.welcome-image-url no configurado";
+            log.warn("ALERTA_WHATSAPP_IMAGE: no se envió imagen porque CHATBOT_ENROLLMENT_WELCOME_IMAGE_URL está vacío para {}",
+                    maskedTo);
+        }
+
+        waService.sendTextMessage(to,
+                "Gracias por elegirnos! Para proporcionarte un servicio personalizado, necesitamos algunos datos personales, "
+                        + "puedes revisar nuestra política de tratamiento de datos en nuestra página web y www.ceaharo.com");
+        waService.sendTextMessage(to, "¿Autorizas el tratamiento de tus datos?");
+    }
+
     private String buildReply(WhatsAppWebhookService.InboundMessage msg) {
         String normalized = normalize(msg.text());
         if (!StringUtils.hasText(normalized)) {
@@ -189,6 +267,10 @@ public class WhatsAppBotService {
         return s == null ? "" : s.trim();
     }
 
+    private String hasTextOrNull(String value) {
+        return StringUtils.hasText(value) ? value : null;
+    }
+
     private boolean isSyntheticTestMessageId(String messageId) {
         if (!StringUtils.hasText(messageId)) {
             return false;
@@ -201,5 +283,13 @@ public class WhatsAppBotService {
         String cleaned = trim(from).replaceAll("[\\s\\-()]", "");
         if (cleaned.startsWith("+")) cleaned = cleaned.substring(1);
         return cleaned;
+    }
+
+    private String maskPhone(String phone) {
+        String normalized = normalizePhone(phone);
+        if (!StringUtils.hasText(normalized) || normalized.length() <= 4) {
+            return "*".repeat(Math.max(1, normalized.length()));
+        }
+        return "*".repeat(Math.max(1, normalized.length() - 4)) + normalized.substring(normalized.length() - 4);
     }
 }

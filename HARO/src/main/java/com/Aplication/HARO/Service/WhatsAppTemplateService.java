@@ -157,6 +157,46 @@ public class WhatsAppTemplateService {
         }
     }
 
+    public SendResult sendImageMessage(String toRaw, String imageUrlRaw) {
+        validateEnabledAndConfigured();
+
+        String to = resolveRecipient(toRaw);
+        String imageUrl = safeTrim(imageUrlRaw);
+        if (!StringUtils.hasText(imageUrl)) {
+            throw new IllegalArgumentException("imageUrl es requerido");
+        }
+
+        String url = normalizeUrlOrThrow(imageUrl);
+        String previewUrl = StringUtils.hasText(url) ? url : imageUrl;
+
+        String apiUrl = buildMessagesUrl();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("messaging_product", "whatsapp");
+        payload.put("to", to);
+        payload.put("type", "image");
+        payload.put("image", Map.of("link", previewUrl));
+
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(payload, buildHeaders());
+        try {
+            ResponseEntity<Map<String, Object>> response =
+                    restTemplate.exchange(apiUrl, HttpMethod.POST, entity, MAP_RESPONSE);
+            Map<String, Object> body = response.getBody() == null ? Map.of() : response.getBody();
+            return new SendResult(
+                    response.getStatusCode().is2xxSuccessful(),
+                    to,
+                    "image",
+                    extractMessageId(body),
+                    response.getStatusCode().value(),
+                    body
+            );
+        } catch (HttpStatusCodeException e) {
+            throw new IllegalStateException("Error WhatsApp API (" + e.getStatusCode().value() + "): "
+                    + safeTrim(e.getResponseBodyAsString()), e);
+        } catch (RestClientException e) {
+            throw new IllegalStateException("No se pudo conectar con WhatsApp API: " + e.getMessage(), e);
+        }
+    }
+
     private void validateEnabledAndConfigured() {
         ConfigStatus status = getConfigStatus();
         if (!status.ready()) {
@@ -286,6 +326,17 @@ public class WhatsAppTemplateService {
         if (!(first instanceof Map<?, ?> map)) return null;
         Object id = map.get("id");
         return id == null ? null : id.toString();
+    }
+
+    private String normalizeUrlOrThrow(String url) {
+        String trimmed = safeTrim(url);
+        if (!StringUtils.hasText(trimmed)) {
+            throw new IllegalArgumentException("imageUrl es requerido");
+        }
+        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+            throw new IllegalArgumentException("imageUrl debe ser una URL http(s)");
+        }
+        return trimmed;
     }
 
     private String maskPhone(String rawPhone) {

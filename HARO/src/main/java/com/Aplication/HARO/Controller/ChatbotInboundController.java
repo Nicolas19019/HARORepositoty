@@ -4,6 +4,7 @@ import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Model.Clase;
 import com.Aplication.HARO.Service.ChatbotProcesoService;
 import com.Aplication.HARO.Service.VerificationService;
+import com.Aplication.HARO.Service.WhatsAppTemplateService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,6 +29,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.text.Normalizer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -80,6 +82,7 @@ public class ChatbotInboundController {
 
     private final ChatbotProcesoService procesoService;
     private final VerificationService verificationService;
+    private final WhatsAppTemplateService waService;
 
     @Value("${chatbot.contract.base-url:}")
     private String contractBaseUrl;
@@ -87,10 +90,17 @@ public class ChatbotInboundController {
     @Value("${chatbot.inactivity.timeout.minutes:20}")
     private long inactivityTimeoutMinutes;
 
+    @Value("${chatbot.enrollment.welcome-image-url:}")
+    private String enrollmentWelcomeImageUrl;
+    @Value("${chatbot.inbound.include-image-action:false}")
+    private boolean includeImageActionInInbound;
+
     public ChatbotInboundController(ChatbotProcesoService procesoService,
-                                    VerificationService verificationService) {
+                                    VerificationService verificationService,
+                                    WhatsAppTemplateService waService) {
         this.procesoService = procesoService;
         this.verificationService = verificationService;
+        this.waService = waService;
     }
 
     public record InboundMessage(
@@ -252,13 +262,13 @@ public class ChatbotInboundController {
             }
 
             switch (session.state) {
-                case MAIN_MENU -> handleMainMenu(text, session, actions);
-                case COURSES_MENU -> handleCoursesMenu(text, session, actions);
+                case MAIN_MENU -> handleMainMenu(text, from, session, actions);
+                case COURSES_MENU -> handleCoursesMenu(text, from, session, actions);
 
                 case ENROLLMENT_CAPTURE -> handleEnrollmentCapture(rawText, session, actions);
                 case ENROLLMENT_EMAIL_CAPTURE -> handleEnrollmentEmailCapture(text, session, actions);
                 case ENROLLMENT_PHONE_CAPTURE -> handleEnrollmentPhoneCapture(from, text, session, actions);
-                case ENROLLMENT_CONFIRM -> handleEnrollmentConfirm(text, session, actions);
+                case ENROLLMENT_CONFIRM -> handleEnrollmentConfirm(text, from, session, actions);
                 case PAYMENT_WAIT -> handlePaymentWait(text, session, actions);
                 case CONTRACT_WAIT -> handleContractWait(text, session, actions);
 
@@ -283,17 +293,28 @@ public class ChatbotInboundController {
     // HANDLERS
     // =========================
 
-    private void handleMainMenu(String text, SessionData session, List<BotAction> actions) {
-        switch (text) {
+    private void handleMainMenu(String text, String from, SessionData session, List<BotAction> actions) {
+        String cmd = normalizeCommandText(text);
+        if (isEnrollmentCommand(cmd)) {
+            clearEnrollmentData(session);
+            session.state = ChatState.ENROLLMENT_CAPTURE;
+            addEnrollmentIntro(from, actions);
+            actions.add(textMsg(enrollmentInitialPromptText()));
+            actions.add(textMsg("Opciones: MENU | CANCELAR"));
+            return;
+        }
+
+        switch (cmd) {
             case "1", "cursos", "curso", "categorias", "categoria" -> {
                 session.state = ChatState.COURSES_MENU;
                 session.courseOptionsExpanded = false;
                 actions.add(textMsg(coursesMenuText()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
-            case "2", "matricula", "inscripcion" -> {
+            case "2" -> {
                 clearEnrollmentData(session);
                 session.state = ChatState.ENROLLMENT_CAPTURE;
+                addEnrollmentIntro(from, actions);
                 actions.add(textMsg(enrollmentInitialPromptText()));
                 actions.add(textMsg("Opciones: MENU | CANCELAR"));
             }
@@ -315,13 +336,27 @@ public class ChatbotInboundController {
                 actions.add(textMsg(advisorContactText()));
                 actions.add(textMsg("Opciones: MENU"));
             }
-            default -> actions.add(textMsg(mainMenuText()));
+            default -> {
+                actions.add(textMsg("⚠️ Opción no reconocida en este menú. Escribe 1, 2, 3, 4 o 5, o MENU."));
+                actions.add(textMsg(mainMenuText()));
+            }
         }
     }
 
-    private void handleCoursesMenu(String text, SessionData session, List<BotAction> actions) {
+    private void handleCoursesMenu(String text, String from, SessionData session, List<BotAction> actions) {
+        String cmd = normalizeCommandText(text);
+        if (isEnrollmentCommand(cmd)) {
+            session.courseOptionsExpanded = false;
+            clearEnrollmentData(session);
+            session.state = ChatState.ENROLLMENT_CAPTURE;
+            addEnrollmentIntro(from, actions);
+            actions.add(textMsg(enrollmentInitialPromptText()));
+            actions.add(textMsg("Opciones: MENU | CANCELAR"));
+            return;
+        }
+
         // “ver todas/combos” por compatibilidad
-        if ("todos".equals(text) || "todas".equals(text) || "ver todas".equals(text) || "combos".equals(text)) {
+        if ("todos".equals(cmd) || "todas".equals(cmd) || "ver todas".equals(cmd) || "combos".equals(cmd) || "ver todos".equals(cmd)) {
             session.courseOptionsExpanded = true;
             actions.add(textMsg(allCategoriesMenuText()));
             actions.add(textMsg("Opciones: MATRICULA | MENU"));
@@ -330,7 +365,7 @@ public class ChatbotInboundController {
 
         // Menú expandido
         if (session.courseOptionsExpanded) {
-            switch (text) {
+            switch (cmd) {
                 case "1", "a2" -> {
                     actions.add(textMsg(courseA2Text()));
                     actions.add(textMsg("Opciones: MATRICULA | MENU"));
@@ -355,23 +390,17 @@ public class ChatbotInboundController {
                     actions.add(textMsg(courseRecategorizacionText()));
                     actions.add(textMsg("Opciones: MATRICULA | MENU"));
                 }
-                case "matricula", "inscripcion" -> {
-                    session.courseOptionsExpanded = false;
-                    clearEnrollmentData(session);
-                    session.state = ChatState.ENROLLMENT_CAPTURE;
-                    actions.add(textMsg(enrollmentInitialPromptText()));
-                    actions.add(textMsg("Opciones: MENU | CANCELAR"));
-                }
-                default -> {
-                    actions.add(textMsg(allCategoriesMenuText()));
-                    actions.add(textMsg("Opciones: MATRICULA | MENU"));
-                }
+            default -> {
+                actions.add(textMsg("⚠️ Opción no reconocida para este listado de cursos."));
+                actions.add(textMsg(allCategoriesMenuText()));
+                actions.add(textMsg("Opciones: MATRICULA | MENU"));
+            }
             }
             return;
         }
 
         // Menú principal de cursos (1..6)
-        switch (text) {
+        switch (cmd) {
             case "1", "a2" -> {
                 actions.add(textMsg(courseA2Text()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
@@ -396,13 +425,8 @@ public class ChatbotInboundController {
                 actions.add(textMsg(courseRecategorizacionText()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
-            case "matricula", "inscripcion" -> {
-                clearEnrollmentData(session);
-                session.state = ChatState.ENROLLMENT_CAPTURE;
-                actions.add(textMsg(enrollmentInitialPromptText()));
-                actions.add(textMsg("Opciones: MENU | CANCELAR"));
-            }
             default -> {
+                actions.add(textMsg("⚠️ Opción no reconocida para este menú. Escoge 1 a 6, MATRICULA o MENU."));
                 actions.add(textMsg(coursesMenuText()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
@@ -502,7 +526,7 @@ public class ChatbotInboundController {
         actions.add(textMsg("Opciones: MENU"));
     }
 
-    private void handleEnrollmentConfirm(String text, SessionData session, List<BotAction> actions) {
+    private void handleEnrollmentConfirm(String text, String from, SessionData session, List<BotAction> actions) {
         switch (text) {
             case "1", "si", "sí", "confirmar", "continuar" -> {
                 try {
@@ -514,7 +538,8 @@ public class ChatbotInboundController {
                             "💳 Paso 5 de 5: realiza el pago para continuar.\n\n" +
                                     "Enlace de pago:\n" + link + "\n\n" +
                                     "Cuando lo realices, vuelve a este chat.\n" +
-                                    "Si necesitas el enlace otra vez escribe: LINK"
+                                    "Si necesitas el enlace otra vez escribe: LINK\n\n" +
+                                    paymentFlowInfo()
                     ));
                     actions.add(textMsg("Opciones: MENU | TERMINAR"));
                 } catch (Exception e) {
@@ -525,6 +550,7 @@ public class ChatbotInboundController {
             case "2", "corregir" -> {
                 clearEnrollmentData(session);
                 session.state = ChatState.ENROLLMENT_CAPTURE;
+                addEnrollmentIntro(from, actions);
                 actions.add(textMsg(enrollmentInitialPromptText()));
                 actions.add(textMsg("Opciones: MENU | CANCELAR"));
             }
@@ -557,7 +583,7 @@ public class ChatbotInboundController {
 
                     actions.add(textMsg(
                             "✅ Pago aprobado.\n\n" +
-                                    "Siguiente paso: completa y firma los contratos del curso.\n\n" +
+                                    "Siguiente paso: completa y firma los contratos del curso en el portal.\n\n" +
                                     "Enlace único e intransferible:\n" + contractLink + "\n\n" +
                                     "Cuando termines escribe: LISTO"
                     ));
@@ -578,7 +604,7 @@ public class ChatbotInboundController {
             case "pagar", "link" -> {
                 try {
                     String link = procesoService.getPaymentLink(session.documento);
-                    actions.add(textMsg("🔗 Enlace de pago:\n" + link));
+                    actions.add(textMsg("🔗 Enlace de pago:\n" + link + "\n\n" + paymentFlowInfo()));
                     actions.add(textMsg("Opciones: MENU"));
                 } catch (Exception e) {
                     actions.add(textMsg("⚠️ No encuentro un enlace de pago para este proceso."));
@@ -596,6 +622,24 @@ public class ChatbotInboundController {
                 actions.add(textMsg("Opciones: MENU | TERMINAR"));
             }
         }
+    }
+
+    private String paymentFlowInfo() {
+        String confirmation = safe(procesoService.getPaymentConfirmationUrl());
+        String response = safe(procesoService.getPaymentReturnUrl());
+
+        if (confirmation.isBlank() && response.isBlank()) {
+            return "";
+        }
+
+        StringBuilder out = new StringBuilder("ConfiguraciÃ³n del flujo de pago:\n");
+        if (!confirmation.isBlank()) {
+            out.append("- ConfirmaciÃ³n: ").append(confirmation).append("\n");
+        }
+        if (!response.isBlank()) {
+            out.append("- Retorno: ").append(response).append("\n");
+        }
+        return out.toString().trim();
     }
 
     private void handleContractWait(String text, SessionData session, List<BotAction> actions) {
@@ -1275,6 +1319,17 @@ public class ChatbotInboundController {
         return "cancelar".equals(cmd) || "salir".equals(cmd);
     }
 
+    private boolean isEnrollmentCommand(String cmd) {
+        if (cmd == null) return false;
+        String normalized = normalizeCommandText(cmd);
+        if (normalized.isBlank()) return false;
+
+        if (normalized.startsWith("matric")) return true;
+        if (normalized.startsWith("inscrib")) return true;
+        if (normalized.startsWith("inscripcion")) return true;
+        return false;
+    }
+
     private boolean isEndCommand(String text) {
         String cmd = normalizeCommandText(text);
         if (cmd.isBlank()) return false;
@@ -1300,11 +1355,15 @@ public class ChatbotInboundController {
     }
 
     private String normalizeCommandText(String text) {
-        return collapseSpaces(
-                trim(text)
-                        .toLowerCase(Locale.ROOT)
-                        .replaceAll("[^a-z0-9\\s]+", " ")
-        );
+        String lower = trim(text).toLowerCase(Locale.ROOT);
+        if (lower.isBlank()) {
+            return "";
+        }
+
+        String withoutDiacritics = Normalizer.normalize(lower, Normalizer.Form.NFD)
+                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
+
+        return collapseSpaces(withoutDiacritics.replaceAll("[^a-z0-9\\s]+", " "));
     }
 
     private boolean isConversationExpired(SessionData session, Instant now) {
@@ -1416,6 +1475,77 @@ public class ChatbotInboundController {
         return new BotAction("text", body, null, null, null);
     }
 
+    private BotAction imageMsg(String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return null;
+        }
+        return new BotAction("image", imageUrl, null, null, null);
+    }
+
+    private void addEnrollmentIntro(String to, List<BotAction> actions) {
+        addEnrollmentIntro(actions);
+        dispatchEnrollmentIntroViaWhatsApp(to);
+    }
+
+    private void dispatchEnrollmentIntroViaWhatsApp(String toRaw) {
+        if (!waService.getConfigStatus().ready()) {
+            log.warn("CHATBOT inbound: no se envia mensaje de bienvenida por WhatsApp porque no está listo: {}",
+                    waService.getConfigStatus().message());
+            return;
+        }
+
+        if (!org.springframework.util.StringUtils.hasText(toRaw)) {
+            log.warn("CHATBOT inbound: no se puede enviar bienvenida porque from viene vacio");
+            return;
+        }
+
+        String normalizedTo = toRaw.replaceAll("[\\s\\-()]", "");
+        if (!normalizedTo.matches("\\+?\\d{8,15}")) {
+            log.warn("CHATBOT inbound: no se puede enviar bienvenida a {} porque el numero no parece valido", maskPhone(toRaw));
+            return;
+        }
+
+        log.info("CHATBOT inbound: iniciando envio de bienvenida a {}", maskPhone(normalizedTo));
+
+        if (org.springframework.util.StringUtils.hasText(enrollmentWelcomeImageUrl)) {
+            log.info("CHATBOT inbound: intentando enviar imagen a {} desde {}", maskPhone(toRaw), enrollmentWelcomeImageUrl);
+            try {
+                waService.sendImageMessage(toRaw, enrollmentWelcomeImageUrl);
+                log.info("CHATBOT inbound: imagen enviada a {} desde {}", maskPhone(toRaw), enrollmentWelcomeImageUrl);
+            } catch (Exception e) {
+                log.error("CHATBOT inbound: no se pudo enviar imagen a {}: {}", maskPhone(toRaw), e.getMessage(), e);
+            }
+        } else {
+            log.warn("CHATBOT inbound: no se envia imagen; chatbot.enrollment.welcome-image-url no configurada");
+        }
+
+        try {
+            waService.sendTextMessage(
+                    toRaw,
+                    "Gracias por elegirnos! Para proporcionarte un servicio personalizado, necesitamos algunos datos personales, "
+                            + "puedes revisar nuestra política de tratamiento de datos en nuestra página web y www.ceaharo.com"
+            );
+            waService.sendTextMessage(toRaw, "¿Autorizas el tratamiento de tus datos?");
+            log.info("CHATBOT inbound: mensajes de texto de bienvenida enviados a {}", maskPhone(toRaw));
+        } catch (Exception e) {
+            log.error("CHATBOT inbound: no se pudo enviar texto de bienvenida a {}: {}", maskPhone(toRaw), e.getMessage(), e);
+        }
+    }
+
+    private void addEnrollmentIntro(List<BotAction> actions) {
+        if (includeImageActionInInbound) {
+            BotAction image = imageMsg(enrollmentWelcomeImageUrl);
+            if (image != null) {
+                actions.add(image);
+            }
+        }
+        actions.add(textMsg(
+                "Gracias por elegirnos! Para proporcionarte un servicio personalizado, necesitamos algunos datos personales, " +
+                        "puedes revisar nuestra política de tratamiento de datos en nuestra página web y www.ceaharo.com"
+        ));
+        actions.add(textMsg("¿Autorizas el tratamiento de tus datos?"));
+    }
+
     // =========================
     // TEXTOS (PLANTILLAS + QUITAR REPETICIÓN DE "CATEGORÍA ...")
     // =========================
@@ -1455,7 +1585,7 @@ public class ChatbotInboundController {
 
     // ✅ Quitado: "Categoría A2"
     private String courseA2Text() {
-        return "Categoría  A2\n\n" +
+        return "Categoría A2\n\n" +
                 "Para motocicletas de cualquier tipo de cilindraje 🛵🏍\n\n" +
                 "📌 Valor curso: $920.000 (incluye examen médico)\n" +
                 "📌 Valor licencia: $272.800 en ventanilla única\n\n" +
@@ -1468,7 +1598,7 @@ public class ChatbotInboundController {
 
     // ✅ Quitado: "Categoría B1"
     private String courseB1Text() {
-        return "Categoría  B1\n\n" +
+        return "Categoría B1\n\n" +
                 "Es para vehículos de placa amarilla 🚗\n\n" +
                 "📌 Valor curso: $1.210.000 (incluye examen médico)\n" +
                 "📌 Valor licencia: $329.900 en ventanilla única\n\n" +
@@ -1508,7 +1638,7 @@ public class ChatbotInboundController {
 
     // ✅ Quitado: "Categoría A2, B1 y C1"
     private String courseA2B1C1Text() {
-        return "CategoríaA2, B1 y C1\n\n" +
+        return "Categoría A2, B1 y C1\n\n" +
                 "Es para moto, servicio particular y público 🏍\n\n" +
                 "📌 Valor curso: $2.150.000 (incluye examen médico)\n" +
                 "📌 Valor licencia: Moto $272.800 y carro $329.900 en ventanilla única\n\n" +

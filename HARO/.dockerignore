@@ -1,0 +1,17 @@
+.git
+.gitignore
+.idea
+.settings
+.vscode
+
+target
+uploads
+
+.env
+.tokens
+secrets
+
+*.log
+*.ppt
+*.pptx
+tmp-*

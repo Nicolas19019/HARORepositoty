@@ -34,6 +34,11 @@ public class WhatsAppController {
             String text
     ) {}
 
+    public record SendImageReq(
+            String to,
+            String imageUrl
+    ) {}
+
     @GetMapping("/template/status")
     public ResponseEntity<WhatsAppTemplateService.ConfigStatus> status() {
         return ResponseEntity.ok(service.getConfigStatus());
@@ -57,5 +62,10 @@ public class WhatsAppController {
     @PostMapping("/text/send")
     public ResponseEntity<WhatsAppTemplateService.SendResult> sendText(@RequestBody SendTextReq req) {
         return ResponseEntity.ok(service.sendTextMessage(req.to(), req.text()));
+    }
+
+    @PostMapping("/image/send")
+    public ResponseEntity<WhatsAppTemplateService.SendResult> sendImage(@RequestBody SendImageReq req) {
+        return ResponseEntity.ok(service.sendImageMessage(req.to(), req.imageUrl()));
     }
 }

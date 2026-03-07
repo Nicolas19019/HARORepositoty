@@ -35,6 +35,12 @@ public class ContenidoClase {
     @Column(name = "url", nullable = false, length = 1000)
     private String url;
 
+    @Column(name = "preview_tipo", length = 20)
+    private String previewTipo;
+
+    @Column(name = "preview_url", length = 1000)
+    private String previewUrl;
+
     @Column(name = "orden_contenido", nullable = false)
     private Integer orden = 1;
 
@@ -114,6 +120,22 @@ public class ContenidoClase {
         this.url = url;
     }
 
+    public String getPreviewTipo() {
+        return previewTipo;
+    }
+
+    public void setPreviewTipo(String previewTipo) {
+        this.previewTipo = previewTipo;
+    }
+
+    public String getPreviewUrl() {
+        return previewUrl;
+    }
+
+    public void setPreviewUrl(String previewUrl) {
+        this.previewUrl = previewUrl;
+    }
+
     public Integer getOrden() {
         return orden;
     }
@@ -159,5 +181,26 @@ public class ContenidoClase {
     @JsonProperty("description")
     public String getDescription() {
         return descripcion;
+    }
+
+    @JsonProperty("previewEmbebidaDisponible")
+    public boolean isPreviewEmbebidaDisponible() {
+        return previewUrl != null && !previewUrl.isBlank();
+    }
+
+    @JsonProperty("previewTipo")
+    public String getPreviewTipoJson() {
+        return previewTipo;
+    }
+
+    @JsonProperty("previewUrl")
+    public String getPreviewUrlJson() {
+        return previewUrl;
+    }
+
+    @JsonProperty("previewSlides")
+    public java.util.List<String> getPreviewSlides() {
+        // Por ahora la estrategia implementada es conversion a PDF.
+        return java.util.List.of();
     }
 }

@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.List;
+import java.util.Map;
 
 record ClasePatchEstadoReq(Boolean publicada, Boolean visible) {}
 
@@ -77,6 +78,38 @@ public class ClaseAprendizajeController {
             throw new IllegalArgumentException("Body requerido");
         }
         return claseService.patchEstado(resolveClaseId(id), req.publicada(), req.visible());
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
+        claseService.deleteLogico(resolveClaseId(id));
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{id}/hard")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> deleteHard(@PathVariable String id) {
+        Long claseId = resolveClaseId(id);
+        contenidoService.deleteByClaseFisico(claseId);
+        claseService.deleteFisico(claseId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // Compatibilidad legacy: algunos front envian PATCH /api/clases/{id}/hidden
+    @PatchMapping("/{id}/hidden")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ClaseAprendizaje patchHidden(@PathVariable String id,
+                                        @RequestBody(required = false) Map<String, Object> req) {
+        Boolean hidden = null;
+        if (req != null && req.containsKey("hidden")) {
+            Object raw = req.get("hidden");
+            if (raw instanceof Boolean b) hidden = b;
+            else if (raw instanceof String s) hidden = Boolean.parseBoolean(s.trim());
+        }
+        // hidden=true -> visible=false ; hidden=false -> visible=true
+        Boolean visible = (hidden == null) ? Boolean.FALSE : !hidden;
+        return claseService.patchEstado(resolveClaseId(id), null, visible);
     }
 
     @GetMapping("/{id}/contenidos")

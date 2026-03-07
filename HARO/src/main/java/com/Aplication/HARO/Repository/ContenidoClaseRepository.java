@@ -8,4 +8,5 @@ import java.util.List;
 public interface ContenidoClaseRepository extends JpaRepository<ContenidoClase, Long> {
     List<ContenidoClase> findByClase_IdOrderByOrdenAscIdAsc(Long claseId);
     List<ContenidoClase> findByClase_IdAndVisibleTrueOrderByOrdenAscIdAsc(Long claseId);
+    void deleteByClase_Id(Long claseId);
 }

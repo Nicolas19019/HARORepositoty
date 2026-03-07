@@ -12,13 +12,16 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
@@ -27,6 +30,8 @@ import java.util.UUID;
 @Service
 @Transactional
 public class ContenidoClaseService {
+
+    private record StoredObject(String url, String ext) {}
 
     public record ContentInput(
             String titulo,
@@ -38,7 +43,11 @@ public class ContenidoClaseService {
     ) {}
 
     private static final Set<String> TIPOS_VALIDOS = Set.of("documento", "video", "imagen", "enlace");
-    private static final Set<String> EXT_PERMITIDAS = Set.of("pdf", "mp4", "jpg", "jpeg", "png", "docx");
+    private static final Set<String> EXT_DIAPOSITIVA = Set.of("ppt", "pptx", "pps", "ppsm");
+    private static final Set<String> EXT_PERMITIDAS = Set.of(
+            "pdf", "mp4", "jpg", "jpeg", "png", "docx",
+            "ppt", "pptx", "pps", "ppsm"
+    );
     private static final long MAX_BYTES = 50L * 1024L * 1024L;
 
     private final ContenidoClaseRepository repository;
@@ -49,6 +58,7 @@ public class ContenidoClaseService {
     private final String s3Bucket;
     private final String s3BasePath;
     private final String s3PublicBaseUrl;
+    private final String slideConverterCommand;
     private final S3Client s3Client;
 
     public ContenidoClaseService(ContenidoClaseRepository repository,
@@ -60,7 +70,8 @@ public class ContenidoClaseService {
                                  @Value("${aws.secret-access-key:}") String awsSecretAccessKey,
                                  @Value("${s3.bucket:}") String s3Bucket,
                                  @Value("${s3.base-path:clases/}") String s3BasePath,
-                                 @Value("${s3.public-base-url:}") String s3PublicBaseUrl) {
+                                 @Value("${s3.public-base-url:}") String s3PublicBaseUrl,
+                                 @Value("${app.slides.converter.command:soffice}") String slideConverterCommand) {
         this.repository = repository;
         this.claseService = claseService;
         this.uploadDir = Path.of(uploadDir, "clases");
@@ -69,6 +80,8 @@ public class ContenidoClaseService {
         this.s3Bucket = s3Bucket == null ? "" : s3Bucket.trim();
         this.s3BasePath = normalizeBasePath(s3BasePath);
         this.s3PublicBaseUrl = s3PublicBaseUrl == null ? "" : s3PublicBaseUrl.trim().replaceAll("/+$", "");
+        this.slideConverterCommand = (slideConverterCommand == null || slideConverterCommand.isBlank())
+                ? "soffice" : slideConverterCommand.trim();
 
         if ("s3".equals(this.storageProvider) && !isS3Enabled(this.storageProvider, this.s3Bucket, awsAccessKeyId, awsSecretAccessKey)) {
             throw new IllegalStateException("Falta configuracion S3: verifica AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY y S3_BUCKET");
@@ -127,6 +140,136 @@ public class ContenidoClaseService {
         repository.save(row);
     }
 
+    public void deleteFisico(Long id) {
+        ContenidoClase row = repository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Contenido no encontrado: " + id));
+        deleteStoredFileByUrl(row.getUrl());
+        deleteStoredFileByUrl(row.getPreviewUrl());
+        repository.delete(row);
+    }
+
+    public void deleteByClaseFisico(Long claseId) {
+        List<ContenidoClase> rows = repository.findByClase_IdOrderByOrdenAscIdAsc(claseId);
+        for (ContenidoClase row : rows) {
+            deleteStoredFileByUrl(row.getUrl());
+            deleteStoredFileByUrl(row.getPreviewUrl());
+        }
+        repository.deleteByClase_Id(claseId);
+        repository.flush();
+    }
+
+    public void deleteStoredFileByUrl(String rawUrl) {
+        String url = trim(rawUrl);
+        if (url.isBlank()) return;
+        if (url.startsWith("/uploads/") || url.contains("/uploads/")) {
+            deleteLocalByUrl(url);
+            return;
+        }
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            deleteS3ByUrl(url);
+        }
+    }
+
+    private void applyPreviewIfNeeded(ContenidoClase row, MultipartFile archivo, String ext) {
+        if (!EXT_DIAPOSITIVA.contains(ext)) {
+            clearPreview(row);
+            return;
+        }
+        try {
+            String preview = convertSlideToPdfAndStore(archivo, row.getTipo(), row.getClase() != null ? row.getClase().getId() : null);
+            if (preview == null || preview.isBlank()) {
+                clearPreview(row);
+                return;
+            }
+            row.setPreviewTipo("pdf");
+            row.setPreviewUrl(preview);
+        } catch (Exception ignored) {
+            clearPreview(row);
+        }
+    }
+
+    private void clearPreview(ContenidoClase row) {
+        row.setPreviewTipo(null);
+        row.setPreviewUrl(null);
+    }
+
+    private String convertSlideToPdfAndStore(MultipartFile archivo, String tipo, Long claseId) throws IOException, InterruptedException {
+        String original = archivo.getOriginalFilename() == null ? "archivo" : archivo.getOriginalFilename().trim();
+        String ext = extension(original);
+        if (!EXT_DIAPOSITIVA.contains(ext)) return null;
+
+        Path workDir = Files.createTempDirectory("haro-slide-convert-");
+        try {
+            Path input = workDir.resolve("input." + ext);
+            Files.copy(archivo.getInputStream(), input, StandardCopyOption.REPLACE_EXISTING);
+
+            List<String> cmd = new ArrayList<>();
+            cmd.add(slideConverterCommand);
+            cmd.add("--headless");
+            cmd.add("--convert-to");
+            cmd.add("pdf");
+            cmd.add("--outdir");
+            cmd.add(workDir.toAbsolutePath().toString());
+            cmd.add(input.toAbsolutePath().toString());
+
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            int code = p.waitFor();
+            if (code != 0) return null;
+
+            Path output = workDir.resolve("input.pdf");
+            if (!Files.exists(output) || Files.size(output) == 0) return null;
+            return storePreviewPdf(output, tipo, claseId);
+        } finally {
+            tryDeleteTempDirectory(workDir);
+        }
+    }
+
+    private String storePreviewPdf(Path pdfFile, String tipo, Long claseId) throws IOException {
+        if ("s3".equals(storageProvider)) {
+            return storePreviewPdfInS3(pdfFile, tipo, claseId);
+        }
+        return storePreviewPdfLocal(pdfFile, tipo, claseId);
+    }
+
+    private String storePreviewPdfInS3(Path pdfFile, String tipo, Long claseId) throws IOException {
+        String objectKey = buildStorageSubPath(tipo, claseId) + "preview-" + UUID.randomUUID() + ".pdf";
+        PutObjectRequest put = PutObjectRequest.builder()
+                .bucket(s3Bucket)
+                .key(objectKey)
+                .contentType("application/pdf")
+                .contentDisposition("inline")
+                .build();
+        s3Client.putObject(put, RequestBody.fromBytes(Files.readAllBytes(pdfFile)));
+        if (!s3PublicBaseUrl.isBlank()) {
+            return s3PublicBaseUrl + "/" + objectKey;
+        }
+        return "https://" + s3Bucket + ".s3." + awsRegion + ".amazonaws.com/" + objectKey;
+    }
+
+    private String storePreviewPdfLocal(Path pdfFile, String tipo, Long claseId) throws IOException {
+        String relativeDir = buildStorageSubPath(tipo, claseId);
+        Path targetDir = uploadDir.resolve(relativeDir);
+        Files.createDirectories(targetDir);
+        String safeName = "preview-" + UUID.randomUUID() + ".pdf";
+        Path target = targetDir.resolve(safeName);
+        Files.copy(Files.newInputStream(pdfFile), target, StandardCopyOption.REPLACE_EXISTING);
+        return "/uploads/clases/" + relativeDir + safeName;
+    }
+
+    private void tryDeleteTempDirectory(Path dir) {
+        try {
+            if (dir == null || !Files.exists(dir)) return;
+            Files.walk(dir)
+                    .sorted((a, b) -> b.getNameCount() - a.getNameCount())
+                    .forEach(p -> {
+                        try { Files.deleteIfExists(p); } catch (Exception ignored) {}
+                    });
+        } catch (Exception ignored) {
+        }
+    }
+
     private void merge(ContenidoClase row, ContentInput in, MultipartFile archivo, boolean creating) {
         if (in.titulo() != null) row.setTitulo(trim(in.titulo()));
         if (in.tipo() != null) row.setTipo(trim(in.tipo()).toLowerCase());
@@ -136,9 +279,12 @@ public class ContenidoClaseService {
 
         boolean hasFile = archivo != null && !archivo.isEmpty();
         if (hasFile) {
-            row.setUrl(storeFile(archivo, row.getTipo(), row.getClase() != null ? row.getClase().getId() : null));
+            StoredObject stored = storeFile(archivo, row.getTipo(), row.getClase() != null ? row.getClase().getId() : null);
+            row.setUrl(stored.url());
+            applyPreviewIfNeeded(row, archivo, stored.ext());
         } else if (in.url() != null) {
             row.setUrl(trim(in.url()));
+            clearPreview(row);
         }
 
         if (creating && row.getVisible() == null) row.setVisible(true);
@@ -179,14 +325,14 @@ public class ContenidoClaseService {
         throw new IllegalArgumentException("url invalida: usa http(s) o ruta /uploads/...");
     }
 
-    private String storeFile(MultipartFile file, String tipo, Long claseId) {
+    private StoredObject storeFile(MultipartFile file, String tipo, Long claseId) {
         if ("s3".equals(storageProvider)) {
             return storeFileInS3(file, tipo, claseId);
         }
         return storeFileLocal(file, tipo, claseId);
     }
 
-    private String storeFileInS3(MultipartFile file, String tipo, Long claseId) {
+    private StoredObject storeFileInS3(MultipartFile file, String tipo, Long claseId) {
         try {
             if (file.getSize() <= 0) {
                 throw new IllegalArgumentException("archivo vacio");
@@ -198,7 +344,7 @@ public class ContenidoClaseService {
             String original = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().trim();
             String ext = extension(original);
             if (!EXT_PERMITIDAS.contains(ext)) {
-                throw new IllegalArgumentException("extension no permitida. Usa: pdf, mp4, jpg, jpeg, png, docx");
+                throw new IllegalArgumentException("extension no permitida. Usa: pdf, mp4, jpg, jpeg, png, docx, ppt, pptx, pps, ppsm");
             }
 
             String objectKey = buildStorageSubPath(tipo, claseId) + UUID.randomUUID() + "." + ext;
@@ -211,20 +357,24 @@ public class ContenidoClaseService {
                     .bucket(s3Bucket)
                     .key(objectKey)
                     .contentType(contentType)
+                    .contentDisposition("inline")
                     .build();
 
             s3Client.putObject(put, RequestBody.fromBytes(file.getBytes()));
 
+            String publicUrl;
             if (!s3PublicBaseUrl.isBlank()) {
-                return s3PublicBaseUrl + "/" + objectKey;
+                publicUrl = s3PublicBaseUrl + "/" + objectKey;
+            } else {
+                publicUrl = "https://" + s3Bucket + ".s3." + awsRegion + ".amazonaws.com/" + objectKey;
             }
-            return "https://" + s3Bucket + ".s3." + awsRegion + ".amazonaws.com/" + objectKey;
+            return new StoredObject(publicUrl, ext);
         } catch (IOException e) {
             throw new IllegalStateException("No se pudo guardar el archivo en S3", e);
         }
     }
 
-    private String storeFileLocal(MultipartFile file, String tipo, Long claseId) {
+    private StoredObject storeFileLocal(MultipartFile file, String tipo, Long claseId) {
         try {
             if (file.getSize() <= 0) {
                 throw new IllegalArgumentException("archivo vacio");
@@ -236,7 +386,7 @@ public class ContenidoClaseService {
             String original = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().trim();
             String ext = extension(original);
             if (!EXT_PERMITIDAS.contains(ext)) {
-                throw new IllegalArgumentException("extension no permitida. Usa: pdf, mp4, jpg, jpeg, png, docx");
+                throw new IllegalArgumentException("extension no permitida. Usa: pdf, mp4, jpg, jpeg, png, docx, ppt, pptx, pps, ppsm");
             }
 
             String relativeDir = buildStorageSubPath(tipo, claseId);
@@ -245,10 +395,65 @@ public class ContenidoClaseService {
             String safeName = UUID.randomUUID() + "." + ext;
             Path target = targetDir.resolve(safeName);
             Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
-            return "/uploads/clases/" + relativeDir + safeName;
+            return new StoredObject("/uploads/clases/" + relativeDir + safeName, ext);
         } catch (IOException e) {
             throw new IllegalStateException("No se pudo guardar el archivo", e);
         }
+    }
+
+    private void deleteLocalByUrl(String url) {
+        try {
+            String marker = "/uploads/";
+            int idx = url.indexOf(marker);
+            String rel = idx >= 0 ? url.substring(idx + marker.length()) : url;
+            Path root = Path.of(uploadDir.getParent() == null ? "uploads" : uploadDir.getParent().toString())
+                    .toAbsolutePath().normalize();
+            Path target = root.resolve(rel).normalize();
+            if (target.startsWith(root) && Files.exists(target)) {
+                Files.delete(target);
+            }
+        } catch (Exception ignored) {
+            // No bloquea la eliminacion fisica de DB si el archivo ya no existe.
+        }
+    }
+
+    private void deleteS3ByUrl(String url) {
+        if (s3Client == null || s3Bucket.isBlank()) return;
+        try {
+            URI uri = URI.create(url);
+            String host = uri.getHost() == null ? "" : uri.getHost();
+            String path = uri.getPath() == null ? "" : uri.getPath();
+
+            String key = extractKeyFromS3Url(host, path);
+            if (key.isBlank()) return;
+
+            DeleteObjectRequest req = DeleteObjectRequest.builder()
+                    .bucket(s3Bucket)
+                    .key(key)
+                    .build();
+            s3Client.deleteObject(req);
+        } catch (Exception ignored) {
+            // No bloquea la eliminacion fisica de DB si el objeto ya no existe.
+        }
+    }
+
+    private String extractKeyFromS3Url(String host, String path) {
+        String p = path.startsWith("/") ? path.substring(1) : path;
+        if (p.isBlank()) return "";
+
+        // virtual-hosted-style: <bucket>.s3.<region>.amazonaws.com/<key>
+        if (host.startsWith(s3Bucket + ".s3")) {
+            return p;
+        }
+
+        // path-style: s3.<region>.amazonaws.com/<bucket>/<key>
+        if (host.startsWith("s3.") || host.equals("s3.amazonaws.com")) {
+            String prefix = s3Bucket + "/";
+            if (p.startsWith(prefix)) {
+                return p.substring(prefix.length());
+            }
+        }
+        return "";
     }
 
     private String extension(String filename) {
@@ -288,6 +493,10 @@ public class ContenidoClaseService {
             case "jpg", "jpeg" -> "image/jpeg";
             case "png" -> "image/png";
             case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            case "ppt" -> "application/vnd.ms-powerpoint";
+            case "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            case "pps" -> "application/vnd.ms-powerpoint";
+            case "ppsm" -> "application/vnd.ms-powerpoint.slideshow.macroEnabled.12";
             default -> "application/octet-stream";
         };
     }

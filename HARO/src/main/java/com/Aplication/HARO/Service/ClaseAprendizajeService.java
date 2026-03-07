@@ -82,6 +82,22 @@ public class ClaseAprendizajeService {
         return repository.save(db);
     }
 
+    public void deleteLogico(Long id) {
+        ClaseAprendizaje db = repository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Clase no encontrada: " + id));
+        db.setVisible(false);
+        db.setPublicada(false);
+        validarYNormalizar(db, false);
+        repository.save(db);
+    }
+
+    public void deleteFisico(Long id) {
+        ClaseAprendizaje db = repository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Clase no encontrada: " + id));
+        repository.deleteById(db.getId());
+        repository.flush();
+    }
+
     @Transactional(readOnly = true)
     public ClaseAprendizaje requireById(Long id) {
         return repository.findById(id)
@@ -140,4 +156,3 @@ public class ClaseAprendizajeService {
         return out.isBlank() ? null : out;
     }
 }
-

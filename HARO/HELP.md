@@ -13,6 +13,43 @@ Important:
 - `.env` is ignored by git.
 - Only `.env.example` should be committed.
 
+## Run Locally With Docker Compose (No VPN DB)
+
+This setup runs:
+- `postgres` container (local DB)
+- `api` container (this Spring Boot app)
+
+The API is forced to use the local Postgres service via:
+- `DB_URL=jdbc:postgresql://postgres:5432/<db>`
+- `DB_USERNAME` and `DB_PASSWORD` from local compose variables
+
+Optional local variables in `.env`:
+- `LOCAL_PG_DB` (default: `haro`)
+- `LOCAL_PG_USER` (default: `haro`)
+- `LOCAL_PG_PASSWORD` (default: `haro123`)
+- `LOCAL_PG_PORT` (default: `5432`)
+- `API_PORT` (default: `8080`)
+
+Commands:
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs -f api
+```
+
+Stop and remove:
+
+```bash
+docker compose down
+```
+
+Stop and remove including DB volume:
+
+```bash
+docker compose down -v
+```
+
 ## Google Calendar (Meet)
 
 This project exposes `POST /api/calendar/reuniones` to create a Calendar event with Google Meet link.

@@ -10,33 +10,34 @@ substitutions:
 
 steps:
   - name: gcr.io/cloud-builders/docker
+    entrypoint: bash
     args:
-      - build
-      - -t
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE}:$SHORT_SHA
-      - .
+      - -c
+      - |
+        IMAGE_REF="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO,,}/${_IMAGE,,}:$SHORT_SHA"
+        docker build -t "$IMAGE_REF" .
 
   - name: gcr.io/cloud-builders/docker
+    entrypoint: bash
     args:
-      - push
-      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE}:$SHORT_SHA
+      - -c
+      - |
+        IMAGE_REF="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO,,}/${_IMAGE,,}:$SHORT_SHA"
+        docker push "$IMAGE_REF"
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: bash
     args:
       - -c
       - |
+        IMAGE_REF="${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO,,}/${_IMAGE,,}:$SHORT_SHA"
         CLOUD_SQL_JDBC_URL="jdbc:postgresql:///${_DB_NAME}?socketFactory=com.google.cloud.sql.postgres.SocketFactory&cloudSqlInstance=${_CLOUDSQL_INSTANCE}&cloudSqlRefreshStrategy=lazy"
 
         gcloud run deploy ${_SERVICE} \
           --region ${_REGION} \
           --platform managed \
           --allow-unauthenticated \
-          --image ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE}:$SHORT_SHA \
+          --image "$IMAGE_REF" \
           --add-cloudsql-instances ${_CLOUDSQL_INSTANCE} \
           --set-env-vars "SPRING_PROFILES_ACTIVE=${_SPRING_PROFILES_ACTIVE},CLOUD_SQL_INSTANCE=${_CLOUDSQL_INSTANCE},DB_NAME=${_DB_NAME},DB_USERNAME=${_DB_USER},DB_URL=${CLOUD_SQL_JDBC_URL},SPRING_DATASOURCE_USERNAME=${_DB_USER},SPRING_DATASOURCE_URL=${CLOUD_SQL_JDBC_URL}" \
           --set-secrets "DB_PASSWORD=DB_PASSWORD:latest,SPRING_DATASOURCE_PASSWORD=DB_PASSWORD:latest,JWT_SECRET=JWT_SECRET:latest,AUTH_PEPPER=AUTH_PEPPER:latest,GOOGLE_CALENDAR_OAUTH_CLIENT_SECRETS_JSON=GOOGLE_CALENDAR_OAUTH_CLIENT_SECRETS_JSON:latest"
-
-
-images:
-  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE}:$SHORT_SHA

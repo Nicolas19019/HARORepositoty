@@ -30,11 +30,13 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
@@ -45,6 +47,7 @@ public class GoogleCalendarService {
 
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
 
+    private final String oauthClientSecretsJson;
     private final String oauthClientSecretsPath;
     private final String oauthTokensDir;
     private final String oauthUserId;
@@ -54,6 +57,7 @@ public class GoogleCalendarService {
     private final String defaultTimezone;
 
     public GoogleCalendarService(
+            @Value("${google.calendar.oauth.client-secrets.json:}") String oauthClientSecretsJson,
             @Value("${google.calendar.oauth.client-secrets.path:Secrets/google-oauth-client.json}") String oauthClientSecretsPath,
             @Value("${google.calendar.oauth.tokens.dir:.tokens/google-calendar}") String oauthTokensDir,
             @Value("${google.calendar.oauth.user-id:default}") String oauthUserId,
@@ -62,6 +66,7 @@ public class GoogleCalendarService {
             @Value("${google.calendar.application-name:HARO}") String applicationName,
             @Value("${google.calendar.default-timezone:America/Bogota}") String defaultTimezone
     ) {
+        this.oauthClientSecretsJson = oauthClientSecretsJson;
         this.oauthClientSecretsPath = oauthClientSecretsPath;
         this.oauthTokensDir = oauthTokensDir;
         this.oauthUserId = oauthUserId;
@@ -165,18 +170,11 @@ public class GoogleCalendarService {
     }
 
     private Calendar buildOAuthUserClient(NetHttpTransport transport) {
-        if (!StringUtils.hasText(oauthClientSecretsPath)) {
-            throw new IllegalStateException(
-                    "Falta GOOGLE_CALENDAR_OAUTH_CLIENT_SECRETS_PATH para modo oauth_user."
-            );
-        }
-
         String tokensDir = StringUtils.hasText(oauthTokensDir)
                 ? oauthTokensDir.trim()
                 : ".tokens/google-calendar";
         File tokensDirectory = new File(tokensDir);
-        try (InputStream in = new FileInputStream(oauthClientSecretsPath.trim());
-             Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
+        try (Reader reader = openOauthClientSecretsReader()) {
             GoogleClientSecrets clientSecrets = GoogleClientSecrets.load(JSON_FACTORY, reader);
             GoogleClientSecrets.Details details = clientSecrets.getInstalled() != null
                     ? clientSecrets.getInstalled()
@@ -214,6 +212,38 @@ public class GoogleCalendarService {
                     e
             );
         }
+    }
+
+    private Reader openOauthClientSecretsReader() throws Exception {
+        if (StringUtils.hasText(oauthClientSecretsJson)) {
+            String raw = oauthClientSecretsJson.trim();
+            String json = raw;
+            if (!raw.startsWith("{")) {
+                try {
+                    String decoded = new String(Base64.getDecoder().decode(raw), StandardCharsets.UTF_8);
+                    if (decoded.trim().startsWith("{")) {
+                        json = decoded;
+                    }
+                } catch (IllegalArgumentException ignored) {
+                    // If it's not base64, keep raw value and validate below.
+                }
+            }
+            if (!json.trim().startsWith("{")) {
+                throw new IllegalStateException(
+                        "GOOGLE_CALENDAR_OAUTH_CLIENT_SECRETS_JSON no tiene formato JSON valido."
+                );
+            }
+            return new StringReader(json);
+        }
+
+        if (!StringUtils.hasText(oauthClientSecretsPath)) {
+            throw new IllegalStateException(
+                    "Falta GOOGLE_CALENDAR_OAUTH_CLIENT_SECRETS_PATH o GOOGLE_CALENDAR_OAUTH_CLIENT_SECRETS_JSON."
+            );
+        }
+
+        InputStream in = new FileInputStream(oauthClientSecretsPath.trim());
+        return new InputStreamReader(in, StandardCharsets.UTF_8);
     }
 
     private String buildGoogleErrorMessage(GoogleJsonResponseException e) {

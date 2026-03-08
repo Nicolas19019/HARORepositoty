@@ -1,5 +1,5 @@
 substitutions:
-  _SERVICE: harorepositoty
+  _SERVICE: harorepositoty2
   _REGION: europe-west1
   _AR_REPO: cloud-run-source-deploy
   _IMAGE: harorepositoty
@@ -36,6 +36,7 @@ steps:
           --add-cloudsql-instances ${_CLOUDSQL_INSTANCE} \
           --set-env-vars "SPRING_PROFILES_ACTIVE=${_SPRING_PROFILES_ACTIVE},DB_USERNAME=${_DB_USER},DB_URL=${DB_URL}" \
           --set-secrets "DB_PASSWORD=DB_PASSWORD:latest,JWT_SECRET=JWT_SECRET:latest,AUTH_PEPPER=AUTH_PEPPER:latest,GOOGLE_CALENDAR_OAUTH_CLIENT_SECRETS_JSON=GOOGLE_CALENDAR_OAUTH_CLIENT_SECRETS_JSON:latest"
+
 
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE}:$SHORT_SHA

@@ -33,7 +33,7 @@ public class SeguridadConfig {
      Helpers
      =========================== */
 
-  // Ã‚Â¿Es HEX (solo [0-9A-Fa-f]) despuÃƒÂ©s de normalizar?
+  // Â¿Es HEX (solo [0-9A-Fa-f]) despuÃ©s de normalizar?
   private static boolean isHexEvenLength(String s) {
     if (s == null) return false;
     String norm = s.trim();
@@ -78,8 +78,8 @@ public class SeguridadConfig {
   /* ===========================================================
      Encoder: BCrypt(  Base64( SHA256( clientInput + PEPPER ) )  )
      - clientInput puede ser:
-       a) HEX de SHA-256(password)  -> lo decodificamos (modo Ã¢â‚¬Å“legacy/clienteÃ¢â‚¬Â)
-       b) password en texto plano   -> le hacemos SHA-256 aquÃƒÂ­ (modo Ã¢â‚¬Å“toleranteÃ¢â‚¬Â)
+       a) HEX de SHA-256(password)  -> lo decodificamos (modo â€œlegacy/clienteâ€)
+       b) password en texto plano   -> le hacemos SHA-256 aquÃ­ (modo â€œtoleranteâ€)
      - PEPPER (texto) se concatena en bytes UTF-8
      =========================================================== */
 

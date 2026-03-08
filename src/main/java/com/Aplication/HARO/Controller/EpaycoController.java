@@ -31,9 +31,11 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController
-@CrossOrigin(origins = "\"https://ceaharo.com\",\r\n" + //
-        "                                \"https://www.ceaharo.com\",\r\n" + //
-        "                                \"https://*.ceaharo.com\"")
+@CrossOrigin(originPatterns = {
+        "https://ceaharo.com",
+        "https://www.ceaharo.com",
+        "https://*.ceaharo.com"
+})
 public class EpaycoController {
 
     private static final Logger log = LoggerFactory.getLogger(EpaycoController.class);
@@ -68,22 +70,78 @@ public class EpaycoController {
     // Endpoint de respuesta (visible al usuario)
     @GetMapping({"/response", "/epayco/response"})
     public ResponseEntity<?> response(@RequestParam(name = "ref_payco", required = false) String refPayco,
+                                      @RequestParam(name = "document", required = false) String documentHint,
+                                      @RequestParam(name = "x_extra1", required = false) String xExtra1,
                                       @RequestParam(name = "format", required = false) String format,
                                       @RequestHeader(name = "Accept", required = false) String acceptHeader) {
-        return userFacingPaymentStatus(refPayco, format, acceptHeader);
+        return userFacingPaymentStatus(refPayco, format, acceptHeader, firstNotBlank(documentHint, xExtra1));
     }
 
     // Compatibilidad: si por configuracion el retorno llega a /confirmation por GET
     @GetMapping({"/confirmation", "/epayco/confirmation"})
     public ResponseEntity<?> confirmationView(@RequestParam(name = "ref_payco", required = false) String refPayco,
+                                              @RequestParam(name = "document", required = false) String documentHint,
+                                              @RequestParam(name = "x_extra1", required = false) String xExtra1,
                                               @RequestParam(name = "format", required = false) String format,
                                               @RequestHeader(name = "Accept", required = false) String acceptHeader) {
-        return userFacingPaymentStatus(refPayco, format, acceptHeader);
+        return userFacingPaymentStatus(refPayco, format, acceptHeader, firstNotBlank(documentHint, xExtra1));
     }
 
-    private ResponseEntity<?> userFacingPaymentStatus(String refPaycoRaw, String formatRaw, String acceptHeaderRaw) {
+    /**
+     * Endpoint para que respuesta.html confirme estado y dispare continuidad del chatbot.
+     * Espera JSON con cualquiera de estos campos:
+     * - ref_payco | refPayco
+     * - document | x_extra1
+     */
+    @PostMapping(value = {"/response/sync", "/epayco/response/sync"}, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) {
+        String refPayco = firstNotBlank(
+                safeTrim(asString(payload.get("ref_payco"))),
+                safeTrim(asString(payload.get("refPayco"))),
+                safeTrim(asString(payload.get("reference")))
+        );
+        String documentHint = firstNotBlank(
+                safeTrim(asString(payload.get("document"))),
+                safeTrim(asString(payload.get("x_extra1")))
+        );
+
+        if (!StringUtils.hasText(refPayco)) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "status", "ERROR",
+                    "message", "ref_payco es requerido"
+            ));
+        }
+
+        String rawData;
+        try {
+            rawData = epaycoService.fetchTransactionByRefPayco(refPayco);
+        } catch (Exception ex) {
+            log.error("responseSync no pudo consultar ePayco ref={}: {}", refPayco, ex.getMessage(), ex);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "status", "ERROR",
+                    "reference", refPayco,
+                    "message", "No fue posible consultar ePayco"
+            ));
+        }
+
+        Map<String, Object> summary = buildUserPaymentSummary(refPayco, rawData, documentHint);
+        String status = safeTrim(asString(summary.get("status")));
+
+        Map<String, Object> out = new LinkedHashMap<>(summary);
+        out.put("chatbotSynced", "APPROVED".equalsIgnoreCase(status));
+        out.put("syncSource", "response_page");
+        out.put("syncAt", ZonedDateTime.now(ZoneId.of("America/Bogota"))
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z")));
+        return ResponseEntity.ok(out);
+    }
+
+    private ResponseEntity<?> userFacingPaymentStatus(String refPaycoRaw,
+                                                      String formatRaw,
+                                                      String acceptHeaderRaw,
+                                                      String documentHintRaw) {
         boolean wantsHtml = wantsHtml(formatRaw, acceptHeaderRaw);
         String refPayco = safeTrim(refPaycoRaw);
+        String documentHint = safeTrim(documentHintRaw);
         if (!StringUtils.hasText(refPayco)) {
             Map<String, Object> payload = Map.of(
                     "status", "ERROR",
@@ -109,7 +167,7 @@ public class EpaycoController {
             return userFacingResponse(HttpStatus.INTERNAL_SERVER_ERROR, payload, wantsHtml);
         }
 
-        Map<String, Object> payload = buildUserPaymentSummary(refPayco, rawData);
+        Map<String, Object> payload = buildUserPaymentSummary(refPayco, rawData, documentHint);
         return userFacingResponse(HttpStatus.OK, payload, wantsHtml);
     }
 
@@ -124,7 +182,7 @@ public class EpaycoController {
                 .body(renderPaymentReceiptHtml(payload));
     }
 
-    private Map<String, Object> buildUserPaymentSummary(String refPayco, String rawData) {
+    private Map<String, Object> buildUserPaymentSummary(String refPayco, String rawData, String documentHintRaw) {
         JsonNode root;
         try {
             root = objectMapper.readTree(rawData == null ? "{}" : rawData);
@@ -151,10 +209,29 @@ public class EpaycoController {
         String xCurrency = firstNotBlank(readField(tx, "x_currency_code"), readField(root, "x_currency_code"));
         String xTransactionId = firstNotBlank(readField(tx, "x_transaction_id"), readField(root, "x_transaction_id"));
         String xInvoice = firstNotBlank(readField(tx, "x_id_invoice"), readField(root, "x_id_invoice"));
-        String xDocumento = firstNotBlank(readField(tx, "x_extra1"), readField(root, "x_extra1"));
+        String xDocumento = firstNotBlank(readField(tx, "x_extra1"), readField(root, "x_extra1"), documentHintRaw);
         String xRefPayco = firstNotBlank(readField(tx, "x_ref_payco"), readField(root, "x_ref_payco"), refPayco);
 
-        PaymentUserStatus status = resolvePaymentUserStatus(xResponse, xCodResponse);
+        PaymentUserStatus status = resolvePaymentUserStatus(xResponse, xCodResponse, xReason);
+
+        Optional<ChatbotMatriculaProceso> procesoOpt = Optional.empty();
+        if (StringUtils.hasText(xDocumento)) {
+            procesoOpt = chatbotProcesoService.findProcesoByDocumento(xDocumento);
+            if (status != PaymentUserStatus.APPROVED) {
+                PaymentUserStatus localStatus = resolveLocalProcesoStatus(procesoOpt.orElse(null));
+                if (localStatus == PaymentUserStatus.APPROVED
+                        || localStatus == PaymentUserStatus.CANCELLED
+                        || localStatus == PaymentUserStatus.REJECTED) {
+                    status = localStatus;
+                }
+            }
+        }
+
+        if (status == PaymentUserStatus.APPROVED && StringUtils.hasText(xDocumento)) {
+            // Refuerza continuidad del flujo aunque el webhook se retrase.
+            processApprovedPayment(xDocumento, xAmount);
+            procesoOpt = chatbotProcesoService.findProcesoByDocumento(xDocumento);
+        }
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("status", status.code);
@@ -175,24 +252,36 @@ public class EpaycoController {
         if (StringUtils.hasText(xReason)) gateway.put("reason", xReason);
         if (!gateway.isEmpty()) out.put("gateway", gateway);
 
-        if (status == PaymentUserStatus.APPROVED && StringUtils.hasText(xDocumento)) {
-            // Refuerza continuidad del flujo aunque el webhook se retrase.
-            processApprovedPayment(xDocumento, xAmount);
+        if (procesoOpt.isPresent()) {
+            ChatbotMatriculaProceso proceso = procesoOpt.get();
+            String flowStatus = safeTrim(proceso.getFlowStatus());
+            String paymentStatus = safeTrim(proceso.getPaymentStatus());
+            if (StringUtils.hasText(flowStatus)) out.put("flowStatus", flowStatus);
+            if (StringUtils.hasText(paymentStatus)) out.put("paymentStatus", paymentStatus);
 
-            chatbotProcesoService.findProcesoByDocumento(xDocumento).ifPresent(proceso -> {
+            if (status == PaymentUserStatus.APPROVED) {
                 String contractLink = safeTrim(proceso.getContractLink());
                 if (StringUtils.hasText(contractLink)) {
                     out.put("contractLink", contractLink);
                     out.put("nextStep",
                             "Tu pago fue aprobado. Continua con la contratacion en este enlace: " + contractLink);
                 }
-
-                out.put("flowStatus", safeTrim(proceso.getFlowStatus()));
-                out.put("paymentStatus", safeTrim(proceso.getPaymentStatus()));
-            });
+            }
         }
 
         return out;
+    }
+
+    private PaymentUserStatus resolveLocalProcesoStatus(ChatbotMatriculaProceso proceso) {
+        if (proceso == null) return PaymentUserStatus.UNKNOWN;
+        String local = safeTrim(proceso.getPaymentStatus()).toUpperCase(Locale.ROOT);
+        return switch (local) {
+            case "APPROVED" -> PaymentUserStatus.APPROVED;
+            case "CANCELLED" -> PaymentUserStatus.CANCELLED;
+            case "REJECTED" -> PaymentUserStatus.REJECTED;
+            case "PENDING" -> PaymentUserStatus.PENDING;
+            default -> PaymentUserStatus.UNKNOWN;
+        };
     }
 
     private JsonNode resolveTransactionNode(JsonNode root) {
@@ -228,6 +317,10 @@ public class EpaycoController {
     }
 
     private PaymentUserStatus resolvePaymentUserStatus(String estadoRaw, String codRaw) {
+        return resolvePaymentUserStatus(estadoRaw, codRaw, "");
+    }
+
+    private PaymentUserStatus resolvePaymentUserStatus(String estadoRaw, String codRaw, String reasonRaw) {
         if (isApproved(estadoRaw, codRaw)) {
             return PaymentUserStatus.APPROVED;
         }
@@ -237,7 +330,7 @@ public class EpaycoController {
         if (isRejected(estadoRaw, codRaw)) {
             return PaymentUserStatus.REJECTED;
         }
-        if (isPending(estadoRaw, codRaw)) {
+        if (isPending(estadoRaw, codRaw, reasonRaw)) {
             return PaymentUserStatus.PENDING;
         }
         return PaymentUserStatus.UNKNOWN;
@@ -635,7 +728,11 @@ public class EpaycoController {
     private boolean isApproved(String estadoRaw, String codRaw) {
         String estado = safeTrim(estadoRaw).toLowerCase(Locale.ROOT);
         String cod = safeTrim(codRaw);
-        return "1".equals(cod) || estado.contains("acept");
+        return "1".equals(cod)
+                || estado.contains("acept")
+                || estado.contains("aprob")
+                || estado.contains("pagad")
+                || estado.contains("exito");
     }
 
     private boolean isCancelled(String estadoRaw, String codRaw) {
@@ -655,9 +752,18 @@ public class EpaycoController {
     }
 
     private boolean isPending(String estadoRaw, String codRaw) {
+        return isPending(estadoRaw, codRaw, "");
+    }
+
+    private boolean isPending(String estadoRaw, String codRaw, String reasonRaw) {
         String estado = safeTrim(estadoRaw).toLowerCase(Locale.ROOT);
         String cod = safeTrim(codRaw);
-        return "3".equals(cod) || estado.contains("pend");
+        String reason = safeTrim(reasonRaw).toLowerCase(Locale.ROOT);
+        return "3".equals(cod)
+                || estado.contains("pend")
+                || estado.contains("validad")
+                || reason.contains("validado con nuestro sistema")
+                || reason.contains("en validacion");
     }
 
     private BigDecimal parseAmountOrNull(String raw) {
@@ -695,6 +801,10 @@ public class EpaycoController {
                 + URLEncoder.encode(key, StandardCharsets.UTF_8)
                 + "="
                 + URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private String asString(Object value) {
+        return value == null ? "" : String.valueOf(value);
     }
 
     private String safeTrim(String value) {

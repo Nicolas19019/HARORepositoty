@@ -173,25 +173,30 @@ public class SeguridadConfig {
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 
     CorsConfiguration localCors = new CorsConfiguration();
-    localCors.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*", "null"));
+    localCors.setAllowedOriginPatterns(List.of(
+            "http://localhost:*",
+            "http://127.0.0.1:*",
+            "https://ceaharo.com",
+            "https://www.ceaharo.com",
+            "https://*.ceaharo.com",
+            "null"
+    ));
     localCors.setAllowCredentials(true);
     localCors.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
-    localCors.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"));
+    localCors.setAllowedHeaders(List.of("*"));
     localCors.setMaxAge(3600L);
 
     CorsConfiguration siteCors = new CorsConfiguration();
-    siteCors.setAllowedOriginPatterns(List.of(
+    siteCors.setAllowedOrigins(List.of(
             "https://ceaharo.com",
-            "https://www.ceaharo.com",
-            "https://*.ceaharo.com"
+            "https://www.ceaharo.com"
     ));
     siteCors.setAllowCredentials(false);
-    siteCors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
-    siteCors.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"));
+    siteCors.setAllowedMethods(List.of("GET", "POST", "OPTIONS", "HEAD"));
+    siteCors.setAllowedHeaders(List.of("*"));
     siteCors.setMaxAge(3600L);
 
-    source.registerCorsConfiguration("/epayco/response", siteCors);
-    source.registerCorsConfiguration("/epayco/confirmation", siteCors);
+    source.registerCorsConfiguration("/epayco/**", siteCors);
     source.registerCorsConfiguration("/response", siteCors);
     source.registerCorsConfiguration("/confirmation", siteCors);
 

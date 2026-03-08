@@ -8,7 +8,9 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/payments/epayco")
-@CrossOrigin(origins = {"http://127.0.0.1:8081", "http://localhost:8081"})
+@CrossOrigin(origins = {"https://ceaharo.com",
+                                "https://www.ceaharo.com",
+                                "https://*.ceaharo.com"})
 public class EpaycoSessionController {
 
     public record Item(Long serviceId, String name, double unitPrice, int qty) {}

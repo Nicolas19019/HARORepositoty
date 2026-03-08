@@ -289,6 +289,25 @@ public class ChatbotProcesoService {
         return procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(normalizeEmail(email));
     }
 
+    @Transactional(readOnly = true)
+    public Optional<ChatbotMatriculaProceso> findLatestProcesoByPhone(String phoneRaw) {
+        String normalized = trim(phoneRaw).replaceAll("[^0-9+]", "");
+        if (normalized.isBlank()) {
+            return Optional.empty();
+        }
+
+        Optional<ChatbotMatriculaProceso> exact =
+                procesoRepository.findTopByPhoneOrderByUpdatedAtDesc(normalized);
+        if (exact.isPresent()) {
+            return exact;
+        }
+
+        if (normalized.startsWith("+")) {
+            return procesoRepository.findTopByPhoneOrderByUpdatedAtDesc(normalized.substring(1));
+        }
+        return procesoRepository.findTopByPhoneOrderByUpdatedAtDesc("+" + normalized);
+    }
+
     public Long createStudentFromSignedContract(String documento) {
         String doc = normalizeDoc(documento);
         ChatbotMatriculaProceso proceso = getByDocumentoOrThrow(doc);

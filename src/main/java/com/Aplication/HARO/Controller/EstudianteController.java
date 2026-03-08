@@ -126,6 +126,7 @@ public class EstudianteController {
 		out.put("opcionales", List.of(
 				"tipoEstudiante", "horas", "tipoPase",
 				"aproboExamenTeorico", "estado", "visible", "fotoPerfil"));
+		out.put("soloLectura", List.of("id", "fechaCreacion"));
 
 		Map<String, String> reglas = new LinkedHashMap<>();
 		reglas.put("numeroDocumento", "Debe ser único");

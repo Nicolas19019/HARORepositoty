@@ -31,6 +31,9 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController
+@CrossOrigin(origins = "\"https://ceaharo.com\",\r\n" + //
+        "                                \"https://www.ceaharo.com\",\r\n" + //
+        "                                \"https://*.ceaharo.com\"")
 public class EpaycoController {
 
     private static final Logger log = LoggerFactory.getLogger(EpaycoController.class);

@@ -20,6 +20,21 @@ public class CorsConfig {
                         )
                         .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                         .allowedHeaders("*");
+
+                registry.addMapping("/epayco/**")
+                        .allowedOrigins("https://ceaharo.com", "https://www.ceaharo.com")
+                        .allowedMethods("GET", "POST", "OPTIONS", "HEAD")
+                        .allowedHeaders("*");
+
+                registry.addMapping("/response")
+                        .allowedOrigins("https://ceaharo.com", "https://www.ceaharo.com")
+                        .allowedMethods("GET", "OPTIONS", "HEAD")
+                        .allowedHeaders("*");
+
+                registry.addMapping("/confirmation")
+                        .allowedOrigins("https://ceaharo.com", "https://www.ceaharo.com")
+                        .allowedMethods("GET", "POST", "OPTIONS", "HEAD")
+                        .allowedHeaders("*");
             }
         };
     }

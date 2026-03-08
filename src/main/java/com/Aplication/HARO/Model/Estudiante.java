@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.time.LocalDate;
+import java.time.ZoneId;
 
 @Entity
 @Table(name = "estudiante", indexes = {
@@ -53,6 +55,10 @@ public class Estudiante {
 	@JsonProperty(access = JsonProperty.Access.WRITE_ONLY) 
 	@Column(name = "contrasena", nullable = false)
 	private String contrasena;
+
+	@JsonProperty(access = JsonProperty.Access.READ_ONLY)
+	@Column(name = "fecha_creacion", updatable = false)
+	private LocalDate fechaCreacion;
 
 
 	public Long getId() {
@@ -159,6 +165,14 @@ public class Estudiante {
 		this.contrasena = contrasena;
 	}
 
+	public LocalDate getFechaCreacion() {
+		return fechaCreacion;
+	}
+
+	public void setFechaCreacion(LocalDate fechaCreacion) {
+		this.fechaCreacion = fechaCreacion;
+	}
+
 	public String getTipoEstudiante() {
 		return tipoEstudiante;
 	}
@@ -208,8 +222,15 @@ public class Estudiante {
 	}
 
 	@PrePersist
+	public void onCreate() {
+		if (visible == null) visible = true;
+		if (fechaCreacion == null) {
+			fechaCreacion = LocalDate.now(ZoneId.of("America/Bogota"));
+		}
+	}
+
 	@PreUpdate
-	public void normalizarVisibilidad() {
+	public void onUpdate() {
 		if (visible == null) visible = true;
 	}
 

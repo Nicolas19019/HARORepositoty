@@ -136,6 +136,7 @@ public class ChatbotInboundController {
         ENROLLMENT_CAPTURE,
         ENROLLMENT_EMAIL_CAPTURE,
         ENROLLMENT_PHONE_CAPTURE,
+        ENROLLMENT_SEDE_CAPTURE,
         ENROLLMENT_CONFIRM,
         PAYMENT_WAIT,
         CONTRACT_WAIT,
@@ -265,6 +266,12 @@ public class ChatbotInboundController {
                 return ResponseEntity.ok(new BotResponse(actions));
             }
 
+            if (shouldSyncEnrollmentFlow(session.state, text)
+                    && resumeEnrollmentAfterExternalPayment(from, session, actions)) {
+                session.lastSeen = now;
+                return ResponseEntity.ok(new BotResponse(actions));
+            }
+
             switch (session.state) {
                 case MAIN_MENU -> handleMainMenu(text, from, session, actions);
                 case COURSES_MENU -> handleCoursesMenu(text, from, session, actions);
@@ -272,7 +279,8 @@ public class ChatbotInboundController {
                 case ENROLLMENT_DATA_AUTH_WAIT -> handleEnrollmentDataAuthWait(text, session, actions);
                 case ENROLLMENT_CAPTURE -> handleEnrollmentCapture(rawText, session, actions);
                 case ENROLLMENT_EMAIL_CAPTURE -> handleEnrollmentEmailCapture(text, session, actions);
-                case ENROLLMENT_PHONE_CAPTURE -> handleEnrollmentPhoneCapture(from, text, session, actions);
+                case ENROLLMENT_PHONE_CAPTURE -> handleEnrollmentPhoneCapture(text, session, actions);
+                case ENROLLMENT_SEDE_CAPTURE -> handleEnrollmentSedeCapture(from, text, session, actions);
                 case ENROLLMENT_CONFIRM -> handleEnrollmentConfirm(text, session, actions);
                 case PAYMENT_WAIT -> handlePaymentWait(text, session, actions);
                 case CONTRACT_WAIT -> handleContractWait(text, session, actions);
@@ -301,7 +309,7 @@ public class ChatbotInboundController {
     private void handleMainMenu(String text, String from, SessionData session, List<BotAction> actions) {
         String cmd = normalizeCommandText(text);
         if (isEnrollmentCommand(cmd)) {
-            startEnrollmentAuthorization(from, session, actions);
+            startEnrollmentAuthorization(session, actions);
             return;
         }
 
@@ -313,7 +321,7 @@ public class ChatbotInboundController {
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
             case "2" -> {
-                startEnrollmentAuthorization(from, session, actions);
+                startEnrollmentAuthorization(session, actions);
             }
             case "3", "informacion", "info", "horarios" -> {
                 actions.add(textMsg(infoText()));
@@ -344,7 +352,7 @@ public class ChatbotInboundController {
         String cmd = normalizeCommandText(text);
         if (isEnrollmentCommand(cmd)) {
             session.courseOptionsExpanded = false;
-            startEnrollmentAuthorization(from, session, actions);
+            startEnrollmentAuthorization(session, actions);
             return;
         }
 
@@ -426,11 +434,10 @@ public class ChatbotInboundController {
         }
     }
 
-    private void startEnrollmentAuthorization(String from, SessionData session, List<BotAction> actions) {
+    private void startEnrollmentAuthorization(SessionData session, List<BotAction> actions) {
         clearEnrollmentData(session);
         session.state = ChatState.ENROLLMENT_DATA_AUTH_WAIT;
-        addEnrollmentIntro(from, actions);
-        actions.add(textMsg("Opciones: SI | NO | MENU | CANCELAR"));
+        addEnrollmentIntro(actions);
     }
 
     private void handleEnrollmentDataAuthWait(String text, SessionData session, List<BotAction> actions) {
@@ -475,7 +482,7 @@ public class ChatbotInboundController {
         session.state = ChatState.ENROLLMENT_EMAIL_CAPTURE;
 
         actions.add(textMsg(
-                "ðŸ“§ Paso 2 de 5: envÃ­a tu correo electrÃ³nico.\n" +
+                "Paso 2 de 6: envia tu correo electronico.\n" +
                         "Ejemplo: usuario@correo.com"
         ));
         actions.add(textMsg("Opciones: MENU | CANCELAR"));
@@ -496,18 +503,18 @@ public class ChatbotInboundController {
         session.state = ChatState.ENROLLMENT_PHONE_CAPTURE;
 
         actions.add(textMsg(
-                "ðŸ“± Paso 3 de 5: envÃ­a tu telÃ©fono de contacto.\n" +
+                "Paso 3 de 6: envia tu telefono de contacto.\n" +
                         "Ejemplo: 573001112233"
         ));
         actions.add(textMsg("Opciones: MENU | CANCELAR"));
     }
 
-    private void handleEnrollmentPhoneCapture(String from, String text, SessionData session, List<BotAction> actions) {
+    private void handleEnrollmentPhoneCapture(String text, SessionData session, List<BotAction> actions) {
         String phone = trim(text).replaceAll("\\s+", "");
         if (!PHONE_PATTERN.matcher(phone).matches()) {
             actions.add(textMsg(
-                    "âš ï¸ TelÃ©fono invÃ¡lido.\n\n" +
-                            "Debes enviar entre 8 y 15 dÃ­gitos (puede iniciar con +).\n" +
+                    "Telefono invalido.\n\n" +
+                            "Debes enviar entre 8 y 15 digitos (puede iniciar con +).\n" +
                             "Ejemplo: 573001112233"
             ));
             actions.add(textMsg("Opciones: MENU | CANCELAR"));
@@ -515,6 +522,30 @@ public class ChatbotInboundController {
         }
 
         session.telefono = phone;
+        session.state = ChatState.ENROLLMENT_SEDE_CAPTURE;
+        actions.add(textMsg(
+                "Paso 4 de 6: selecciona tu sede.\n\n" +
+                        "1) Kennedy - Av. 1 de Mayo #68D-23 Piso 2\n" +
+                        "2) CC El Eden - Local L2-094A\n\n" +
+                        "Responde con 1 o 2."
+        ));
+        actions.add(textMsg("Opciones: MENU | CANCELAR"));
+    }
+
+    private void handleEnrollmentSedeCapture(String from, String text, SessionData session, List<BotAction> actions) {
+        String sede = resolveSedeSelection(text);
+        if (sede.isBlank()) {
+            actions.add(textMsg(
+                    "Debes seleccionar una sede valida.\n\n" +
+                            "1) Kennedy\n" +
+                            "2) CC El Eden\n\n" +
+                            "Responde con 1 o 2."
+            ));
+            actions.add(textMsg("Opciones: MENU | CANCELAR"));
+            return;
+        }
+
+        session.sedeSeleccionada = sede;
 
         try {
             procesoService.upsertDraft(
@@ -526,7 +557,7 @@ public class ChatbotInboundController {
                     session.telefono
             );
         } catch (Exception e) {
-            actions.add(textMsg("âš ï¸ No pude guardar tu pre-registro: " + e.getMessage()));
+            actions.add(textMsg("No pude guardar tu pre-registro: " + e.getMessage()));
             actions.add(textMsg("Opciones: MENU"));
             return;
         }
@@ -534,12 +565,13 @@ public class ChatbotInboundController {
         session.state = ChatState.ENROLLMENT_CONFIRM;
 
         actions.add(textMsg(
-                "âœ… Paso 4 de 5: revisa tus datos y confirma.\n\n" +
-                        "ðŸ‘¤ Nombre: " + safe(session.nombre) + "\n" +
-                        "ðŸ†” Documento: " + safe(session.documento) + "\n" +
-                        "ðŸš— CategorÃ­a: " + safe(session.categoria) + "\n" +
-                        "ðŸ“§ Correo: " + safe(session.email) + "\n" +
-                        "ðŸ“± TelÃ©fono: " + safe(session.telefono) + "\n\n" +
+                "Paso 5 de 6: revisa tus datos y confirma.\n\n" +
+                        "Nombre: " + safe(session.nombre) + "\n" +
+                        "Documento: " + safe(session.documento) + "\n" +
+                        "Categoria: " + safe(session.categoria) + "\n" +
+                        "Correo: " + safe(session.email) + "\n" +
+                        "Telefono: " + safe(session.telefono) + "\n" +
+                        "Sede: " + safe(session.sedeSeleccionada) + "\n\n" +
                         "Responde:\n" +
                         "1) Confirmar y continuar\n" +
                         "2) Corregir datos\n" +
@@ -547,7 +579,6 @@ public class ChatbotInboundController {
         ));
         actions.add(textMsg("Opciones: MENU"));
     }
-
     private void handleEnrollmentConfirm(String text, SessionData session, List<BotAction> actions) {
         switch (text) {
             case "1", "si", "sÃ­", "confirmar", "continuar" -> {
@@ -557,7 +588,7 @@ public class ChatbotInboundController {
                     session.state = ChatState.PAYMENT_WAIT;
 
                     actions.add(textMsg(
-                            "ðŸ’³ Paso 5 de 5: realiza el pago para continuar.\n\n" +
+                            "Paso 6 de 6: realiza el pago para continuar.\n\n" +
                                     "Enlace de pago:\n" + link + "\n\n" +
                                     "Cuando lo realices, vuelve a este chat.\n" +
                                     "Si necesitas el enlace otra vez escribe: LINK\n\n" +
@@ -664,6 +695,99 @@ public class ChatbotInboundController {
         return out.toString().trim();
     }
 
+    private boolean shouldSyncEnrollmentFlow(ChatState state, String text) {
+        if (state == ChatState.PAYMENT_WAIT) {
+            return true;
+        }
+        if (state != ChatState.MAIN_MENU) {
+            return false;
+        }
+        String cmd = normalizeCommandText(text);
+        return "ya pague".equals(cmd)
+                || "pague".equals(cmd)
+                || "aprobado".equals(cmd)
+                || "listo".equals(cmd)
+                || "contrato".equals(cmd)
+                || "contratos".equals(cmd)
+                || "continuar".equals(cmd);
+    }
+
+    private boolean resumeEnrollmentAfterExternalPayment(String from, SessionData session, List<BotAction> actions) {
+        Optional<ChatbotMatriculaProceso> procesoOpt = procesoService.findLatestProcesoByPhone(from);
+        if (procesoOpt.isEmpty()) {
+            return false;
+        }
+
+        ChatbotMatriculaProceso proceso = procesoOpt.get();
+        String documento = trim(proceso.getNumeroDocumento());
+        if (documento.isBlank()) {
+            return false;
+        }
+
+        session.documento = documento;
+        session.nombre = trim(proceso.getNombreCompleto());
+        session.categoria = trim(proceso.getCategoria());
+        session.email = trim(proceso.getEmail());
+        session.telefono = trim(proceso.getTelefono());
+
+        String paymentStatus = normalizeCommandText(proceso.getPaymentStatus()).toUpperCase(Locale.ROOT);
+        if (!"APPROVED".equals(paymentStatus)) {
+            return false;
+        }
+
+        String contractStatus = normalizeCommandText(proceso.getContractStatus()).toUpperCase(Locale.ROOT);
+        if ("SIGNED".equals(contractStatus)) {
+            if (proceso.getStudentId() != null) {
+                session.state = ChatState.DONE;
+                actions.add(textMsg(
+                        "Pago y contrato ya confirmados.\n\n" +
+                                "Tu matricula ya esta activa.\n" +
+                                "Ref estudiante: " + proceso.getStudentId() + "\n\n" +
+                                "Escribe MENU para continuar."
+                ));
+                actions.add(textMsg("Opciones: MENU | TERMINAR"));
+                return true;
+            }
+
+            session.state = ChatState.SEDE_SELECTION;
+            actions.add(textMsg(
+                    "Contrato validado.\n\n" +
+                            "Antes de finalizar, selecciona tu sede:\n\n" +
+                            "1) Kennedy - Av. 1 de Mayo #68D-23 Piso 2\n" +
+                            "2) CC El Eden - Local L2-094A\n\n" +
+                            "Responde con 1 o 2."
+            ));
+            actions.add(textMsg("Opciones: MENU"));
+            return true;
+        }
+
+        String contractLink = trim(proceso.getContractLink());
+        if (contractLink.isBlank()) {
+            try {
+                contractLink = createAndStoreContractLink(documento);
+            } catch (Exception ex) {
+                log.error("No se pudo reconstruir link de contrato doc={}: {}", documento, ex.getMessage(), ex);
+            }
+        }
+
+        session.state = ChatState.CONTRACT_WAIT;
+        if (!contractLink.isBlank()) {
+            actions.add(textMsg(
+                    "Pago confirmado.\n\n" +
+                            "Siguiente paso: firma tus contratos en este enlace:\n" + contractLink + "\n\n" +
+                            "Cuando termines, responde LISTO para activar la matricula."
+            ));
+        } else {
+            actions.add(textMsg(
+                    "Pago confirmado.\n\n" +
+                            "Estamos generando tu enlace de contratos.\n" +
+                            "En unos minutos te lo enviaremos por este chat."
+            ));
+        }
+        actions.add(textMsg("Opciones: MENU"));
+        return true;
+    }
+
     private void handleContractWait(String text, SessionData session, List<BotAction> actions) {
         switch (text) {
             case "listo", "firmado", "hecho" -> {
@@ -690,6 +814,11 @@ public class ChatbotInboundController {
                                         "Escribe MENU para continuar."
                         ));
                         actions.add(textMsg("Opciones: MENU | TERMINAR"));
+                        return;
+                    }
+
+                    if (!trim(session.sedeSeleccionada).isBlank()) {
+                        handleSedeSelection(session.sedeSeleccionada, session, actions);
                         return;
                     }
 
@@ -733,23 +862,30 @@ public class ChatbotInboundController {
         }
     }
 
-    private void handleSedeSelection(String text, SessionData session, List<BotAction> actions) {
+    private String resolveSedeSelection(String text) {
         String t = normalizeInput(text);
-
         if ("1".equals(t) || "kennedy".equals(t)) {
-            session.sedeSeleccionada = "Kennedy";
-        } else if ("2".equals(t) || "eden".equals(t) || "el eden".equals(t) || "cc el eden".equals(t) || "cc eleden".equals(t)) {
-            session.sedeSeleccionada = "CC El EdÃ©n";
-        } else {
+            return "Kennedy";
+        }
+        if ("2".equals(t) || "eden".equals(t) || "el eden".equals(t) || "cc el eden".equals(t) || "cc eleden".equals(t)) {
+            return "CC El Eden";
+        }
+        return "";
+    }
+
+    private void handleSedeSelection(String text, SessionData session, List<BotAction> actions) {
+        String sede = resolveSedeSelection(text);
+        if (sede.isBlank()) {
             actions.add(textMsg(
-                    "âš ï¸ Debes seleccionar una sede vÃ¡lida.\n\n" +
+                    "Debes seleccionar una sede valida.\n\n" +
                             "1) Kennedy\n" +
-                            "2) CC El EdÃ©n\n\n" +
+                            "2) CC El Eden\n\n" +
                             "Responde con 1 o 2."
             ));
             actions.add(textMsg("Opciones: MENU"));
             return;
         }
+        session.sedeSeleccionada = sede;
 
         try {
             Long studentId = procesoService.createStudentFromSignedContract(session.documento, session.sedeSeleccionada);
@@ -1392,27 +1528,11 @@ public class ChatbotInboundController {
     }
 
     private boolean isEnrollmentDataAuthAccepted(String cmd) {
-        if (cmd == null || cmd.isBlank()) return false;
-        if ("1".equals(cmd) || "si".equals(cmd) || "s".equals(cmd) || "ok".equals(cmd) || "de acuerdo".equals(cmd)) {
-            return true;
-        }
-        if (cmd.startsWith("no")) {
-            return false;
-        }
-        return cmd.startsWith("si ")
-                || cmd.startsWith("autorizo")
-                || cmd.startsWith("acepto")
-                || cmd.contains(" autorizo");
+        return "si".equals(cmd);
     }
 
     private boolean isEnrollmentDataAuthRejected(String cmd) {
-        if (cmd == null || cmd.isBlank()) return false;
-        if ("2".equals(cmd) || "no".equals(cmd) || "n".equals(cmd) || "no autorizo".equals(cmd) || "no acepto".equals(cmd)) {
-            return true;
-        }
-        return cmd.startsWith("no ")
-                || cmd.contains(" no autorizo")
-                || cmd.contains(" no acepto");
+        return "no".equals(cmd);
     }
 
     private boolean isEndCommand(String text) {
@@ -1566,56 +1686,6 @@ public class ChatbotInboundController {
         return new BotAction("image", imageUrl, null, null, null);
     }
 
-    private void addEnrollmentIntro(String to, List<BotAction> actions) {
-        addEnrollmentIntro(actions);
-        dispatchEnrollmentIntroViaWhatsApp(to);
-    }
-
-    private void dispatchEnrollmentIntroViaWhatsApp(String toRaw) {
-        if (!waService.getConfigStatus().ready()) {
-            log.warn("CHATBOT inbound: no se envia mensaje de bienvenida por WhatsApp porque no estÃ¡ listo: {}",
-                    waService.getConfigStatus().message());
-            return;
-        }
-
-        if (!org.springframework.util.StringUtils.hasText(toRaw)) {
-            log.warn("CHATBOT inbound: no se puede enviar bienvenida porque from viene vacio");
-            return;
-        }
-
-        String normalizedTo = toRaw.replaceAll("[\\s\\-()]", "");
-        if (!normalizedTo.matches("\\+?\\d{8,15}")) {
-            log.warn("CHATBOT inbound: no se puede enviar bienvenida a {} porque el numero no parece valido", maskPhone(toRaw));
-            return;
-        }
-
-        log.info("CHATBOT inbound: iniciando envio de bienvenida a {}", maskPhone(normalizedTo));
-
-        if (org.springframework.util.StringUtils.hasText(enrollmentWelcomeImageUrl)) {
-            log.info("CHATBOT inbound: intentando enviar imagen a {} desde {}", maskPhone(toRaw), enrollmentWelcomeImageUrl);
-            try {
-                waService.sendImageMessage(toRaw, enrollmentWelcomeImageUrl);
-                log.info("CHATBOT inbound: imagen enviada a {} desde {}", maskPhone(toRaw), enrollmentWelcomeImageUrl);
-            } catch (Exception e) {
-                log.error("CHATBOT inbound: no se pudo enviar imagen a {}: {}", maskPhone(toRaw), e.getMessage(), e);
-            }
-        } else {
-            log.warn("CHATBOT inbound: no se envia imagen; chatbot.enrollment.welcome-image-url no configurada");
-        }
-
-        try {
-            waService.sendTextMessage(
-                    toRaw,
-                    "Gracias por elegirnos! Para proporcionarte un servicio personalizado, necesitamos algunos datos personales, "
-                            + "puedes revisar nuestra polÃ­tica de tratamiento de datos en nuestra pÃ¡gina web y www.ceaharo.com"
-            );
-            waService.sendTextMessage(toRaw, "Â¿Autorizas el tratamiento de tus datos?");
-            log.info("CHATBOT inbound: mensajes de texto de bienvenida enviados a {}", maskPhone(toRaw));
-        } catch (Exception e) {
-            log.error("CHATBOT inbound: no se pudo enviar texto de bienvenida a {}: {}", maskPhone(toRaw), e.getMessage(), e);
-        }
-    }
-
     private void addEnrollmentIntro(List<BotAction> actions) {
         if (includeImageActionInInbound) {
             BotAction image = imageMsg(enrollmentWelcomeImageUrl);
@@ -1625,9 +1695,10 @@ public class ChatbotInboundController {
         }
         actions.add(textMsg(
                 "Gracias por elegirnos! Para proporcionarte un servicio personalizado, necesitamos algunos datos personales, " +
-                        "puedes revisar nuestra polÃ­tica de tratamiento de datos en nuestra pÃ¡gina web y www.ceaharo.com"
+                        "puedes revisar nuestra politica de tratamiento de datos en nuestra pagina web y www.ceaharo.com\n\n" +
+                        "¿Autorizas el tratamiento de tus datos?\n" +
+                        "Responde SI o NO."
         ));
-        actions.add(textMsg("Â¿Autorizas el tratamiento de tus datos?"));
     }
 
     // =========================
@@ -1747,13 +1818,14 @@ public class ChatbotInboundController {
     }
 
     private String enrollmentInitialPromptText() {
-        return "ðŸ“ Â¡Perfecto! Vamos a iniciar tu matrÃ­cula en CEA HARO.\n\n" +
-                "Para continuar necesito la siguiente informaciÃ³n (en un solo mensaje):\n\n" +
-                "1ï¸âƒ£ Nombre completo (como aparece en tu documento)\n" +
-                "2ï¸âƒ£ NÃºmero de documento (sin puntos ni comas)\n" +
-                "3ï¸âƒ£ CategorÃ­a que deseas realizar (A2, B1, C1, A2 y B1, A2, B1 y C1)\n\n" +
+        return "Perfecto. Vamos a iniciar tu matricula en CEA HARO.\n\n" +
+                "Para continuar necesito esta informacion (en un solo mensaje):\n\n" +
+                "1) Nombre completo (como aparece en tu documento)\n" +
+                "2) Numero de documento (sin puntos ni comas)\n" +
+                "3) Categoria que deseas realizar (A2, B1, C1, A2 y B1, A2, B1 y C1)\n\n" +
                 "Ejemplo:\n" +
-                "Juan Perez 12345678 A2";
+                "Juan Perez 12345678 A2\n\n" +
+                "Luego te pedire la sede (Kennedy o CC El Eden).";
     }
 
     private String infoText() {

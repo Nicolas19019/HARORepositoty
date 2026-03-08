@@ -238,7 +238,7 @@ public class ChatbotProcesoService {
     public ChatbotMatriculaProceso markContractSignedByEmail(String email) {
         String mail = normalizeEmail(email);
         ChatbotMatriculaProceso proceso = procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail)
-                .orElseThrow(() -> new NoSuchElementException("No hay proceso de matrícula para " + mail));
+                .orElseThrow(() -> new NoSuchElementException("No hay proceso de matrÃ­cula para " + mail));
         proceso.setContractStatus("SIGNED");
         proceso.setFlowStatus("CONTRACT_SIGNED");
         proceso.setContractSignedAt(Instant.now());
@@ -284,12 +284,21 @@ public class ChatbotProcesoService {
         return procesoRepository.findByNumeroDocumento(normalizeDoc(documento));
     }
 
+    @Transactional(readOnly = true)
+    public Optional<ChatbotMatriculaProceso> findLatestProcesoByEmail(String email) {
+        return procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(normalizeEmail(email));
+    }
+
     public Long createStudentFromSignedContract(String documento) {
         String doc = normalizeDoc(documento);
         ChatbotMatriculaProceso proceso = getByDocumentoOrThrow(doc);
 
+        if (!"APPROVED".equalsIgnoreCase(trim(proceso.getPaymentStatus()))) {
+            throw new IllegalStateException("El pago aun no esta aprobado para el documento " + doc);
+        }
+
         if (!"SIGNED".equalsIgnoreCase(proceso.getContractStatus())) {
-            throw new IllegalStateException("El contrato aún no está firmado para el documento " + doc);
+            throw new IllegalStateException("El contrato aun no esta firmado para el documento " + doc);
         }
 
         Optional<Estudiante> existing = estudianteRepository.findByNumeroDocumento(doc);
@@ -319,7 +328,7 @@ public class ChatbotProcesoService {
         nuevo.setEstado("Activo");
         nuevo.setVisible(true);
         nuevo.setUsuario(generateUniqueUsername(proceso.getEmail(), doc));
-        // Si no llega contraseña, EstudianteService asigna default seguro
+        // Si no llega contraseÃ±a, EstudianteService asigna default seguro
         nuevo.setContrasena(null);
 
         Estudiante created = estudianteService.createEstudiante(nuevo);
@@ -352,7 +361,7 @@ public class ChatbotProcesoService {
 
         String email = trim(estudiante.getEmail()).toLowerCase(Locale.ROOT);
         if (email.isBlank()) {
-            throw new IllegalStateException("El estudiante no tiene correo registrado para verificación OTP");
+            throw new IllegalStateException("El estudiante no tiene correo registrado para verificaciÃ³n OTP");
         }
 
         String nombreCompleto = buildStudentDisplayName(estudiante);
@@ -419,10 +428,10 @@ public class ChatbotProcesoService {
         }
 
         Profesor profesor = pickAvailableProfesor(fecha, horaInicio, horaFin)
-                .orElseThrow(() -> new IllegalStateException("Ese horario está ocupado. Elige otra hora."));
+                .orElseThrow(() -> new IllegalStateException("Ese horario estÃ¡ ocupado. Elige otra hora."));
 
         Vehiculo vehiculo = pickAvailableVehiculo(fecha, horaInicio, horaFin)
-                .orElseThrow(() -> new IllegalStateException("Ese horario está ocupado. Elige otra hora."));
+                .orElseThrow(() -> new IllegalStateException("Ese horario estÃ¡ ocupado. Elige otra hora."));
 
         Clase clase = new Clase();
         clase.setId_estudiante(id);
@@ -782,12 +791,12 @@ public class ChatbotProcesoService {
         ZonedDateTime inicio = ZonedDateTime.of(clase.getFecha(), clase.getHoraInicio(), zone);
         ZonedDateTime fin = ZonedDateTime.of(clase.getFecha(), clase.getHoraFin(), zone);
 
-        String titulo = "Clase práctica HARO - " + safe(estudiante.getNombre()) + " " + safe(estudiante.getApellido());
+        String titulo = "Clase prÃ¡ctica HARO - " + safe(estudiante.getNombre()) + " " + safe(estudiante.getApellido());
         String descripcion =
-                "Clase práctica agendada desde chatbot.\n" +
+                "Clase prÃ¡ctica agendada desde chatbot.\n" +
                         "Documento estudiante: " + safe(estudiante.getNumeroDocumento()) + "\n" +
                         "Profesor ID: " + profesor.getId() + "\n" +
-                        "Vehículo: " + safe(clase.getPlaca_vehiculo()) + "\n" +
+                        "VehÃ­culo: " + safe(clase.getPlaca_vehiculo()) + "\n" +
                         "Clase ID: " + clase.getId();
 
         List<String> asistentes = new ArrayList<>();
@@ -814,7 +823,7 @@ public class ChatbotProcesoService {
     private ChatbotMatriculaProceso getByDocumentoOrThrow(String documento) {
         String doc = normalizeDoc(documento);
         return procesoRepository.findByNumeroDocumento(doc)
-                .orElseThrow(() -> new NoSuchElementException("No existe proceso de matrícula para documento " + doc));
+                .orElseThrow(() -> new NoSuchElementException("No existe proceso de matrÃ­cula para documento " + doc));
     }
 
     private String[] splitName(String fullName) {
@@ -889,7 +898,7 @@ public class ChatbotProcesoService {
     private String normalizeDoc(String doc) {
         String out = trim(doc).replaceAll("\\D+", "");
         if (out.length() < 5) {
-            throw new IllegalArgumentException("Documento inválido");
+            throw new IllegalArgumentException("Documento invÃ¡lido");
         }
         return out;
     }
@@ -897,7 +906,7 @@ public class ChatbotProcesoService {
     private String normalizeEmail(String email) {
         String out = trim(email).toLowerCase(Locale.ROOT);
         if (out.isBlank() || !out.contains("@")) {
-            throw new IllegalArgumentException("Email inválido");
+            throw new IllegalArgumentException("Email invÃ¡lido");
         }
         return out;
     }
@@ -905,7 +914,7 @@ public class ChatbotProcesoService {
     private String normalizePhone(String phone) {
         String out = trim(phone).replaceAll("[^0-9+]", "");
         if (out.isBlank()) {
-            throw new IllegalArgumentException("Teléfono requerido");
+            throw new IllegalArgumentException("TelÃ©fono requerido");
         }
         return out;
     }
@@ -961,3 +970,4 @@ public class ChatbotProcesoService {
         return studentId;
     }
 }
+

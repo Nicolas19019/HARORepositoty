@@ -1,4 +1,4 @@
-﻿package com.Aplication.HARO.Controller;
+package com.Aplication.HARO.Controller;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Model.Clase;
@@ -22,6 +22,8 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -85,6 +87,9 @@ public class ChatbotInboundController {
 
     @Value("${chatbot.contract.base-url:}")
     private String contractBaseUrl;
+
+    @Value("${chatbot.contract.ui-url:}")
+    private String contractUiUrl;
 
     @Value("${chatbot.inactivity.timeout.minutes:15}")
     private long inactivityTimeoutMinutes;
@@ -601,7 +606,8 @@ public class ChatbotInboundController {
                             "âœ… Pago aprobado.\n\n" +
                                     "Siguiente paso: completa y firma los contratos del curso en el portal.\n\n" +
                                     "Enlace Ãºnico e intransferible:\n" + contractLink + "\n\n" +
-                                    "Cuando termines escribe: LISTO"
+                                    "Al finalizar la firma, tu matrÃ­cula se activarÃ¡ automÃ¡ticamente.\n" +
+                                    "Si deseas validarlo aquÃ­, escribe: LISTO"
                     ));
                     actions.add(textMsg("Opciones: MENU"));
                 } catch (Exception e) {
@@ -671,6 +677,19 @@ public class ChatbotInboundController {
                                         "3) Luego escribe LISTO nuevamente"
                         ));
                         actions.add(textMsg("Opciones: MENU"));
+                        return;
+                    }
+
+                    Optional<ChatbotMatriculaProceso> procesoOpt =
+                            procesoService.findProcesoByDocumento(session.documento);
+                    if (procesoOpt.isPresent() && procesoOpt.get().getStudentId() != null) {
+                        session.state = ChatState.DONE;
+                        actions.add(textMsg(
+                                "âœ… Contratos validados y matrÃ­cula activada.\n\n" +
+                                        "Ref estudiante: " + procesoOpt.get().getStudentId() + "\n\n" +
+                                        "Escribe MENU para continuar."
+                        ));
+                        actions.add(textMsg("Opciones: MENU | TERMINAR"));
                         return;
                     }
 
@@ -1063,8 +1082,34 @@ public class ChatbotInboundController {
                 proceso.getEmail(),
                 contractBaseUrl
         );
-        procesoService.markContractLinkSent(documento, out.url());
-        return out.url();
+        String userLink = buildContractUserLink(out);
+        procesoService.markContractLinkSent(documento, userLink);
+        return userLink;
+    }
+
+    private String buildContractUserLink(VerificationService.ContractLinkResult out) {
+        if (out == null) return "";
+        if (trim(contractUiUrl).isBlank()) {
+            return trim(out.url());
+        }
+        String link = appendQueryParam(contractUiUrl, "email", out.email());
+        link = appendQueryParam(link, "code", out.code());
+        if (!trim(contractBaseUrl).isBlank()) {
+            link = appendQueryParam(link, "apiBase", contractBaseUrl);
+        }
+        return link;
+    }
+
+    private String appendQueryParam(String baseUrl, String key, String value) {
+        String base = trim(baseUrl);
+        if (base.isBlank() || trim(key).isBlank() || trim(value).isBlank()) {
+            return base;
+        }
+        String sep = base.contains("?") ? "&" : "?";
+        return base + sep
+                + URLEncoder.encode(trim(key), StandardCharsets.UTF_8)
+                + "="
+                + URLEncoder.encode(trim(value), StandardCharsets.UTF_8);
     }
 
     private EnrollmentBasic parseEnrollmentBasic(String rawText) {

@@ -13,7 +13,11 @@ public class CorsConfig {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/api/**")
-                        .allowedOrigins("http://localhost:5500")
+                        .allowedOriginPatterns(
+                                "https://ceaharo.com",
+                                "https://www.ceaharo.com",
+                                "https://*.ceaharo.com"
+                        )
                         .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                         .allowedHeaders("*");
             }

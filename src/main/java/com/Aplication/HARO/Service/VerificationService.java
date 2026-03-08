@@ -1,11 +1,13 @@
 // src/main/java/com/Aplication/HARO/Service/VerificationService.java
 package com.Aplication.HARO.Service;
 
+import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Model.OtpToken;
 import com.Aplication.HARO.Repository.OtpTokenRepository;
 import com.Aplication.HARO.Security.OtpHasher;
 import jakarta.annotation.PostConstruct;
 import jakarta.mail.internet.InternetAddress;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
@@ -20,6 +22,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import java.util.Optional;
 
+import org.springframework.util.StringUtils;
+
 @Service
 public class VerificationService {
 
@@ -27,6 +31,8 @@ public class VerificationService {
     private final MailService mail;
     private final EstudianteService estudianteService;
     private final ChatbotProcesoService chatbotProcesoService;
+    private final WhatsAppTemplateService waService;
+    private final ContractDocumentStorageService contractDocumentStorageService;
     private final SecureRandom rng = new SecureRandom();
 
     // ===== Config =====
@@ -73,11 +79,15 @@ public class VerificationService {
     public VerificationService(OtpTokenRepository repo,
                                MailService mail,
                                EstudianteService estudianteService,
-                               ChatbotProcesoService chatbotProcesoService) {
+                               ChatbotProcesoService chatbotProcesoService,
+                               WhatsAppTemplateService waService,
+                               ContractDocumentStorageService contractDocumentStorageService) {
         this.repo = repo;
         this.mail = mail;
         this.estudianteService = estudianteService;
         this.chatbotProcesoService = chatbotProcesoService;
+        this.waService = waService;
+        this.contractDocumentStorageService = contractDocumentStorageService;
     }
 
     @PostConstruct
@@ -262,6 +272,33 @@ public class VerificationService {
             Instant expiresAt
     ) {}
 
+    public record ContractAccessResult(
+            boolean ok,
+            String message,
+            Instant expiresAt
+    ) {}
+
+    public record ContractCompletionResult(
+            boolean ok,
+            String message,
+            String email,
+            String documento,
+            Long studentId,
+            String flowStatus,
+            String paymentStatus
+    ) {}
+
+    public record ContractUploadResult(
+            boolean ok,
+            String message,
+            String email,
+            String documento,
+            String signerFolder,
+            String objectKey,
+            String fileName,
+            String fileUrl
+    ) {}
+
     /** Genera cÃ³digo alfanumÃ©rico para firma y devuelve URL verificable. */
     @Transactional
     public ContractLinkResult createContractVerificationLink(String rawEmail, String rawBaseUrl) {
@@ -351,6 +388,165 @@ public class VerificationService {
         return ok;
     }
 
+    /** Valida cÃ³digo de acceso a contratos sin consumirlo. */
+    @Transactional
+    public ContractAccessResult validateContractAccessCode(String rawEmail, String rawCode) {
+        final String email = normalizeEmail(rawEmail);
+        final String code = trim(rawCode);
+        final Instant now = Instant.now();
+        final String purpose = "CONTRACT_SIGN";
+
+        if (code.isBlank()) {
+            return new ContractAccessResult(false, "Codigo requerido", null);
+        }
+
+        Optional<OtpToken> lastOpt =
+                repo.findTopByEmailAndPurposeAndConsumedAtIsNullOrderByIdDesc(email, purpose);
+        if (lastOpt.isEmpty()) {
+            return new ContractAccessResult(false, "Codigo invalido o vencido", null);
+        }
+
+        OtpToken token = lastOpt.get();
+        if (token.getExpiresAt() == null || now.isAfter(token.getExpiresAt())) {
+            token.setConsumedAt(now);
+            repo.save(token);
+            return new ContractAccessResult(false, "Codigo vencido", null);
+        }
+
+        int attempts = Optional.ofNullable(token.getAttempts())
+                .map(Number::intValue)
+                .orElse(0);
+        if (attempts >= maxAttempts) {
+            token.setConsumedAt(now);
+            repo.save(token);
+            return new ContractAccessResult(false, "Codigo invalido por maximo de intentos", null);
+        }
+
+        boolean ok = OtpHasher.sha256(code).equals(token.getOtpHash());
+        if (!ok) {
+            token.setAttempts(attempts + 1);
+            if ((attempts + 1) >= maxAttempts) {
+                token.setConsumedAt(now);
+            }
+            repo.save(token);
+            return new ContractAccessResult(false, "Codigo invalido o vencido", null);
+        }
+
+        return new ContractAccessResult(true, "Codigo valido", token.getExpiresAt());
+    }
+
+    /** Consume cÃ³digo de contrato y activa matrÃ­cula (creaciÃ³n de estudiante) si aplica. */
+    @Transactional
+    public ContractCompletionResult completeContractSigning(String rawEmail, String rawCode) {
+        final String email = normalizeEmail(rawEmail);
+        final boolean verified = verifyContractCode(email, rawCode);
+        if (!verified) {
+            return new ContractCompletionResult(
+                    false,
+                    "Codigo invalido o vencido",
+                    email,
+                    "",
+                    null,
+                    "",
+                    ""
+            );
+        }
+
+        Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+        if (procesoOpt.isEmpty()) {
+            return new ContractCompletionResult(
+                    true,
+                    "Contrato validado correctamente",
+                    email,
+                    "",
+                    null,
+                    "CONTRACT_SIGNED",
+                    ""
+            );
+        }
+
+        ChatbotMatriculaProceso proceso = procesoOpt.get();
+        String documento = trim(proceso.getNumeroDocumento());
+        Long studentId = null;
+        String message = "Contrato validado correctamente";
+
+        if (StringUtils.hasText(documento)) {
+            try {
+                studentId = chatbotProcesoService.createStudentFromSignedContract(documento);
+                message = "Contrato validado y matricula activada";
+            } catch (Exception ex) {
+                message = "Contrato validado, pero no se pudo activar matricula: " + ex.getMessage();
+            }
+        }
+
+        ChatbotMatriculaProceso updated = StringUtils.hasText(documento)
+                ? chatbotProcesoService.findProcesoByDocumento(documento).orElse(proceso)
+                : proceso;
+
+        notifyContractCompletionByWhatsApp(updated, studentId);
+
+        return new ContractCompletionResult(
+                true,
+                message,
+                email,
+                documento,
+                studentId,
+                safe(updated.getFlowStatus()),
+                safe(updated.getPaymentStatus())
+        );
+    }
+
+    @Transactional
+    public ContractUploadResult uploadSignedContractDocument(String rawEmail,
+                                                             String rawCode,
+                                                             String rawSignerName,
+                                                             String rawContractName,
+                                                             MultipartFile file) {
+        final String email = normalizeEmail(rawEmail);
+        ContractAccessResult access = validateContractAccessCode(email, rawCode);
+        if (!access.ok()) {
+            return new ContractUploadResult(
+                    false,
+                    access.message(),
+                    email,
+                    "",
+                    "",
+                    "",
+                    "",
+                    ""
+            );
+        }
+
+        Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+        String documento = procesoOpt.map(ChatbotMatriculaProceso::getNumeroDocumento).map(this::safe).orElse("");
+        String signerName = trim(rawSignerName);
+        if (signerName.isBlank()) {
+            signerName = procesoOpt.map(ChatbotMatriculaProceso::getNombreCompleto).map(this::safe).orElse("");
+        }
+        if (signerName.isBlank()) {
+            signerName = email.split("@")[0];
+        }
+
+        String contractName = trim(rawContractName);
+        if (contractName.isBlank()) {
+            contractName = "contrato-firmado";
+        }
+
+        ContractDocumentStorageService.StoredDocument stored =
+                contractDocumentStorageService.storeSignedContract(file, signerName, documento, contractName);
+
+        return new ContractUploadResult(
+                true,
+                "Contrato cargado correctamente",
+                email,
+                documento,
+                safe(stored.signerFolder()),
+                safe(stored.objectKey()),
+                safe(stored.fileName()),
+                safe(stored.publicUrl())
+        );
+    }
+
     /* =========================================================
        Helpers
        ========================================================= */
@@ -413,6 +609,31 @@ public class VerificationService {
             }
         }
         return x;
+    }
+
+    private void notifyContractCompletionByWhatsApp(ChatbotMatriculaProceso proceso, Long studentId) {
+        if (proceso == null || studentId == null) return;
+        if (!waService.getConfigStatus().ready()) return;
+
+        String phone = trim(proceso.getPhone());
+        if (!StringUtils.hasText(phone)) return;
+
+        try {
+            waService.sendTextMessage(
+                    phone,
+                    "✅ Contrato validado y matricula activada.\n\n" +
+                            "📌 Categoria: " + safe(proceso.getCategoria()) + "\n" +
+                            "🆔 Documento: " + safe(proceso.getNumeroDocumento()) + "\n" +
+                            "🧾 Ref estudiante: " + studentId + "\n\n" +
+                            "Si deseas consultar o agendar clases, escribe MENU y luego 'Soy estudiante'."
+            );
+        } catch (Exception ignored) {
+            // La activacion no debe fallar por un error de notificacion.
+        }
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value;
     }
 
     private String buildHtml(String email, String code) {

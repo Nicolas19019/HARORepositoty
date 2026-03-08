@@ -18,6 +18,8 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -41,6 +43,9 @@ public class EpaycoController {
 
     @Value("${chatbot.contract.base-url:}")
     private String contractBaseUrl;
+
+    @Value("${chatbot.contract.ui-url:}")
+    private String contractUiUrl;
 
     @Value("${chatbot.auto-send-contract-on-payment:true}")
     private boolean autoSendContractOnPayment;
@@ -167,6 +172,23 @@ public class EpaycoController {
         if (StringUtils.hasText(xReason)) gateway.put("reason", xReason);
         if (!gateway.isEmpty()) out.put("gateway", gateway);
 
+        if (status == PaymentUserStatus.APPROVED && StringUtils.hasText(xDocumento)) {
+            // Refuerza continuidad del flujo aunque el webhook se retrase.
+            processApprovedPayment(xDocumento, xAmount);
+
+            chatbotProcesoService.findProcesoByDocumento(xDocumento).ifPresent(proceso -> {
+                String contractLink = safeTrim(proceso.getContractLink());
+                if (StringUtils.hasText(contractLink)) {
+                    out.put("contractLink", contractLink);
+                    out.put("nextStep",
+                            "Tu pago fue aprobado. Continua con la contratacion en este enlace: " + contractLink);
+                }
+
+                out.put("flowStatus", safeTrim(proceso.getFlowStatus()));
+                out.put("paymentStatus", safeTrim(proceso.getPaymentStatus()));
+            });
+        }
+
         return out;
     }
 
@@ -231,6 +253,7 @@ public class EpaycoController {
         String title = value(payload, "title");
         String message = value(payload, "message");
         String nextStep = value(payload, "nextStep");
+        String contractLink = value(payload, "contractLink");
         String reference = value(payload, "reference");
         String transactionId = value(payload, "transactionId");
         String invoice = value(payload, "invoice");
@@ -289,6 +312,12 @@ public class EpaycoController {
         }
         html.append("<div class=\"box\"><div class=\"k\">Siguiente paso</div><div class=\"v\">")
                 .append(escapeHtml(nextStep)).append("</div></div>");
+        if (StringUtils.hasText(contractLink)) {
+            html.append("<div class=\"box\"><div class=\"k\">Contratacion</div><div class=\"v\">")
+                    .append("<a href=\"").append(escapeHtml(contractLink))
+                    .append("\" target=\"_blank\" rel=\"noopener noreferrer\">Abrir enlace de contrato</a>")
+                    .append("</div></div>");
+        }
         html.append("</div><div class=\"foot\">Conserva esta informacion para soporte y seguimiento.</div>");
         html.append("</div></div></body></html>");
         return html.toString();
@@ -484,7 +513,7 @@ public class EpaycoController {
             try {
                 VerificationService.ContractLinkResult out =
                         verificationService.createContractVerificationLink(current.getEmail(), contractBaseUrl);
-                contractLink = safeTrim(out.url());
+                contractLink = buildContractUserLink(out);
                 chatbotProcesoService.markContractLinkSent(documento, contractLink);
             } catch (Exception ex) {
                 log.error("Pago aprobado doc={} pero no se pudo generar link de contrato: {}", documento, ex.getMessage(), ex);
@@ -507,10 +536,9 @@ public class EpaycoController {
         try {
             waService.sendTextMessage(
                     phone,
-                    "Pago aprobado.\n\n" +
-                            "Siguiente paso: completa y firma tu contrato.\n\n" +
-                            "Enlace unico:\n" + contractLink + "\n\n" +
-                            "Cuando termines, responde LISTO en el chat."
+                    "✅ Pago aprobado.\n\n" +
+                            "Siguiente paso: completa y firma tus contratos en este enlace unico:\n" + contractLink + "\n\n" +
+                            "Al finalizar la firma, tu matricula se activa automaticamente."
             );
             log.info("Enlace de contrato enviado por WhatsApp doc={} to={}", documento, maskPhone(phone));
         } catch (Exception ex) {
@@ -636,6 +664,34 @@ public class EpaycoController {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private String buildContractUserLink(VerificationService.ContractLinkResult out) {
+        if (out == null) return "";
+
+        String ui = safeTrim(contractUiUrl);
+        if (!StringUtils.hasText(ui)) {
+            return safeTrim(out.url());
+        }
+
+        String link = appendQueryParam(ui, "email", out.email());
+        link = appendQueryParam(link, "code", out.code());
+        if (StringUtils.hasText(contractBaseUrl)) {
+            link = appendQueryParam(link, "apiBase", safeTrim(contractBaseUrl));
+        }
+        return link;
+    }
+
+    private String appendQueryParam(String baseUrl, String key, String value) {
+        String base = safeTrim(baseUrl);
+        if (!StringUtils.hasText(base) || !StringUtils.hasText(key) || !StringUtils.hasText(value)) {
+            return base;
+        }
+        String separator = base.contains("?") ? "&" : "?";
+        return base + separator
+                + URLEncoder.encode(key, StandardCharsets.UTF_8)
+                + "="
+                + URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     private String safeTrim(String value) {

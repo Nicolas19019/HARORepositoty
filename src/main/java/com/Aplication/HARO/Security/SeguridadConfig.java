@@ -170,14 +170,35 @@ public class SeguridadConfig {
 
   @Bean
   public CorsConfigurationSource corsConfigurationSource() {
-    CorsConfiguration cfg = new CorsConfiguration();
-    cfg.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*", "null"));
-    cfg.setAllowCredentials(true);
-    cfg.setAllowedMethods(List.of("GET","POST","PUT","DELETE","PATCH","OPTIONS"));
-    cfg.setAllowedHeaders(List.of("Authorization","Content-Type","Accept","Origin","X-Requested-With"));
-    cfg.setMaxAge(3600L);
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-    source.registerCorsConfiguration("/**", cfg);
+
+    CorsConfiguration localCors = new CorsConfiguration();
+    localCors.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*", "null"));
+    localCors.setAllowCredentials(true);
+    localCors.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+    localCors.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"));
+    localCors.setMaxAge(3600L);
+
+    CorsConfiguration siteCors = new CorsConfiguration();
+    siteCors.setAllowedOriginPatterns(List.of(
+            "https://ceaharo.com",
+            "https://www.ceaharo.com",
+            "https://*.ceaharo.com"
+    ));
+    siteCors.setAllowCredentials(false);
+    siteCors.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+    siteCors.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"));
+    siteCors.setMaxAge(3600L);
+
+    source.registerCorsConfiguration("/epayco/response", siteCors);
+    source.registerCorsConfiguration("/epayco/confirmation", siteCors);
+    source.registerCorsConfiguration("/response", siteCors);
+    source.registerCorsConfiguration("/confirmation", siteCors);
+
+    // La pagina de contratos (Prueba) valida y completa firma contra estos endpoints.
+    source.registerCorsConfiguration("/api/verification/contract/**", siteCors);
+
+    source.registerCorsConfiguration("/**", localCors);
     return source;
   }
 

@@ -10,6 +10,7 @@ uploads
 .env
 .tokens
 secrets
+!Secrets/google-oauth-client.json
 
 *.log
 *.ppt

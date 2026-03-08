@@ -16,6 +16,7 @@ WORKDIR /app
 ENV JAVA_OPTS=""
 
 COPY --from=build /app/app.war /app/app.war
+COPY Secrets/google-oauth-client.json /app/Secrets/google-oauth-client.json
 
 EXPOSE 8080
 

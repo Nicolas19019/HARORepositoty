@@ -21,8 +21,6 @@ import com.google.api.services.calendar.model.EntryPoint;
 import com.google.api.services.calendar.model.Event;
 import com.google.api.services.calendar.model.EventAttendee;
 import com.google.api.services.calendar.model.EventDateTime;
-import com.google.auth.http.HttpCredentialsAdapter;
-import com.google.auth.oauth2.GoogleCredentials;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -46,11 +44,7 @@ import java.util.UUID;
 public class GoogleCalendarService {
 
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
-    private static final String AUTH_MODE_SERVICE_ACCOUNT = "service_account";
-    private static final String AUTH_MODE_OAUTH_USER = "oauth_user";
 
-    private final String authMode;
-    private final String credentialsPath;
     private final String oauthClientSecretsPath;
     private final String oauthTokensDir;
     private final String oauthUserId;
@@ -60,9 +54,7 @@ public class GoogleCalendarService {
     private final String defaultTimezone;
 
     public GoogleCalendarService(
-            @Value("${google.calendar.auth-mode:service_account}") String authMode,
-            @Value("${google.calendar.credentials.path:}") String credentialsPath,
-            @Value("${google.calendar.oauth.client-secrets.path:}") String oauthClientSecretsPath,
+            @Value("${google.calendar.oauth.client-secrets.path:Secrets/google-oauth-client.json}") String oauthClientSecretsPath,
             @Value("${google.calendar.oauth.tokens.dir:.tokens/google-calendar}") String oauthTokensDir,
             @Value("${google.calendar.oauth.user-id:default}") String oauthUserId,
             @Value("${google.calendar.oauth.local-receiver-port:8888}") int oauthLocalReceiverPort,
@@ -70,8 +62,6 @@ public class GoogleCalendarService {
             @Value("${google.calendar.application-name:HARO}") String applicationName,
             @Value("${google.calendar.default-timezone:America/Bogota}") String defaultTimezone
     ) {
-        this.authMode = authMode;
-        this.credentialsPath = credentialsPath;
         this.oauthClientSecretsPath = oauthClientSecretsPath;
         this.oauthTokensDir = oauthTokensDir;
         this.oauthUserId = oauthUserId;
@@ -152,13 +142,6 @@ public class GoogleCalendarService {
                     fin.toInstant()
             );
         } catch (GoogleJsonResponseException e) {
-            if (isForbiddenForServiceAccounts(e)) {
-                throw new IllegalStateException(
-                        "Google rechazo invitar asistentes con cuenta de servicio. " +
-                                "Usa GOOGLE_CALENDAR_AUTH_MODE=oauth_user para trabajar con tu cuenta Gmail.",
-                        e
-                );
-            }
             throw new IllegalStateException("No se pudo crear la reunion en Google Calendar: " + buildGoogleErrorMessage(e), e);
         } catch (IllegalStateException e) {
             throw e;
@@ -168,43 +151,14 @@ public class GoogleCalendarService {
     }
 
     private Calendar buildCalendarClient() {
-        String mode = normalizeAuthMode(authMode);
         try {
             NetHttpTransport transport = GoogleNetHttpTransport.newTrustedTransport();
-            if (AUTH_MODE_OAUTH_USER.equals(mode)) {
-                return buildOAuthUserClient(transport);
-            }
-            return buildServiceAccountClient(transport);
+            return buildOAuthUserClient(transport);
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException(
                     "No se pudo inicializar Google Calendar Client: " + e.getMessage(),
-                    e
-            );
-        }
-    }
-
-    private Calendar buildServiceAccountClient(NetHttpTransport transport) {
-        if (!StringUtils.hasText(credentialsPath)) {
-            throw new IllegalStateException("Falta configurar GOOGLE_CALENDAR_CREDENTIALS_PATH.");
-        }
-
-        try (InputStream in = new FileInputStream(credentialsPath.trim())) {
-            GoogleCredentials credentials = GoogleCredentials.fromStream(in);
-            if (credentials.createScopedRequired()) {
-                credentials = credentials.createScoped(List.of(CalendarScopes.CALENDAR));
-            }
-            credentials.refreshIfExpired();
-
-            return new Calendar.Builder(transport, JSON_FACTORY, new HttpCredentialsAdapter(credentials))
-                    .setApplicationName(applicationName)
-                    .build();
-        } catch (IllegalStateException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IllegalStateException(
-                    "Credenciales de Google invalidas o inaccesibles. Verifica el JSON y la ruta configurada.",
                     e
             );
         }
@@ -260,33 +214,6 @@ public class GoogleCalendarService {
                     e
             );
         }
-    }
-
-    private String normalizeAuthMode(String rawMode) {
-        if (!StringUtils.hasText(rawMode)) {
-            return AUTH_MODE_SERVICE_ACCOUNT;
-        }
-        String mode = rawMode.trim().toLowerCase();
-        return switch (mode) {
-            case "service_account", "service", "serviceaccount" -> AUTH_MODE_SERVICE_ACCOUNT;
-            case "oauth_user", "oauth", "oauth2_user", "user_oauth" -> AUTH_MODE_OAUTH_USER;
-            default -> throw new IllegalStateException(
-                    "google.calendar.auth-mode invalido: '" + rawMode +
-                            "'. Usa 'service_account' u 'oauth_user'."
-            );
-        };
-    }
-
-    private boolean isForbiddenForServiceAccounts(GoogleJsonResponseException e) {
-        if (e.getDetails() == null || e.getDetails().getErrors() == null) {
-            return false;
-        }
-        for (var error : e.getDetails().getErrors()) {
-            if ("forbiddenForServiceAccounts".equalsIgnoreCase(error.getReason())) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private String buildGoogleErrorMessage(GoogleJsonResponseException e) {

@@ -7,6 +7,7 @@ substitutions:
   _DB_NAME: postgres
   _DB_USER: HARODB
   _SPRING_PROFILES_ACTIVE: cloudrun
+  _RUN_SERVICE_ACCOUNT: 590358146556-compute@developer.gserviceaccount.com
 
 steps:
   - name: gcr.io/cloud-builders/docker
@@ -37,6 +38,8 @@ steps:
           --region ${_REGION} \
           --platform managed \
           --allow-unauthenticated \
+          --service-account ${_RUN_SERVICE_ACCOUNT} \
+          --port 8081 \
           --image "$IMAGE_REF" \
           --add-cloudsql-instances ${_CLOUDSQL_INSTANCE} \
           --set-env-vars "SPRING_PROFILES_ACTIVE=${_SPRING_PROFILES_ACTIVE},CLOUD_SQL_INSTANCE=${_CLOUDSQL_INSTANCE},DB_NAME=${_DB_NAME},DB_USERNAME=${_DB_USER},DB_URL=${CLOUD_SQL_JDBC_URL},SPRING_DATASOURCE_USERNAME=${_DB_USER},SPRING_DATASOURCE_URL=${CLOUD_SQL_JDBC_URL}" \

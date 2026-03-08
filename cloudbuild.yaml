@@ -1,9 +1,9 @@
 substitutions:
-  _SERVICE: haro-api
-  _REGION: us-central1
-  _AR_REPO: haro-api
-  _IMAGE: haro-api
-  _CLOUDSQL_INSTANCE: PROJECT_ID:REGION:INSTANCE_NAME
+  _SERVICE: harorepositoty
+  _REGION: europe-west1
+  _AR_REPO: cloud-run-source-deploy
+  _IMAGE: harorepositoty
+  _CLOUDSQL_INSTANCE: project-f1792676-13e6-44c2-a20:europe-west1:REEMPLAZAR_INSTANCE
   _DB_NAME: postgres
   _DB_USER: HARODB
   _SPRING_PROFILES_ACTIVE: cloudrun

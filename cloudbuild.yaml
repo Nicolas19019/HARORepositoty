@@ -39,7 +39,7 @@ steps:
           --platform managed \
           --allow-unauthenticated \
           --service-account ${_RUN_SERVICE_ACCOUNT} \
-          --port 8081 \
+          --port 8082 \
           --image "$IMAGE_REF" \
           --add-cloudsql-instances ${_CLOUDSQL_INSTANCE} \
           --set-env-vars "SPRING_PROFILES_ACTIVE=${_SPRING_PROFILES_ACTIVE},CLOUD_SQL_INSTANCE=${_CLOUDSQL_INSTANCE},DB_NAME=${_DB_NAME},DB_USERNAME=${_DB_USER},DB_URL=${CLOUD_SQL_JDBC_URL},SPRING_DATASOURCE_USERNAME=${_DB_USER},SPRING_DATASOURCE_URL=${CLOUD_SQL_JDBC_URL},CHATBOT_INACTIVITY_TIMEOUT_MINUTES=15,CHATBOT_CONTRACT_BASE_URL=https://ceaharo.com,CHATBOT_CONTRACT_UI_URL=https://ceaharo.com/contrato.html,CHATBOT_CONTRACT_STORAGE_BASE_PATH=contratos/" \

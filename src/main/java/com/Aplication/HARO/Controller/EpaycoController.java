@@ -104,6 +104,10 @@ public class EpaycoController {
                 safeTrim(asString(payload.get("document"))),
                 safeTrim(asString(payload.get("x_extra1")))
         );
+        String emailHint = firstNotBlank(
+                safeTrim(asString(payload.get("email"))),
+                safeTrim(asString(payload.get("customer_email")))
+        );
 
         if (!StringUtils.hasText(refPayco)) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -128,11 +132,76 @@ public class EpaycoController {
         String status = safeTrim(asString(summary.get("status")));
 
         Map<String, Object> out = new LinkedHashMap<>(summary);
-        out.put("chatbotSynced", "APPROVED".equalsIgnoreCase(status));
+        boolean chatbotSynced = false;
+        if ("APPROVED".equalsIgnoreCase(status)) {
+            chatbotSynced = syncApprovedPaymentToFlow(summary, payload, documentHint, emailHint);
+        }
+        out.put("chatbotSynced", chatbotSynced);
         out.put("syncSource", "response_page");
         out.put("syncAt", ZonedDateTime.now(ZoneId.of("America/Bogota"))
                 .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z")));
         return ResponseEntity.ok(out);
+    }
+
+    private boolean syncApprovedPaymentToFlow(Map<String, Object> summary,
+                                             Map<String, Object> payload,
+                                             String documentHint,
+                                             String emailHint) {
+        if (summary == null) {
+            return false;
+        }
+
+        BigDecimal amount = parseAmountOrNull(firstNotBlank(
+                safeTrim(asString(summary.get("amount"))),
+                safeTrim(asString(payload.get("x_amount")))
+        ));
+
+        String documento = firstNotBlank(
+                safeTrim(asString(summary.get("document"))),
+                safeTrim(asString(payload.get("document"))),
+                safeTrim(asString(payload.get("x_extra1"))),
+                safeTrim(documentHint)
+        );
+
+        if (StringUtils.hasText(documento)) {
+            try {
+                processApprovedPayment(documento, amount);
+                return true;
+            } catch (Exception ex) {
+                log.error("No fue posible sincronizar pago aprobado por documento doc={}: {}", documento, ex.getMessage(), ex);
+                return false;
+            }
+        }
+
+        String email = firstNotBlank(
+                safeTrim(asString(summary.get("email"))),
+                safeTrim(asString(payload.get("email"))),
+                safeTrim(asString(payload.get("customer_email"))),
+                safeTrim(emailHint)
+        );
+        if (!StringUtils.hasText(email)) {
+            return false;
+        }
+
+        try {
+            Optional<ChatbotMatriculaProceso> proceso = chatbotProcesoService.findLatestProcesoByEmail(email);
+            if (proceso.isEmpty()) {
+                log.info("No se pudo resolver proceso por email para sync de pago. email={}", email);
+                return false;
+            }
+
+            String fromEmailDoc = safeTrim(proceso.get().getNumeroDocumento());
+            if (!StringUtils.hasText(fromEmailDoc)) {
+                return false;
+            }
+
+            processApprovedPayment(fromEmailDoc, amount);
+            summary.put("document", fromEmailDoc);
+            return true;
+        } catch (Exception ex) {
+            log.error("No fue posible sincronizar pago aprobado por email. email={}: {}", email, ex.getMessage(), ex);
+            return false;
+        }
     }
 
     private ResponseEntity<?> userFacingPaymentStatus(String refPaycoRaw,
@@ -210,6 +279,12 @@ public class EpaycoController {
         String xTransactionId = firstNotBlank(readField(tx, "x_transaction_id"), readField(root, "x_transaction_id"));
         String xInvoice = firstNotBlank(readField(tx, "x_id_invoice"), readField(root, "x_id_invoice"));
         String xDocumento = firstNotBlank(readField(tx, "x_extra1"), readField(root, "x_extra1"), documentHintRaw);
+        String xEmail = firstNotBlank(
+                readField(tx, "x_customer_email"),
+                readField(tx, "customer_email"),
+                readField(root, "customer_email"),
+                readField(root, "x_customer_email")
+        );
         String xRefPayco = firstNotBlank(readField(tx, "x_ref_payco"), readField(root, "x_ref_payco"), refPayco);
 
         PaymentUserStatus status = resolvePaymentUserStatus(xResponse, xCodResponse, xReason);
@@ -245,6 +320,7 @@ public class EpaycoController {
         if (StringUtils.hasText(xAmount)) out.put("amount", xAmount);
         if (StringUtils.hasText(xCurrency)) out.put("currency", xCurrency);
         if (StringUtils.hasText(xDocumento)) out.put("document", xDocumento);
+        if (StringUtils.hasText(xEmail)) out.put("email", xEmail);
 
         Map<String, String> gateway = new LinkedHashMap<>();
         if (StringUtils.hasText(xCodResponse)) gateway.put("codResponse", xCodResponse);
@@ -577,6 +653,10 @@ public class EpaycoController {
     }
 
     private void processApprovedPayment(String documentoRaw, String amountRaw) {
+        processApprovedPayment(documentoRaw, parseAmountOrNull(amountRaw));
+    }
+
+    private void processApprovedPayment(String documentoRaw, BigDecimal amount) {
         String documento = safeTrim(documentoRaw);
         if (!StringUtils.hasText(documento)) {
             log.warn("Pago aprobado sin x_extra1 (documento). No se sincroniza chatbot.");
@@ -585,7 +665,7 @@ public class EpaycoController {
 
         ChatbotMatriculaProceso proceso;
         try {
-            proceso = chatbotProcesoService.markPaymentApproved(documento, parseAmountOrNull(amountRaw));
+            proceso = chatbotProcesoService.markPaymentApproved(documento, amount);
         } catch (Exception ex) {
             log.error("No se pudo marcar pago aprobado doc={}: {}", documento, ex.getMessage(), ex);
             return;

@@ -44,6 +44,11 @@ public class RestExceptionHandler {
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<?> handleState(IllegalStateException ex) {
+        String message = ex.getMessage() == null ? "" : ex.getMessage();
+        if (message.contains("No se pudo guardar el archivo en S3")
+                || message.contains("Falta configuracion S3")) {
+            return ResponseEntity.status(500).body(message);
+        }
         return ResponseEntity.badRequest().body(ex.getMessage());
     }
 

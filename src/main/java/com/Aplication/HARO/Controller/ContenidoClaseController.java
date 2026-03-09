@@ -3,6 +3,8 @@ package com.Aplication.HARO.Controller;
 import com.Aplication.HARO.Model.ContenidoClase;
 import com.Aplication.HARO.Service.ContenidoClaseService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +15,8 @@ import org.springframework.web.multipart.MultipartFile;
 @RestController
 @CrossOrigin(origins = "*")
 public class ContenidoClaseController {
+
+    private static final Logger log = LoggerFactory.getLogger(ContenidoClaseController.class);
 
     private final ContenidoClaseService service;
 
@@ -30,11 +34,19 @@ public class ContenidoClaseController {
                                                  @RequestParam(defaultValue = "1") Integer orden,
                                                  @RequestParam(defaultValue = "true") Boolean visible,
                                                  @RequestPart(name = "archivo", required = false) MultipartFile archivo,
+                                                 @RequestPart(name = "file", required = false) MultipartFile file,
                                                  HttpServletRequest request) {
+        MultipartFile uploadFile = resolveUploadPart(archivo, file);
+        log.info("content-upload request: endpoint=POST /api/clases/{}/contenidos claseId={} tipo={} fileName={} fileSizeBytes={}",
+                claseId,
+                claseId,
+                tipo,
+                uploadFile == null ? null : uploadFile.getOriginalFilename(),
+                uploadFile == null ? null : uploadFile.getSize());
         ContenidoClase created = service.create(
                 claseId,
                 new ContenidoClaseService.ContentInput(titulo, tipo, descripcion, url, orden, visible),
-                archivo
+                uploadFile
         );
         created.setUrl(toAbsoluteUrl(created.getUrl(), request));
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
@@ -50,11 +62,20 @@ public class ContenidoClaseController {
                                  @RequestParam(defaultValue = "1") Integer orden,
                                  @RequestParam(defaultValue = "true") Boolean visible,
                                  @RequestPart(name = "archivo", required = false) MultipartFile archivo,
+                                 @RequestPart(name = "file", required = false) MultipartFile file,
                                  HttpServletRequest request) {
+        Long contenidoId = resolveContenidoId(id);
+        MultipartFile uploadFile = resolveUploadPart(archivo, file);
+        log.info("content-upload request: endpoint=PUT /api/contenidos/{} contentId={} tipo={} fileName={} fileSizeBytes={}",
+                id,
+                contenidoId,
+                tipo,
+                uploadFile == null ? null : uploadFile.getOriginalFilename(),
+                uploadFile == null ? null : uploadFile.getSize());
         ContenidoClase out = service.update(
-                resolveContenidoId(id),
+                contenidoId,
                 new ContenidoClaseService.ContentInput(titulo, tipo, descripcion, url, orden, visible),
-                archivo
+                uploadFile
         );
         out.setUrl(toAbsoluteUrl(out.getUrl(), request));
         return out;
@@ -92,5 +113,11 @@ public class ContenidoClaseController {
             }
         }
         throw new IllegalArgumentException("id de contenido invalido: " + raw);
+    }
+
+    private MultipartFile resolveUploadPart(MultipartFile archivo, MultipartFile file) {
+        if (archivo != null && !archivo.isEmpty()) return archivo;
+        if (file != null && !file.isEmpty()) return file;
+        return archivo != null ? archivo : file;
     }
 }

@@ -12,6 +12,9 @@ import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.DateTime;
 import com.google.api.client.util.store.FileDataStoreFactory;
+import com.google.auth.http.HttpCredentialsAdapter;
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.CalendarScopes;
 import com.google.api.services.calendar.model.ConferenceData;
@@ -25,6 +28,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
@@ -46,31 +50,46 @@ import java.util.UUID;
 public class GoogleCalendarService {
 
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
+    private static final String AUTH_MODE_OAUTH_USER = "oauth_user";
+    private static final String AUTH_MODE_SERVICE_ACCOUNT = "service_account";
+    private static final String AUTH_MODE_AUTO = "auto";
 
+    private final String authMode;
     private final String oauthClientSecretsJson;
     private final String oauthClientSecretsPath;
     private final String oauthTokensDir;
     private final String oauthUserId;
     private final int oauthLocalReceiverPort;
+    private final String serviceAccountJson;
+    private final String serviceAccountPath;
+    private final String serviceAccountUser;
     private final String defaultCalendarId;
     private final String applicationName;
     private final String defaultTimezone;
 
     public GoogleCalendarService(
+            @Value("${google.calendar.auth.mode:auto}") String authMode,
             @Value("${google.calendar.oauth.client-secrets.json:}") String oauthClientSecretsJson,
             @Value("${google.calendar.oauth.client-secrets.path:Secrets/google-oauth-client.json}") String oauthClientSecretsPath,
             @Value("${google.calendar.oauth.tokens.dir:.tokens/google-calendar}") String oauthTokensDir,
             @Value("${google.calendar.oauth.user-id:default}") String oauthUserId,
             @Value("${google.calendar.oauth.local-receiver-port:8888}") int oauthLocalReceiverPort,
+            @Value("${google.calendar.service-account.json:}") String serviceAccountJson,
+            @Value("${google.calendar.service-account.path:Secrets/google-service-account.json}") String serviceAccountPath,
+            @Value("${google.calendar.service-account.user:}") String serviceAccountUser,
             @Value("${google.calendar.default-id:primary}") String defaultCalendarId,
             @Value("${google.calendar.application-name:HARO}") String applicationName,
             @Value("${google.calendar.default-timezone:America/Bogota}") String defaultTimezone
     ) {
+        this.authMode = authMode;
         this.oauthClientSecretsJson = oauthClientSecretsJson;
         this.oauthClientSecretsPath = oauthClientSecretsPath;
         this.oauthTokensDir = oauthTokensDir;
         this.oauthUserId = oauthUserId;
         this.oauthLocalReceiverPort = oauthLocalReceiverPort;
+        this.serviceAccountJson = serviceAccountJson;
+        this.serviceAccountPath = serviceAccountPath;
+        this.serviceAccountUser = serviceAccountUser;
         this.defaultCalendarId = defaultCalendarId;
         this.applicationName = applicationName;
         this.defaultTimezone = defaultTimezone;
@@ -184,12 +203,46 @@ public class GoogleCalendarService {
     private Calendar buildCalendarClient() {
         try {
             NetHttpTransport transport = GoogleNetHttpTransport.newTrustedTransport();
+            String mode = resolveAuthMode();
+            if (AUTH_MODE_SERVICE_ACCOUNT.equals(mode)) {
+                return buildServiceAccountClient(transport);
+            }
             return buildOAuthUserClient(transport);
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException(
                     "No se pudo inicializar Google Calendar Client: " + e.getMessage(),
+                    e
+            );
+        }
+    }
+
+    private Calendar buildServiceAccountClient(NetHttpTransport transport) {
+        try (InputStream in = openServiceAccountInputStream()) {
+            GoogleCredentials credentials = GoogleCredentials.fromStream(in)
+                    .createScoped(List.of(CalendarScopes.CALENDAR));
+
+            if (!(credentials instanceof ServiceAccountCredentials serviceAccountCredentials)) {
+                throw new IllegalStateException(
+                        "El archivo configurado para Service Account no es valido."
+                );
+            }
+
+            String delegatedUser = trim(serviceAccountUser);
+            if (!delegatedUser.isBlank()) {
+                credentials = serviceAccountCredentials.createDelegated(delegatedUser);
+            }
+
+            return new Calendar.Builder(transport, JSON_FACTORY, new HttpCredentialsAdapter(credentials))
+                    .setApplicationName(applicationName)
+                    .build();
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "No se pudo inicializar Google Calendar con Service Account. " +
+                            "Verifica GOOGLE_CALENDAR_SERVICE_ACCOUNT_PATH/JSON y el acceso al calendario.",
                     e
             );
         }
@@ -240,25 +293,49 @@ public class GoogleCalendarService {
         }
     }
 
+    private String resolveAuthMode() {
+        String mode = trim(authMode).toLowerCase();
+        if (mode.isBlank()) {
+            return AUTH_MODE_OAUTH_USER;
+        }
+        if (AUTH_MODE_AUTO.equals(mode)) {
+            return hasServiceAccountConfigured() ? AUTH_MODE_SERVICE_ACCOUNT : AUTH_MODE_OAUTH_USER;
+        }
+        if (AUTH_MODE_OAUTH_USER.equals(mode) || AUTH_MODE_SERVICE_ACCOUNT.equals(mode)) {
+            return mode;
+        }
+        throw new IllegalStateException(
+                "google.calendar.auth.mode invalido. Usa: oauth_user, service_account o auto."
+        );
+    }
+
+    private boolean hasServiceAccountConfigured() {
+        if (StringUtils.hasText(serviceAccountJson)) {
+            return true;
+        }
+        if (!StringUtils.hasText(serviceAccountPath)) {
+            return false;
+        }
+        return new File(serviceAccountPath.trim()).exists();
+    }
+
+    private InputStream openServiceAccountInputStream() throws Exception {
+        if (StringUtils.hasText(serviceAccountJson)) {
+            String json = decodeJsonValue(serviceAccountJson, "GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON");
+            return new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));
+        }
+
+        if (!StringUtils.hasText(serviceAccountPath)) {
+            throw new IllegalStateException(
+                    "Falta GOOGLE_CALENDAR_SERVICE_ACCOUNT_PATH o GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON."
+            );
+        }
+        return new FileInputStream(serviceAccountPath.trim());
+    }
+
     private Reader openOauthClientSecretsReader() throws Exception {
         if (StringUtils.hasText(oauthClientSecretsJson)) {
-            String raw = oauthClientSecretsJson.trim();
-            String json = raw;
-            if (!raw.startsWith("{")) {
-                try {
-                    String decoded = new String(Base64.getDecoder().decode(raw), StandardCharsets.UTF_8);
-                    if (decoded.trim().startsWith("{")) {
-                        json = decoded;
-                    }
-                } catch (IllegalArgumentException ignored) {
-                    // If it's not base64, keep raw value and validate below.
-                }
-            }
-            if (!json.trim().startsWith("{")) {
-                throw new IllegalStateException(
-                        "GOOGLE_CALENDAR_OAUTH_CLIENT_SECRETS_JSON no tiene formato JSON valido."
-                );
-            }
+            String json = decodeJsonValue(oauthClientSecretsJson, "GOOGLE_CALENDAR_OAUTH_CLIENT_SECRETS_JSON");
             return new StringReader(json);
         }
 
@@ -270,6 +347,25 @@ public class GoogleCalendarService {
 
         InputStream in = new FileInputStream(oauthClientSecretsPath.trim());
         return new InputStreamReader(in, StandardCharsets.UTF_8);
+    }
+
+    private String decodeJsonValue(String rawValue, String envName) {
+        String raw = trim(rawValue);
+        String json = raw;
+        if (!raw.startsWith("{")) {
+            try {
+                String decoded = new String(Base64.getDecoder().decode(raw), StandardCharsets.UTF_8);
+                if (decoded.trim().startsWith("{")) {
+                    json = decoded;
+                }
+            } catch (IllegalArgumentException ignored) {
+                // Not base64, keep original value and validate below.
+            }
+        }
+        if (!json.trim().startsWith("{")) {
+            throw new IllegalStateException(envName + " no tiene formato JSON valido.");
+        }
+        return json;
     }
 
     private String buildGoogleErrorMessage(GoogleJsonResponseException e) {
@@ -321,5 +417,9 @@ public class GoogleCalendarService {
             }
         }
         return null;
+    }
+
+    private String trim(String value) {
+        return value == null ? "" : value.trim();
     }
 }

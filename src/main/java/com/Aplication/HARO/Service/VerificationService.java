@@ -57,6 +57,9 @@ public class VerificationService {
     @Value("${app.verification.maxAttempts:5}")
     private int maxAttempts;
 
+    @Value("${app.verification.logo-url:}")
+    private String verificationLogoUrl;
+
     /** Ruta del logo inline (resources/email-assets/LogoHARO.png) */
     private static final String LOGO_CLASSPATH = "email-assets/LogoHARO.png";
 
@@ -144,9 +147,10 @@ public class VerificationService {
 
         // 5) Logo inline
         Resource logo = new ClassPathResource(LOGO_CLASSPATH);
+        boolean useInlineLogo = !StringUtils.hasText(trim(verificationLogoUrl)) && logo.exists();
 
         // 6) Enviar correo (HTML + plain + imagen inline si existe)
-        if (logo.exists()) {
+        if (useInlineLogo) {
             mail.sendHtmlWithInlineImage(
                 email,
                 subject,
@@ -200,7 +204,8 @@ public class VerificationService {
         String plain = buildPlainLearningActivation(email, code);
 
         Resource logo = new ClassPathResource(LOGO_CLASSPATH);
-        if (logo.exists()) {
+        boolean useInlineLogo = !StringUtils.hasText(trim(verificationLogoUrl)) && logo.exists();
+        if (useInlineLogo) {
             mail.sendHtmlWithInlineImage(
                 email,
                 subject,
@@ -645,7 +650,7 @@ public class VerificationService {
     <!-- ENCABEZADO CON LOGO -->
     <tr>
       <td style="text-align:center;background:#ffffff;border-radius:8px 8px 0 0;padding:0px 24px;">
-        <img src="cid:logoHaro"
+        <img src="%s"
              alt="CEA HARO"
              style="max-width:140px;height:auto;display:inline-block;border:0;outline:none;text-decoration:none;background:#ffffff;padding:8px 12px;border-radius:6px;">
       </td>
@@ -707,7 +712,7 @@ public class VerificationService {
 
   </table>
 </div>
-        """.formatted(code, ttlSeconds / 60);
+        """.formatted(resolveVerificationLogoSrc(), code, ttlSeconds / 60);
         return html;
     }
 
@@ -727,7 +732,7 @@ public class VerificationService {
     <!-- ENCABEZADO CON LOGO -->
     <tr>
       <td style="text-align:center;background:#ffffff;border-radius:8px 8px 0 0;padding:0px 24px;">
-        <img src="cid:logoHaro"
+        <img src="%s"
              alt="CEA HARO"
              style="max-width:140px;height:auto;display:inline-block;border:0;outline:none;text-decoration:none;background:#ffffff;padding:8px 12px;border-radius:6px;">
       </td>
@@ -789,7 +794,7 @@ public class VerificationService {
 
   </table>
 </div>
-        """.formatted(code, ttlSeconds / 60);
+        """.formatted(resolveVerificationLogoSrc(), code, ttlSeconds / 60);
         return html;
     }
 
@@ -800,6 +805,14 @@ public class VerificationService {
             + "Tu codigo de verificacion es: " + code + "\n\n"
             + "El codigo vence en " + mins + " minutos. Por seguridad, no lo compartas con nadie.\n\n"
             + "Si no solicitaste esta activacion, ignora este mensaje. Tu cuenta no se vera afectada.";
+    }
+
+    private String resolveVerificationLogoSrc() {
+        String logoUrl = trim(verificationLogoUrl);
+        if (StringUtils.hasText(logoUrl)) {
+            return logoUrl.replace("\"", "%22");
+        }
+        return "cid:" + CID;
     }
 
     private static String trim(String s) { return s == null ? "" : s.trim(); }

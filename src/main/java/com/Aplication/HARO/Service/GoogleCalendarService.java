@@ -15,6 +15,7 @@ import com.google.api.client.util.store.FileDataStoreFactory;
 import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.auth.oauth2.ServiceAccountCredentials;
+import com.google.auth.oauth2.UserCredentials;
 import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.CalendarScopes;
 import com.google.api.services.calendar.model.ConferenceData;
@@ -60,6 +61,9 @@ public class GoogleCalendarService {
     private final String oauthTokensDir;
     private final String oauthUserId;
     private final int oauthLocalReceiverPort;
+    private final String oauthClientId;
+    private final String oauthClientSecret;
+    private final String oauthRefreshToken;
     private final String serviceAccountJson;
     private final String serviceAccountPath;
     private final String serviceAccountUser;
@@ -74,6 +78,9 @@ public class GoogleCalendarService {
             @Value("${google.calendar.oauth.tokens.dir:.tokens/google-calendar}") String oauthTokensDir,
             @Value("${google.calendar.oauth.user-id:default}") String oauthUserId,
             @Value("${google.calendar.oauth.local-receiver-port:8888}") int oauthLocalReceiverPort,
+            @Value("${google.calendar.oauth.client-id:}") String oauthClientId,
+            @Value("${google.calendar.oauth.client-secret:}") String oauthClientSecret,
+            @Value("${google.calendar.oauth.refresh-token:}") String oauthRefreshToken,
             @Value("${google.calendar.service-account.json:}") String serviceAccountJson,
             @Value("${google.calendar.service-account.path:Secrets/google-service-account.json}") String serviceAccountPath,
             @Value("${google.calendar.service-account.user:}") String serviceAccountUser,
@@ -87,6 +94,9 @@ public class GoogleCalendarService {
         this.oauthTokensDir = oauthTokensDir;
         this.oauthUserId = oauthUserId;
         this.oauthLocalReceiverPort = oauthLocalReceiverPort;
+        this.oauthClientId = oauthClientId;
+        this.oauthClientSecret = oauthClientSecret;
+        this.oauthRefreshToken = oauthRefreshToken;
         this.serviceAccountJson = serviceAccountJson;
         this.serviceAccountPath = serviceAccountPath;
         this.serviceAccountUser = serviceAccountUser;
@@ -249,6 +259,10 @@ public class GoogleCalendarService {
     }
 
     private Calendar buildOAuthUserClient(NetHttpTransport transport) {
+        if (StringUtils.hasText(oauthRefreshToken)) {
+            return buildOAuthRefreshTokenClient(transport);
+        }
+
         String tokensDir = StringUtils.hasText(oauthTokensDir)
                 ? oauthTokensDir.trim()
                 : ".tokens/google-calendar";
@@ -293,6 +307,48 @@ public class GoogleCalendarService {
         }
     }
 
+    private Calendar buildOAuthRefreshTokenClient(NetHttpTransport transport) {
+        String clientId = trim(oauthClientId);
+        String clientSecret = trim(oauthClientSecret);
+
+        if (clientId.isBlank() || clientSecret.isBlank()) {
+            GoogleClientSecrets.Details details = loadOauthClientDetailsOrNull();
+            if (details != null) {
+                if (clientId.isBlank()) {
+                    clientId = trim(details.getClientId());
+                }
+                if (clientSecret.isBlank()) {
+                    clientSecret = trim(details.getClientSecret());
+                }
+            }
+        }
+
+        if (clientId.isBlank() || clientSecret.isBlank()) {
+            throw new IllegalStateException(
+                    "Faltan GOOGLE_CALENDAR_OAUTH_CLIENT_ID/SECRET (o client secrets JSON/path) para usar refresh token."
+            );
+        }
+
+        try {
+            GoogleCredentials credentials = UserCredentials.newBuilder()
+                    .setClientId(clientId)
+                    .setClientSecret(clientSecret)
+                    .setRefreshToken(trim(oauthRefreshToken))
+                    .build()
+                    .createScoped(List.of(CalendarScopes.CALENDAR));
+
+            return new Calendar.Builder(transport, JSON_FACTORY, new HttpCredentialsAdapter(credentials))
+                    .setApplicationName(applicationName)
+                    .build();
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "No se pudo inicializar Google Calendar con OAuth refresh token. " +
+                            "Verifica GOOGLE_CALENDAR_OAUTH_REFRESH_TOKEN y client id/secret.",
+                    e
+            );
+        }
+    }
+
     private String resolveAuthMode() {
         String mode = trim(authMode).toLowerCase();
         if (mode.isBlank()) {
@@ -331,6 +387,24 @@ public class GoogleCalendarService {
             );
         }
         return new FileInputStream(serviceAccountPath.trim());
+    }
+
+    private GoogleClientSecrets.Details loadOauthClientDetailsOrNull() {
+        try (Reader reader = openOauthClientSecretsReader()) {
+            GoogleClientSecrets clientSecrets = GoogleClientSecrets.load(JSON_FACTORY, reader);
+            GoogleClientSecrets.Details details = clientSecrets.getInstalled() != null
+                    ? clientSecrets.getInstalled()
+                    : clientSecrets.getWeb();
+            if (details == null) {
+                return null;
+            }
+            if (!StringUtils.hasText(details.getClientId()) || !StringUtils.hasText(details.getClientSecret())) {
+                return null;
+            }
+            return details;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private Reader openOauthClientSecretsReader() throws Exception {

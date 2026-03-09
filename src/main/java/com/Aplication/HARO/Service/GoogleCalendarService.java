@@ -95,6 +95,28 @@ public class GoogleCalendarService {
             List<String> asistentes,
             String calendarId
     ) {
+        return crearReunion(
+                titulo,
+                descripcion,
+                inicioIso8601,
+                finIso8601,
+                zonaHoraria,
+                asistentes,
+                calendarId,
+                true
+        );
+    }
+
+    public ReunionCreada crearReunion(
+            String titulo,
+            String descripcion,
+            String inicioIso8601,
+            String finIso8601,
+            String zonaHoraria,
+            List<String> asistentes,
+            String calendarId,
+            boolean crearMeet
+    ) {
         OffsetDateTime inicio = parseFecha("inicio", inicioIso8601);
         OffsetDateTime fin = parseFecha("fin", finIso8601);
         if (!fin.isAfter(inicio)) {
@@ -121,22 +143,26 @@ public class GoogleCalendarService {
             event.setAttendees(attendees);
         }
 
-        ConferenceData conf = new ConferenceData().setCreateRequest(
-                new CreateConferenceRequest()
-                        .setRequestId(UUID.randomUUID().toString())
-                        .setConferenceSolutionKey(new ConferenceSolutionKey().setType("hangoutsMeet"))
-        );
-        event.setConferenceData(conf);
+        if (crearMeet) {
+            ConferenceData conf = new ConferenceData().setCreateRequest(
+                    new CreateConferenceRequest()
+                            .setRequestId(UUID.randomUUID().toString())
+                            .setConferenceSolutionKey(new ConferenceSolutionKey().setType("hangoutsMeet"))
+            );
+            event.setConferenceData(conf);
+        }
 
         try {
             Calendar client = buildCalendarClient();
-            Event created = client.events()
+            Calendar.Events.Insert insertRequest = client.events()
                     .insert(calId, event)
-                    .setConferenceDataVersion(1)
-                    .setSendUpdates("all")
-                    .execute();
+                    .setSendUpdates("all");
+            if (crearMeet) {
+                insertRequest.setConferenceDataVersion(1);
+            }
+            Event created = insertRequest.execute();
 
-            String meetLink = extractMeetLink(created);
+            String meetLink = crearMeet ? extractMeetLink(created) : null;
             return new ReunionCreada(
                     created.getId(),
                     calId,

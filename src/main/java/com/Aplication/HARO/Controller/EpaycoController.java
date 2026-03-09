@@ -67,6 +67,12 @@ public class EpaycoController {
         this.objectMapper = objectMapper;
     }
 
+    // Health check rapido para validar conectividad API desde frontend o curl.
+    @GetMapping(value = {"/ping", "/epayco/ping"}, produces = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<String> ping() {
+        return ResponseEntity.ok("OK");
+    }
+
     // Endpoint de respuesta (visible al usuario)
     @GetMapping({"/response", "/epayco/response"})
     public ResponseEntity<?> response(@RequestParam(name = "ref_payco", required = false) String refPayco,

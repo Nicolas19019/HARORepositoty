@@ -25,11 +25,13 @@ public class GoogleCalendarController {
             String fin,
             String zonaHoraria,
             String calendarId,
-            List<String> asistentes
+            List<String> asistentes,
+            Boolean crearMeet
     ) {}
 
     @PostMapping("/reuniones")
     public ResponseEntity<GoogleCalendarService.ReunionCreada> crearReunion(@RequestBody CrearReunionReq req) {
+        boolean crearMeet = req.crearMeet() != null && req.crearMeet();
         GoogleCalendarService.ReunionCreada created = service.crearReunion(
                 req.titulo(),
                 req.descripcion(),
@@ -37,7 +39,8 @@ public class GoogleCalendarController {
                 req.fin(),
                 req.zonaHoraria(),
                 req.asistentes(),
-                req.calendarId()
+                req.calendarId(),
+                crearMeet
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }

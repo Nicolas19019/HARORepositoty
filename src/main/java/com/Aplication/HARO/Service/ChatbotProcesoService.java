@@ -835,7 +835,8 @@ public class ChatbotProcesoService {
                 OffsetDateTime.from(fin).toString(),
                 zone.getId(),
                 asistentes,
-                calendarId.isBlank() ? null : calendarId
+                calendarId.isBlank() ? null : calendarId,
+                true
         );
     }
 

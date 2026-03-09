@@ -3,10 +3,7 @@ package com.Aplication.HARO.Service;
 import com.Aplication.HARO.Model.ClaseAprendizaje;
 import com.Aplication.HARO.Model.ContenidoClase;
 import com.Aplication.HARO.Repository.ContenidoClaseRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -16,10 +13,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.IOException;
 import java.net.URI;
@@ -36,8 +30,6 @@ import java.util.UUID;
 @Service
 @Transactional
 public class ContenidoClaseService {
-
-    private static final Logger log = LoggerFactory.getLogger(ContenidoClaseService.class);
 
     private record StoredObject(String url, String ext) {}
 
@@ -68,11 +60,9 @@ public class ContenidoClaseService {
     private final String s3PublicBaseUrl;
     private final String slideConverterCommand;
     private final S3Client s3Client;
-    private final Environment environment;
 
     public ContenidoClaseService(ContenidoClaseRepository repository,
                                  ClaseAprendizajeService claseService,
-                                 Environment environment,
                                  @Value("${app.upload.dir:uploads}") String uploadDir,
                                  @Value("${storage.provider:local}") String storageProvider,
                                  @Value("${aws.region:us-east-2}") String awsRegion,
@@ -84,7 +74,6 @@ public class ContenidoClaseService {
                                  @Value("${app.slides.converter.command:soffice}") String slideConverterCommand) {
         this.repository = repository;
         this.claseService = claseService;
-        this.environment = environment;
         this.uploadDir = Path.of(uploadDir, "clases");
         this.storageProvider = (storageProvider == null ? "local" : storageProvider.trim().toLowerCase());
         this.awsRegion = awsRegion == null || awsRegion.isBlank() ? "us-east-2" : awsRegion.trim();
@@ -110,7 +99,6 @@ public class ContenidoClaseService {
         } else {
             this.s3Client = null;
         }
-        logStorageRuntime();
     }
 
     @Transactional(readOnly = true)
@@ -134,10 +122,7 @@ public class ContenidoClaseService {
         ContenidoClase row = new ContenidoClase();
         row.setClase(clase);
         merge(row, in, archivo, true);
-        ContenidoClase saved = repository.save(row);
-        log.info("content-upload db persisted: idContenidoClase={} idClaseAprendizaje={} url={} creadoEn={}",
-                saved.getId(), saved.getClaseId(), saved.getUrl(), saved.getCreadoEn());
-        return saved;
+        return repository.save(row);
     }
 
     public ContenidoClase update(Long id, ContentInput in, MultipartFile archivo) {
@@ -145,10 +130,7 @@ public class ContenidoClaseService {
         ContenidoClase row = repository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Contenido no encontrado: " + id));
         merge(row, in, archivo, false);
-        ContenidoClase saved = repository.save(row);
-        log.info("content-upload db updated: idContenidoClase={} idClaseAprendizaje={} url={} actualizadoEn={}",
-                saved.getId(), saved.getClaseId(), saved.getUrl(), saved.getActualizadoEn());
-        return saved;
+        return repository.save(row);
     }
 
     public void deleteLogico(Long id) {
@@ -344,8 +326,6 @@ public class ContenidoClaseService {
     }
 
     private StoredObject storeFile(MultipartFile file, String tipo, Long claseId) {
-        log.info("content-upload storage resolution: provider={} claseId={} tipo={} fileName={} fileSizeBytes={}",
-                storageProvider, claseId, tipo, file == null ? null : file.getOriginalFilename(), file == null ? null : file.getSize());
         if ("s3".equals(storageProvider)) {
             return storeFileInS3(file, tipo, claseId);
         }
@@ -372,8 +352,6 @@ public class ContenidoClaseService {
             if (contentType == null || contentType.isBlank()) {
                 contentType = inferContentType(ext);
             }
-            log.info("content-upload s3 putObject request: bucket={} region={} objectKey={} contentType={}",
-                    s3Bucket, awsRegion, objectKey, contentType);
 
             PutObjectRequest put = PutObjectRequest.builder()
                     .bucket(s3Bucket)
@@ -383,14 +361,6 @@ public class ContenidoClaseService {
                     .build();
 
             s3Client.putObject(put, RequestBody.fromBytes(file.getBytes()));
-            log.info("content-upload s3 putObject success: bucket={} objectKey={}", s3Bucket, objectKey);
-
-            HeadObjectResponse head = s3Client.headObject(HeadObjectRequest.builder()
-                    .bucket(s3Bucket)
-                    .key(objectKey)
-                    .build());
-            log.info("content-upload s3 headObject success: exists=true status={} objectKey={} contentLength={} contentType={}",
-                    head.sdkHttpResponse().statusCode(), objectKey, head.contentLength(), head.contentType());
 
             String publicUrl;
             if (!s3PublicBaseUrl.isBlank()) {
@@ -399,19 +369,8 @@ public class ContenidoClaseService {
                 publicUrl = "https://" + s3Bucket + ".s3." + awsRegion + ".amazonaws.com/" + objectKey;
             }
             return new StoredObject(publicUrl, ext);
-        } catch (S3Exception e) {
-            log.error("content-upload s3 error: statusCode={} errorCode={} requestId={} message={}",
-                    e.statusCode(),
-                    e.awsErrorDetails() == null ? null : e.awsErrorDetails().errorCode(),
-                    e.requestId(),
-                    e.getMessage(),
-                    e);
-            throw new IllegalStateException("No se pudo guardar el archivo en S3", e);
         } catch (IOException e) {
             throw new IllegalStateException("No se pudo guardar el archivo en S3", e);
-        } catch (RuntimeException e) {
-            log.error("content-upload s3 runtime error: message={}", e.getMessage(), e);
-            throw e;
         }
     }
 
@@ -559,24 +518,5 @@ public class ContenidoClaseService {
         if (out.startsWith("-")) out = out.substring(1);
         if (out.endsWith("-")) out = out.substring(0, out.length() - 1);
         return out.isBlank() ? "otros" : out;
-    }
-
-    private void logStorageRuntime() {
-        String[] activeProfiles = environment == null ? new String[0] : environment.getActiveProfiles();
-        String active = activeProfiles.length == 0 ? "(none)" : String.join(",", activeProfiles);
-        log.info("content-upload runtime config: activeProfiles={} storage.provider={} aws.region={} s3.bucket={} s3.base-path={} s3.public-base-url={}",
-                active, storageProvider, awsRegion, s3Bucket, s3BasePath, s3PublicBaseUrl);
-        log.info("content-upload env presence: K_SERVICE={} STORAGE_PROVIDER={} AWS_REGION={} S3_BUCKET={} S3_BASE_PATH={} S3_PUBLIC_BASE_URL={}",
-                envOrBlank("K_SERVICE"),
-                envOrBlank("STORAGE_PROVIDER"),
-                envOrBlank("AWS_REGION"),
-                envOrBlank("S3_BUCKET"),
-                envOrBlank("S3_BASE_PATH"),
-                envOrBlank("S3_PUBLIC_BASE_URL"));
-    }
-
-    private String envOrBlank(String key) {
-        String v = System.getenv(key);
-        return v == null ? "" : v;
     }
 }

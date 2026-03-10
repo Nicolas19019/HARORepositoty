@@ -25,6 +25,8 @@ import com.google.api.services.calendar.model.EntryPoint;
 import com.google.api.services.calendar.model.Event;
 import com.google.api.services.calendar.model.EventAttendee;
 import com.google.api.services.calendar.model.EventDateTime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -53,6 +55,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class GoogleCalendarService {
+    private static final Logger log = LoggerFactory.getLogger(GoogleCalendarService.class);
 
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
     private static final String AUTH_MODE_OAUTH_USER = "oauth_user";
@@ -248,6 +251,7 @@ public class GoogleCalendarService {
                                           String errorMessage,
                                           Exception cause) {
         String message = "No se pudo crear la reunion en Google Calendar: " + safe(errorMessage);
+        log.warn("{} (calendarId={}, authMode={})", message, calId, authMode);
         if (!fallbackToTemplateLink) {
             throw new IllegalStateException(message, cause);
         }

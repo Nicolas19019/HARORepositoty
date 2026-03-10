@@ -36,9 +36,12 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.StringReader;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -46,6 +49,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class GoogleCalendarService {
@@ -67,6 +71,7 @@ public class GoogleCalendarService {
     private final String serviceAccountJson;
     private final String serviceAccountPath;
     private final String serviceAccountUser;
+    private final boolean fallbackToTemplateLink;
     private final String defaultCalendarId;
     private final String applicationName;
     private final String defaultTimezone;
@@ -84,6 +89,7 @@ public class GoogleCalendarService {
             @Value("${google.calendar.service-account.json:}") String serviceAccountJson,
             @Value("${google.calendar.service-account.path:Secrets/google-service-account.json}") String serviceAccountPath,
             @Value("${google.calendar.service-account.user:}") String serviceAccountUser,
+            @Value("${google.calendar.fallback.to-template-link:true}") boolean fallbackToTemplateLink,
             @Value("${google.calendar.default-id:primary}") String defaultCalendarId,
             @Value("${google.calendar.application-name:HARO}") String applicationName,
             @Value("${google.calendar.default-timezone:America/Bogota}") String defaultTimezone
@@ -100,6 +106,7 @@ public class GoogleCalendarService {
         this.serviceAccountJson = serviceAccountJson;
         this.serviceAccountPath = serviceAccountPath;
         this.serviceAccountUser = serviceAccountUser;
+        this.fallbackToTemplateLink = fallbackToTemplateLink;
         this.defaultCalendarId = defaultCalendarId;
         this.applicationName = applicationName;
         this.defaultTimezone = defaultTimezone;
@@ -202,12 +209,59 @@ public class GoogleCalendarService {
                     fin.toInstant()
             );
         } catch (GoogleJsonResponseException e) {
-            throw new IllegalStateException("No se pudo crear la reunion en Google Calendar: " + buildGoogleErrorMessage(e), e);
-        } catch (IllegalStateException e) {
-            throw e;
+            return fallbackOrThrow(
+                    calId,
+                    summary,
+                    desc,
+                    inicio,
+                    fin,
+                    tz,
+                    attendees,
+                    crearMeet,
+                    buildGoogleErrorMessage(e),
+                    e
+            );
         } catch (Exception e) {
-            throw new IllegalStateException("No se pudo crear la reunion en Google Calendar: " + e.getMessage(), e);
+            return fallbackOrThrow(
+                    calId,
+                    summary,
+                    desc,
+                    inicio,
+                    fin,
+                    tz,
+                    attendees,
+                    crearMeet,
+                    e.getMessage(),
+                    e
+            );
         }
+    }
+
+    private ReunionCreada fallbackOrThrow(String calId,
+                                          String summary,
+                                          String desc,
+                                          OffsetDateTime inicio,
+                                          OffsetDateTime fin,
+                                          String tz,
+                                          List<EventAttendee> attendees,
+                                          boolean crearMeet,
+                                          String errorMessage,
+                                          Exception cause) {
+        String message = "No se pudo crear la reunion en Google Calendar: " + safe(errorMessage);
+        if (!fallbackToTemplateLink) {
+            throw new IllegalStateException(message, cause);
+        }
+
+        String templateLink = buildTemplateLink(summary, desc, inicio, fin, tz, attendees, crearMeet);
+        return new ReunionCreada(
+                null,
+                calId,
+                "PENDIENTE_MANUAL",
+                templateLink,
+                null,
+                inicio.toInstant(),
+                fin.toInstant()
+        );
     }
 
     private Calendar buildCalendarClient() {
@@ -442,6 +496,52 @@ public class GoogleCalendarService {
         return json;
     }
 
+    private String buildTemplateLink(String summary,
+                                     String description,
+                                     OffsetDateTime inicio,
+                                     OffsetDateTime fin,
+                                     String timezone,
+                                     List<EventAttendee> attendees,
+                                     boolean crearMeet) {
+        StringBuilder details = new StringBuilder(safe(description));
+        if (crearMeet) {
+            if (!details.isEmpty()) {
+                details.append("\n\n");
+            }
+            details.append("Nota: no se pudo crear automaticamente el enlace de Google Meet.");
+        }
+
+        String dates = toGoogleDate(inicio) + "/" + toGoogleDate(fin);
+        StringBuilder url = new StringBuilder("https://calendar.google.com/calendar/render?action=TEMPLATE");
+        url.append("&text=").append(encodeQuery(safe(summary)));
+        url.append("&details=").append(encodeQuery(details.toString()));
+        url.append("&dates=").append(encodeQuery(dates));
+        url.append("&ctz=").append(encodeQuery(safe(timezone)));
+
+        String add = attendees == null ? "" :
+                attendees.stream()
+                        .map(EventAttendee::getEmail)
+                        .filter(Objects::nonNull)
+                        .map(String::trim)
+                        .filter(StringUtils::hasText)
+                        .distinct()
+                        .collect(Collectors.joining(","));
+        if (!add.isBlank()) {
+            url.append("&add=").append(encodeQuery(add));
+        }
+
+        return url.toString();
+    }
+
+    private String toGoogleDate(OffsetDateTime dt) {
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'");
+        return dt.withOffsetSameInstant(ZoneOffset.UTC).format(fmt);
+    }
+
+    private String encodeQuery(String value) {
+        return URLEncoder.encode(safe(value), StandardCharsets.UTF_8);
+    }
+
     private String buildGoogleErrorMessage(GoogleJsonResponseException e) {
         String detailMessage = e.getDetails() != null ? e.getDetails().getMessage() : null;
         if (StringUtils.hasText(detailMessage)) {
@@ -495,5 +595,9 @@ public class GoogleCalendarService {
 
     private String trim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value;
     }
 }

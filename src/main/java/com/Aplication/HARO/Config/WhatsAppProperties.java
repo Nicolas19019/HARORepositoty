@@ -18,8 +18,8 @@ public class WhatsAppProperties {
     private String webhookVerifyToken;
     private String appSecret;
     private boolean botEnabled = false;
-    private String botWelcomeReply = "Bienvenido a CEA HARO. Soy tu asistente virtual. Escribe MENU para continuar.";
-    private String botFallbackReply = "Gracias por escribir a CEA HARO. Escribe MENU para ver opciones.";
+    private String botWelcomeReply = "👋 ¡Bienvenido a CEA HARO! Soy tu asistente virtual. Escribe MENU para continuar.";
+    private String botFallbackReply = "🤖 Gracias por escribir a CEA HARO. Escribe MENU para ver opciones.";
     private int connectTimeoutMs = 10_000;
     private int readTimeoutMs = 20_000;
 

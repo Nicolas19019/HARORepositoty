@@ -48,7 +48,7 @@ public class ChatbotInboundController {
 
     /**
      * Formato esperado (un solo mensaje):
-     *   Nombre(s) + Documento + CategorÃ­a
+     *   Nombre(s) + Documento + Categoría
      *
      * Ejemplos:
      *   Juan Perez 12345678 A2
@@ -164,7 +164,7 @@ public class ChatbotInboundController {
         ChatState state = ChatState.MAIN_MENU;
         boolean courseOptionsExpanded = false;
 
-        // Captura matrÃ­cula
+        // Captura matrícula
         String nombre;
         String documento;
         String categoria;
@@ -197,7 +197,7 @@ public class ChatbotInboundController {
 
         if (from.isBlank()) {
             return ResponseEntity.ok(new BotResponse(List.of(
-                    textMsg("âš ï¸ No pude identificar tu nÃºmero.\n\nEscribe MENU para volver al inicio.")
+                    textMsg("⚠️ No pude identificar tu número.\n\nEscribe MENU para volver al inicio.")
             )));
         }
 
@@ -224,7 +224,7 @@ public class ChatbotInboundController {
                 return ResponseEntity.ok(new BotResponse(actions));
             }
 
-            // MenÃº
+            // Menú
             if (isMenuCommand(text)) {
                 resetToMain(session);
                 actions.add(textMsg(mainMenuText()));
@@ -253,7 +253,7 @@ public class ChatbotInboundController {
                     actions.add(textMsg(mainMenuText()));
                 } else {
                     resetToMain(session);
-                    actions.add(textMsg("âŒ Proceso cancelado.\n\n" + mainMenuText()));
+                    actions.add(textMsg("❌ Proceso cancelado.\n\n" + mainMenuText()));
                 }
                 session.lastSeen = now;
                 return ResponseEntity.ok(new BotResponse(actions));
@@ -261,7 +261,7 @@ public class ChatbotInboundController {
 
             // Debug
             if ("estado".equals(text)) {
-                actions.add(textMsg("ðŸ§© Estado actual: " + session.state + "\n\nEscribe MENU para volver."));
+                actions.add(textMsg("🧩 Estado actual: " + session.state + "\n\nEscribe MENU para volver."));
                 session.lastSeen = now;
                 return ResponseEntity.ok(new BotResponse(actions));
             }
@@ -293,7 +293,7 @@ public class ChatbotInboundController {
                 case STUDENT_BOOKING_SLOT -> handleStudentBookingSlot(rawText, session, actions);
                 case STUDENT_CANCEL_CLASS_PICK -> handleStudentCancelClassPick(text, session, actions);
 
-                case DONE -> actions.add(textMsg("âœ… Tu proceso ya fue completado.\n\nEscribe MENU para volver al inicio."));
+                case DONE -> actions.add(textMsg("✅ Tu proceso ya fue completado.\n\nEscribe MENU para volver al inicio."));
             }
 
             session.lastSeen = now;
@@ -331,8 +331,8 @@ public class ChatbotInboundController {
                 clearStudentAccessData(session);
                 session.state = ChatState.STUDENT_DOC_CAPTURE;
                 actions.add(textMsg(
-                        "ðŸŽ“ Â¡Perfecto! Vamos a validar tu acceso como estudiante.\n\n" +
-                                "Primero escribe tu nÃºmero de documento (solo nÃºmeros) y te enviaremos un OTP a tu correo.\n\n" +
+                        "🎓 ¡Perfecto! Vamos a validar tu acceso como estudiante.\n\n" +
+                                "Primero escribe tu número de documento (solo números) y te enviaremos un OTP a tu correo.\n\n" +
                                 "Ejemplo: 12345678"
                 ));
                 actions.add(textMsg("Opciones: MENU"));
@@ -342,7 +342,7 @@ public class ChatbotInboundController {
                 actions.add(textMsg("Opciones: MENU"));
             }
             default -> {
-                actions.add(textMsg("âš ï¸ OpciÃ³n no reconocida en este menÃº. Escribe 1, 2, 3, 4 o 5, o MENU."));
+                actions.add(textMsg("⚠️ Opción no reconocida en este menú. Escribe 1, 2, 3, 4 o 5, o MENU."));
                 actions.add(textMsg(mainMenuText()));
             }
         }
@@ -356,7 +356,7 @@ public class ChatbotInboundController {
             return;
         }
 
-        // â€œver todas/combosâ€ por compatibilidad
+        // “ver todas/combos” por compatibilidad
         if ("todos".equals(cmd) || "todas".equals(cmd) || "ver todas".equals(cmd) || "combos".equals(cmd) || "ver todos".equals(cmd)) {
             session.courseOptionsExpanded = true;
             actions.add(textMsg(allCategoriesMenuText()));
@@ -364,7 +364,7 @@ public class ChatbotInboundController {
             return;
         }
 
-        // MenÃº expandido
+        // Menú expandido
         if (session.courseOptionsExpanded) {
             switch (cmd) {
                 case "1", "a2" -> {
@@ -387,12 +387,12 @@ public class ChatbotInboundController {
                     actions.add(textMsg(courseA2B1C1Text()));
                     actions.add(textMsg("Opciones: MATRICULA | MENU"));
                 }
-                case "6", "recategorizacion", "recategorizaciÃ³n", "b1 a c1", "b1->c1" -> {
+                case "6", "recategorizacion", "recategorización", "b1 a c1", "b1->c1" -> {
                     actions.add(textMsg(courseRecategorizacionText()));
                     actions.add(textMsg("Opciones: MATRICULA | MENU"));
                 }
             default -> {
-                actions.add(textMsg("âš ï¸ OpciÃ³n no reconocida para este listado de cursos."));
+                actions.add(textMsg("⚠️ Opción no reconocida para este listado de cursos."));
                 actions.add(textMsg(allCategoriesMenuText()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
@@ -400,7 +400,7 @@ public class ChatbotInboundController {
             return;
         }
 
-        // MenÃº principal de cursos (1..6)
+        // Menú principal de cursos (1..6)
         switch (cmd) {
             case "1", "a2" -> {
                 actions.add(textMsg(courseA2Text()));
@@ -422,12 +422,12 @@ public class ChatbotInboundController {
                 actions.add(textMsg(courseA2B1C1Text()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
-            case "6", "recategorizacion", "recategorizaciÃ³n", "b1 a c1", "b1->c1" -> {
+            case "6", "recategorizacion", "recategorización", "b1 a c1", "b1->c1" -> {
                 actions.add(textMsg(courseRecategorizacionText()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
             default -> {
-                actions.add(textMsg("âš ï¸ OpciÃ³n no reconocida para este menÃº. Escoge 1 a 6, MATRICULA o MENU."));
+                actions.add(textMsg("⚠️ Opción no reconocida para este menú. Escoge 1 a 6, MATRICULA o MENU."));
                 actions.add(textMsg(coursesMenuText()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
@@ -466,11 +466,11 @@ public class ChatbotInboundController {
         EnrollmentBasic basic = parseEnrollmentBasic(rawText);
         if (basic == null) {
             actions.add(textMsg(
-                    "âš ï¸ No pude leer tus datos.\n\n" +
-                            "EnvÃ­a TODO en un solo mensaje asÃ­:\n" +
-                            "Nombre Apellido Documento CategorÃ­a\n\n" +
+                    "⚠️ No pude leer tus datos.\n\n" +
+                            "Envía TODO en un solo mensaje así:\n" +
+                            "Nombre Apellido Documento Categoría\n\n" +
                             "Ejemplo: Juan Perez 12345678 A2\n\n" +
-                            "CategorÃ­as: A2 | B1 | C1 | A2 y B1 | A2, B1 y C1"
+                            "Categorías: A2 | B1 | C1 | A2 y B1 | A2, B1 y C1"
             ));
             actions.add(textMsg("Opciones: MENU | CANCELAR"));
             return;
@@ -492,8 +492,8 @@ public class ChatbotInboundController {
         String email = trim(text).toLowerCase(Locale.ROOT);
         if (!EMAIL_PATTERN.matcher(email).matches()) {
             actions.add(textMsg(
-                    "âš ï¸ Correo invÃ¡lido.\n\n" +
-                            "EnvÃ­a solo el correo, por ejemplo: usuario@correo.com"
+                    "⚠️ Correo inválido.\n\n" +
+                            "Envía solo el correo, por ejemplo: usuario@correo.com"
             ));
             actions.add(textMsg("Opciones: MENU | CANCELAR"));
             return;
@@ -581,7 +581,7 @@ public class ChatbotInboundController {
     }
     private void handleEnrollmentConfirm(String text, SessionData session, List<BotAction> actions) {
         switch (text) {
-            case "1", "si", "sÃ­", "confirmar", "continuar" -> {
+            case "1", "si", "sí", "confirmar", "continuar" -> {
                 try {
                     procesoService.markPaymentPending(session.documento);
                     String link = procesoService.getPaymentLink(session.documento);
@@ -596,7 +596,7 @@ public class ChatbotInboundController {
                     ));
                     actions.add(textMsg("Opciones: MENU | TERMINAR"));
                 } catch (Exception e) {
-                    actions.add(textMsg("âš ï¸ No pude iniciar el pago: " + e.getMessage()));
+                    actions.add(textMsg("⚠️ No pude iniciar el pago: " + e.getMessage()));
                     actions.add(textMsg("Opciones: MENU"));
                 }
             }
@@ -608,7 +608,7 @@ public class ChatbotInboundController {
             }
             case "3", "no", "cancelar" -> {
                 resetToMain(session);
-                actions.add(textMsg("âŒ Proceso cancelado.\n\n" + mainMenuText()));
+                actions.add(textMsg("❌ Proceso cancelado.\n\n" + mainMenuText()));
             }
             default -> {
                 actions.add(textMsg("Responde 1, 2 o 3."));
@@ -621,8 +621,8 @@ public class ChatbotInboundController {
         switch (text) {
             case "pendiente" -> {
                 actions.add(textMsg(
-                        "â³ Tu pago estÃ¡ *PENDIENTE*.\n\n" +
-                                "Esto puede tardar unos minutos segÃºn tu entidad.\n" +
+                        "⏳ Tu pago está *PENDIENTE*.\n\n" +
+                                "Esto puede tardar unos minutos según tu entidad.\n" +
                                 "Si deseas ver el enlace otra vez escribe: LINK"
                 ));
                 actions.add(textMsg("Opciones: MENU"));
@@ -634,21 +634,21 @@ public class ChatbotInboundController {
                     session.state = ChatState.CONTRACT_WAIT;
 
                     actions.add(textMsg(
-                            "âœ… Pago aprobado.\n\n" +
+                            "✅ Pago aprobado.\n\n" +
                                     "Siguiente paso: completa y firma los contratos del curso en el portal.\n\n" +
-                                    "Enlace Ãºnico e intransferible:\n" + contractLink + "\n\n" +
-                                    "Al finalizar la firma, tu matrÃ­cula se activarÃ¡ automÃ¡ticamente.\n" +
-                                    "Si deseas validarlo aquÃ­, escribe: LISTO"
+                                    "Enlace único e intransferible:\n" + contractLink + "\n\n" +
+                                    "Al finalizar la firma, tu matrícula se activará automáticamente.\n" +
+                                    "Si deseas validarlo aquí, escribe: LISTO"
                     ));
                     actions.add(textMsg("Opciones: MENU"));
                 } catch (Exception e) {
-                    actions.add(textMsg("âš ï¸ No pude confirmar el pago: " + e.getMessage()));
+                    actions.add(textMsg("⚠️ No pude confirmar el pago: " + e.getMessage()));
                     actions.add(textMsg("Opciones: MENU"));
                 }
             }
-            case "ya pague", "ya paguÃ©", "pague", "paguÃ©" -> {
+            case "ya pague", "ya pagué", "pague", "pagué" -> {
                 actions.add(textMsg(
-                        "âœ… Gracias. Estamos validando tu pago.\n\n" +
+                        "✅ Gracias. Estamos validando tu pago.\n\n" +
                                 "Cuando se confirme te enviaremos el enlace de contratos.\n" +
                                 "Si necesitas el enlace de pago nuevamente escribe: LINK"
                 ));
@@ -657,19 +657,19 @@ public class ChatbotInboundController {
             case "pagar", "link" -> {
                 try {
                     String link = procesoService.getPaymentLink(session.documento);
-                    actions.add(textMsg("ðŸ”— Enlace de pago:\n" + link + "\n\n" + paymentFlowInfo()));
+                    actions.add(textMsg("🔗 Enlace de pago:\n" + link + "\n\n" + paymentFlowInfo()));
                     actions.add(textMsg("Opciones: MENU"));
                 } catch (Exception e) {
-                    actions.add(textMsg("âš ï¸ No encuentro un enlace de pago para este proceso."));
+                    actions.add(textMsg("⚠️ No encuentro un enlace de pago para este proceso."));
                     actions.add(textMsg("Opciones: MENU"));
                 }
             }
             default -> {
                 actions.add(textMsg(
-                        "ðŸ’³ Estamos esperando confirmaciÃ³n de pago.\n\n" +
+                        "💳 Estamos esperando confirmación de pago.\n\n" +
                                 "Puedes escribir:\n" +
                                 "- LINK (ver enlace de pago)\n" +
-                                "- YA PAGUÃ‰ (si ya realizaste el pago)\n" +
+                                "- YA PAGUÉ (si ya realizaste el pago)\n" +
                                 "- PENDIENTE / APROBADO (modo prueba)"
                 ));
                 actions.add(textMsg("Opciones: MENU | TERMINAR"));
@@ -685,9 +685,9 @@ public class ChatbotInboundController {
             return "";
         }
 
-        StringBuilder out = new StringBuilder("ConfiguraciÃ³n del flujo de pago:\n");
+        StringBuilder out = new StringBuilder("Configuración del flujo de pago:\n");
         if (!confirmation.isBlank()) {
-            out.append("- ConfirmaciÃ³n: ").append(confirmation).append("\n");
+            out.append("- Confirmación: ").append(confirmation).append("\n");
         }
         if (!response.isBlank()) {
             out.append("- Retorno: ").append(response).append("\n");
@@ -795,7 +795,7 @@ public class ChatbotInboundController {
                     boolean signed = procesoService.isContractSigned(session.documento);
                     if (!signed) {
                         actions.add(textMsg(
-                                "â³ AÃºn no vemos la firma validada.\n\n" +
+                                "⏳ Aún no vemos la firma validada.\n\n" +
                                         "1) Abre el enlace de contratos\n" +
                                         "2) Completa el proceso\n" +
                                         "3) Luego escribe LISTO nuevamente"
@@ -809,7 +809,7 @@ public class ChatbotInboundController {
                     if (procesoOpt.isPresent() && procesoOpt.get().getStudentId() != null) {
                         session.state = ChatState.DONE;
                         actions.add(textMsg(
-                                "âœ… Contratos validados y matrÃ­cula activada.\n\n" +
+                                "✅ Contratos validados y matrícula activada.\n\n" +
                                         "Ref estudiante: " + procesoOpt.get().getStudentId() + "\n\n" +
                                         "Escribe MENU para continuar."
                         ));
@@ -824,15 +824,15 @@ public class ChatbotInboundController {
 
                     session.state = ChatState.SEDE_SELECTION;
                     actions.add(textMsg(
-                            "âœ… Contratos validados.\n\n" +
-                                    "ðŸ“ Antes de finalizar, selecciona tu sede:\n\n" +
-                                    "1) Kennedy â€“ Av. 1 de Mayo #68D-23 Piso 2\n" +
-                                    "2) CC El EdÃ©n â€“ Local L2-094A\n\n" +
+                            "✅ Contratos validados.\n\n" +
+                                    "📍 Antes de finalizar, selecciona tu sede:\n\n" +
+                                    "1) Kennedy – Av. 1 de Mayo #68D-23 Piso 2\n" +
+                                    "2) CC El Edén – Local L2-094A\n\n" +
                                     "Responde con 1 o 2."
                     ));
                     actions.add(textMsg("Opciones: MENU"));
                 } catch (Exception e) {
-                    actions.add(textMsg("âš ï¸ No pude validar el contrato: " + e.getMessage()));
+                    actions.add(textMsg("⚠️ No pude validar el contrato: " + e.getMessage()));
                     actions.add(textMsg("Opciones: MENU"));
                 }
             }
@@ -841,19 +841,19 @@ public class ChatbotInboundController {
                     Optional<ChatbotMatriculaProceso> proceso = procesoService.findProcesoByDocumento(session.documento);
                     String link = proceso.map(ChatbotMatriculaProceso::getContractLink).orElse("");
                     if (link == null || link.isBlank()) {
-                        actions.add(textMsg("âš ï¸ AÃºn no hay enlace de contratos para este proceso."));
+                        actions.add(textMsg("⚠️ Aún no hay enlace de contratos para este proceso."));
                     } else {
-                        actions.add(textMsg("ðŸ”— Enlace de contratos:\n" + link));
+                        actions.add(textMsg("🔗 Enlace de contratos:\n" + link));
                     }
                     actions.add(textMsg("Opciones: MENU"));
                 } catch (Exception e) {
-                    actions.add(textMsg("âš ï¸ No pude obtener el enlace de contratos."));
+                    actions.add(textMsg("⚠️ No pude obtener el enlace de contratos."));
                     actions.add(textMsg("Opciones: MENU"));
                 }
             }
             default -> {
                 actions.add(textMsg(
-                        "ðŸ“„ En este paso debes firmar los contratos.\n\n" +
+                        "📄 En este paso debes firmar los contratos.\n\n" +
                                 "Cuando termines escribe: LISTO\n" +
                                 "Si necesitas el enlace otra vez escribe: LINK"
                 ));
@@ -893,18 +893,18 @@ public class ChatbotInboundController {
             session.state = ChatState.DONE;
 
             actions.add(textMsg(
-                    "ðŸŽ‰ MatrÃ­cula finalizada correctamente.\n\n" +
-                            "ðŸ“ Sede asignada: *" + session.sedeSeleccionada + "*\n" +
-                            "âœ… Proceso activo: *" + safe(session.categoria) + "*\n\n" +
-                            "ðŸ‘¥ Grupo de clases teÃ³ricas:\n" +
+                    "🎉 Matrícula finalizada correctamente.\n\n" +
+                            "📍 Sede asignada: *" + session.sedeSeleccionada + "*\n" +
+                            "✅ Proceso activo: *" + safe(session.categoria) + "*\n\n" +
+                            "👥 Grupo de clases teóricas:\n" +
                             "URL_GRUPO_WHATSAPP_AQUI\n\n" +
-                            "ðŸ“Œ La teorÃ­a no requiere agendamiento.\n" +
-                            "â° Primera clase: llega 30 minutos antes para biomÃ©tricos.\n\n" +
+                            "📌 La teoría no requiere agendamiento.\n" +
+                            "⏰ Primera clase: llega 30 minutos antes para biométricos.\n\n" +
                             "Ref: " + studentId
             ));
             actions.add(textMsg("Opciones: MENU | TERMINAR"));
         } catch (Exception e) {
-            actions.add(textMsg("âš ï¸ No pude crear el estudiante con sede: " + e.getMessage()));
+            actions.add(textMsg("⚠️ No pude crear el estudiante con sede: " + e.getMessage()));
             actions.add(textMsg("Opciones: MENU"));
         }
     }
@@ -913,8 +913,8 @@ public class ChatbotInboundController {
         if (session.studentId == null) {
             session.state = ChatState.STUDENT_DOC_CAPTURE;
             actions.add(textMsg(
-                    "ðŸ” Para continuar como estudiante, primero valida tu identidad.\n\n" +
-                            "Escribe tu nÃºmero de documento (solo nÃºmeros) y te enviaremos un OTP."
+                    "🔐 Para continuar como estudiante, primero valida tu identidad.\n\n" +
+                            "Escribe tu número de documento (solo números) y te enviaremos un OTP."
             ));
             actions.add(textMsg("Opciones: MENU"));
             return;
@@ -931,12 +931,12 @@ public class ChatbotInboundController {
                 session.studentBookingDate = null;
                 session.state = ChatState.STUDENT_BOOKING_SLOT;
                 actions.add(textMsg(
-                        "ðŸš˜ Vamos a reservar tu prÃ¡ctica.\n\n" +
+                        "🚘 Vamos a reservar tu práctica.\n\n" +
                                 "Pasos a seguir:\n" +
-                                "1ï¸âƒ£ Escribe la fecha de la clase.\n" +
-                                "2ï¸âƒ£ Puedes escribir: hoy, maÃ±ana o YYYY-MM-DD.\n" +
-                                "3ï¸âƒ£ DespuÃ©s te mostrarÃ© opciones de hora para elegir.\n\n" +
-                                "Ejemplos de fecha: hoy | maÃ±ana | 2026-03-15"
+                                "1️⃣ Escribe la fecha de la clase.\n" +
+                                "2️⃣ Puedes escribir: hoy, mañana o YYYY-MM-DD.\n" +
+                                "3️⃣ Después te mostraré opciones de hora para elegir.\n\n" +
+                                "Ejemplos de fecha: hoy | mañana | 2026-03-15"
                 ));
                 actions.add(textMsg("Opciones: MENU"));
             }
@@ -949,8 +949,8 @@ public class ChatbotInboundController {
                 List<Clase> agenda = procesoService.listUpcomingClassesForCancellationByStudentId(session.studentId);
                 if (agenda.isEmpty()) {
                     actions.add(textMsg(
-                            "â„¹ï¸ No tienes clases futuras para cancelar.\n\n" +
-                                    "Si agendas una nueva clase, podrÃ¡s verla aquÃ­."
+                            "ℹ️ No tienes clases futuras para cancelar.\n\n" +
+                                    "Si agendas una nueva clase, podrás verla aquí."
                     ));
                     actions.add(textMsg("Opciones: MENU"));
                     return;
@@ -959,7 +959,7 @@ public class ChatbotInboundController {
                 session.pendingStudentAction = StudentAction.NONE;
                 session.state = ChatState.STUDENT_CANCEL_CLASS_PICK;
                 actions.add(textMsg(
-                        "ðŸ›‘ Estas son tus clases futuras:\n\n" +
+                        "🛑 Estas son tus clases futuras:\n\n" +
                                 formatCancelableClasses(agenda) + "\n\n" +
                                 "Escribe el ID de la clase que deseas cancelar.\n" +
                                 "Regla: con menos de 48 horas se aplica multa."
@@ -981,11 +981,11 @@ public class ChatbotInboundController {
         String doc = trim(text).replaceAll("\\D+", "");
         if (!DOCUMENT_PATTERN.matcher(doc).matches()) {
             actions.add(textMsg(
-                    "âš ï¸ Documento invÃ¡lido.\n\n" +
+                    "⚠️ Documento inválido.\n\n" +
                             "Pasos para corregirlo:\n" +
-                            "1ï¸âƒ£ Escribe solo nÃºmeros.\n" +
-                            "2ï¸âƒ£ Usa entre 5 y 20 dÃ­gitos.\n" +
-                            "3ï¸âƒ£ EnvÃ­alo de nuevo en un solo mensaje.\n\n" +
+                            "1️⃣ Escribe solo números.\n" +
+                            "2️⃣ Usa entre 5 y 20 dígitos.\n" +
+                            "3️⃣ Envíalo de nuevo en un solo mensaje.\n\n" +
                             "Ejemplo: 12345678"
             ));
             actions.add(textMsg("Opciones: MENU"));
@@ -1003,17 +1003,17 @@ public class ChatbotInboundController {
             session.state = ChatState.STUDENT_OTP_VERIFY;
 
             actions.add(textMsg(
-                    "ðŸ” Listo. Te enviamos un cÃ³digo OTP al correo " + access.emailMasked() + ".\n\n" +
+                    "🔐 Listo. Te enviamos un código OTP al correo " + access.emailMasked() + ".\n\n" +
                             "Pasos a seguir:\n" +
-                            "1ï¸âƒ£ Abre tu correo (revisa tambiÃ©n Spam o No deseado).\n" +
-                            "2ï¸âƒ£ Busca el mensaje con tu cÃ³digo OTP.\n" +
-                            "3ï¸âƒ£ Copia solo los nÃºmeros del cÃ³digo.\n" +
-                            "4ï¸âƒ£ EscrÃ­belo aquÃ­ en el chat.\n\n" +
-                            "â±ï¸ Si no llega de inmediato, espera hasta 1 minuto."
+                            "1️⃣ Abre tu correo (revisa también Spam o No deseado).\n" +
+                            "2️⃣ Busca el mensaje con tu código OTP.\n" +
+                            "3️⃣ Copia solo los números del código.\n" +
+                            "4️⃣ Escríbelo aquí en el chat.\n\n" +
+                            "⏱️ Si no llega de inmediato, espera hasta 1 minuto."
             ));
             actions.add(textMsg("Opciones: MENU"));
         } catch (Exception e) {
-            actions.add(textMsg("âš ï¸ No pude iniciar verificaciÃ³n OTP: " + e.getMessage()));
+            actions.add(textMsg("⚠️ No pude iniciar verificación OTP: " + e.getMessage()));
             actions.add(textMsg("Opciones: MENU"));
         }
     }
@@ -1022,11 +1022,11 @@ public class ChatbotInboundController {
         String code = trim(text);
         if (!OTP_PATTERN.matcher(code).matches()) {
             actions.add(textMsg(
-                    "âš ï¸ Ese cÃ³digo no es vÃ¡lido.\n\n" +
+                    "⚠️ Ese código no es válido.\n\n" +
                             "Pasos para enviarlo bien:\n" +
-                            "1ï¸âƒ£ EnvÃ­a solo nÃºmeros.\n" +
-                            "2ï¸âƒ£ No uses letras ni espacios.\n" +
-                            "3ï¸âƒ£ No agregues puntos ni sÃ­mbolos.\n\n" +
+                            "1️⃣ Envía solo números.\n" +
+                            "2️⃣ No uses letras ni espacios.\n" +
+                            "3️⃣ No agregues puntos ni símbolos.\n\n" +
                             "Ejemplo: 123456"
             ));
             actions.add(textMsg("Opciones: MENU"));
@@ -1037,11 +1037,11 @@ public class ChatbotInboundController {
             boolean ok = verificationService.verifyEmailOtp(session.studentEmail, code);
             if (!ok) {
                 actions.add(textMsg(
-                        "âŒ El cÃ³digo es incorrecto o ya venciÃ³.\n\n" +
+                        "❌ El código es incorrecto o ya venció.\n\n" +
                                 "Pasos para pedir uno nuevo:\n" +
-                                "1ï¸âƒ£ Escribe MENU\n" +
-                                "2ï¸âƒ£ Escribe Soy estudiante\n" +
-                                "3ï¸âƒ£ Ingresa tu documento nuevamente"
+                                "1️⃣ Escribe MENU\n" +
+                                "2️⃣ Escribe Soy estudiante\n" +
+                                "3️⃣ Ingresa tu documento nuevamente"
                 ));
                 actions.add(textMsg("Opciones: MENU"));
                 return;
@@ -1053,7 +1053,7 @@ public class ChatbotInboundController {
             actions.add(textMsg(studentMenuText()));
             actions.add(textMsg("Opciones: MENU"));
         } catch (Exception e) {
-            actions.add(textMsg("âš ï¸ No pude validar OTP: " + e.getMessage()));
+            actions.add(textMsg("⚠️ No pude validar OTP: " + e.getMessage()));
             actions.add(textMsg("Opciones: MENU"));
         }
     }
@@ -1062,7 +1062,7 @@ public class ChatbotInboundController {
         if (session.studentId == null) {
             session.state = ChatState.STUDENT_DOC_CAPTURE;
             actions.add(textMsg(
-                    "ðŸ” Tu sesiÃ³n de estudiante expirÃ³. Escribe tu documento para validar OTP nuevamente."
+                    "🔐 Tu sesión de estudiante expiró. Escribe tu documento para validar OTP nuevamente."
             ));
             actions.add(textMsg("Opciones: MENU"));
             return;
@@ -1071,7 +1071,7 @@ public class ChatbotInboundController {
         String trimmed = trim(rawText);
 
         if (session.studentBookingDate == null) {
-            // Compatibilidad: si el usuario envÃ­a fecha y hora juntas, tambiÃ©n se procesa.
+            // Compatibilidad: si el usuario envía fecha y hora juntas, también se procesa.
             BookingSlot fullSlot = parseBookingSlot(trimmed);
             if (fullSlot != null) {
                 try {
@@ -1080,7 +1080,7 @@ public class ChatbotInboundController {
                     completeStudentBooking(fecha, hora, session, actions);
                     return;
                 } catch (Exception e) {
-                    actions.add(textMsg("âš ï¸ No pude agendar la clase: " + e.getMessage()));
+                    actions.add(textMsg("⚠️ No pude agendar la clase: " + e.getMessage()));
                     actions.add(textMsg("Opciones: MENU"));
                     return;
                 }
@@ -1089,12 +1089,12 @@ public class ChatbotInboundController {
             LocalDate fecha = parseBookingDate(trimmed);
             if (fecha == null) {
                 actions.add(textMsg(
-                        "âš ï¸ No entendÃ­ la fecha.\n\n" +
+                        "⚠️ No entendí la fecha.\n\n" +
                                 "Pasos para enviarla bien:\n" +
-                                "1ï¸âƒ£ Escribe hoy o maÃ±ana.\n" +
-                                "2ï¸âƒ£ O usa formato YYYY-MM-DD.\n" +
-                                "3ï¸âƒ£ EnvÃ­ala en un solo mensaje.\n\n" +
-                                "Ejemplos: hoy | maÃ±ana | 2026-03-15"
+                                "1️⃣ Escribe hoy o mañana.\n" +
+                                "2️⃣ O usa formato YYYY-MM-DD.\n" +
+                                "3️⃣ Envíala en un solo mensaje.\n\n" +
+                                "Ejemplos: hoy | mañana | 2026-03-15"
                 ));
                 actions.add(textMsg("Opciones: MENU"));
                 return;
@@ -1102,8 +1102,8 @@ public class ChatbotInboundController {
 
             if (fecha.isBefore(LocalDate.now())) {
                 actions.add(textMsg(
-                        "âš ï¸ La fecha no puede ser pasada.\n\n" +
-                                "Escribe hoy, maÃ±ana o una fecha futura."
+                        "⚠️ La fecha no puede ser pasada.\n\n" +
+                                "Escribe hoy, mañana o una fecha futura."
                 ));
                 actions.add(textMsg("Opciones: MENU"));
                 return;
@@ -1111,7 +1111,7 @@ public class ChatbotInboundController {
 
             session.studentBookingDate = fecha.toString();
             actions.add(textMsg(
-                    "ðŸ“… Fecha registrada: " + fecha + "\n\n" +
+                    "📅 Fecha registrada: " + fecha + "\n\n" +
                             bookingSlotsAvailabilityText(session.studentId, fecha)
             ));
             actions.add(textMsg("Opciones: MENU"));
@@ -1122,10 +1122,10 @@ public class ChatbotInboundController {
         LocalTime hora = parseBookingTime(trimmed);
         if (hora == null) {
             actions.add(textMsg(
-                    "âš ï¸ No entendÃ­ la hora.\n\n" +
+                    "⚠️ No entendí la hora.\n\n" +
                             "Pasos para enviarla bien:\n" +
-                            "1ï¸âƒ£ Escribe un nÃºmero del 1 al 6.\n" +
-                            "2ï¸âƒ£ O escribe la hora en formato HH:mm.\n\n" +
+                            "1️⃣ Escribe un número del 1 al 6.\n" +
+                            "2️⃣ O escribe la hora en formato HH:mm.\n\n" +
                             "Ejemplos: 2 | 08:30"
             ));
             actions.add(textMsg(bookingSlotsAvailabilityText(session.studentId, fecha)));
@@ -1137,7 +1137,7 @@ public class ChatbotInboundController {
             completeStudentBooking(fecha, hora, session, actions);
         } catch (Exception e) {
             actions.add(textMsg(
-                    "âš ï¸ No pude agendar la clase: " + e.getMessage() + "\n\n" +
+                    "⚠️ No pude agendar la clase: " + e.getMessage() + "\n\n" +
                             bookingSlotsAvailabilityText(session.studentId, fecha)
             ));
             actions.add(textMsg("Opciones: MENU"));
@@ -1148,7 +1148,7 @@ public class ChatbotInboundController {
         if (session.studentId == null) {
             session.state = ChatState.STUDENT_DOC_CAPTURE;
             actions.add(textMsg(
-                    "ðŸ” Tu sesiÃ³n de estudiante expirÃ³. Escribe tu documento para validar OTP nuevamente."
+                    "🔐 Tu sesión de estudiante expiró. Escribe tu documento para validar OTP nuevamente."
             ));
             actions.add(textMsg("Opciones: MENU"));
             return;
@@ -1160,13 +1160,13 @@ public class ChatbotInboundController {
             if (agenda.isEmpty()) {
                 session.state = ChatState.STUDENT_MENU;
                 session.pendingStudentAction = StudentAction.NONE;
-                actions.add(textMsg("â„¹ï¸ Ya no hay clases futuras para cancelar."));
+                actions.add(textMsg("ℹ️ Ya no hay clases futuras para cancelar."));
                 actions.add(textMsg("Opciones: MENU"));
                 return;
             }
 
             actions.add(textMsg(
-                    "âš ï¸ Debes escribir el ID de la clase a cancelar.\n\n" +
+                    "⚠️ Debes escribir el ID de la clase a cancelar.\n\n" +
                             "Clases futuras:\n\n" +
                             formatCancelableClasses(agenda) + "\n\n" +
                             "Ejemplo: 123"
@@ -1184,24 +1184,24 @@ public class ChatbotInboundController {
             session.pendingStudentAction = StudentAction.NONE;
 
             StringBuilder out = new StringBuilder();
-            out.append("âœ… Clase cancelada correctamente.\n\n")
+            out.append("✅ Clase cancelada correctamente.\n\n")
                     .append("ID: ").append(result.clase().getId()).append("\n")
                     .append("Fecha: ").append(result.clase().getFecha()).append("\n")
                     .append("Inicio: ").append(result.clase().getHoraInicio());
 
             if (result.multaAplicada()) {
-                out.append("\n\nâš ï¸ Se aplicÃ³ multa por cancelar con menos de 48 horas.\n")
+                out.append("\n\n⚠️ Se aplicó multa por cancelar con menos de 48 horas.\n")
                         .append("Valor multa: $").append(formatMoney(result.valorMulta())).append("\n")
                         .append("Tiempo restante al cancelar: ").append(result.horasRestantes()).append(" horas\n")
                         .append("Multas acumuladas: $").append(formatMoney(result.multasAcumuladas()));
             } else {
-                out.append("\n\nâœ… Cancelaste con 48 horas o mÃ¡s. No se aplicÃ³ multa.");
+                out.append("\n\n✅ Cancelaste con 48 horas o más. No se aplicó multa.");
             }
 
             actions.add(textMsg(out.toString()));
             actions.add(textMsg("Opciones: MENU"));
         } catch (Exception e) {
-            actions.add(textMsg("âš ï¸ No pude cancelar la clase: " + e.getMessage()));
+            actions.add(textMsg("⚠️ No pude cancelar la clase: " + e.getMessage()));
             actions.add(textMsg("Opciones: MENU"));
         }
     }
@@ -1212,7 +1212,7 @@ public class ChatbotInboundController {
 
     private String createAndStoreContractLink(String documento) {
         ChatbotMatriculaProceso proceso = procesoService.findProcesoByDocumento(documento)
-                .orElseThrow(() -> new IllegalStateException("No existe proceso de matrÃ­cula para generar contrato"));
+                .orElseThrow(() -> new IllegalStateException("No existe proceso de matrícula para generar contrato"));
 
         VerificationService.ContractLinkResult out = verificationService.createContractVerificationLink(
                 proceso.getEmail(),
@@ -1334,7 +1334,7 @@ public class ChatbotInboundController {
             }
 
             StringBuilder sb = new StringBuilder();
-            sb.append("Disponibilidad del dÃ­a:\n");
+            sb.append("Disponibilidad del día:\n");
             boolean anyAvailable = false;
             for (ChatbotProcesoService.SlotAvailability slot : slots) {
                 boolean available = slot.disponible();
@@ -1343,18 +1343,18 @@ public class ChatbotInboundController {
                         .append(") ")
                         .append(slot.hora())
                         .append(" ")
-                        .append(available ? "âœ… Disponible" : "âŒ Ocupada")
+                        .append(available ? "✅ Disponible" : "❌ Ocupada")
                         .append("\n");
             }
 
             if (anyAvailable) {
-                sb.append("\nEscribe el nÃºmero de una hora disponible o envÃ­a una hora en formato HH:mm.");
+                sb.append("\nEscribe el número de una hora disponible o envía una hora en formato HH:mm.");
             } else {
-                sb.append("\nâš ï¸ Todas las horas estÃ¡n ocupadas. Escribe otra fecha.");
+                sb.append("\n⚠️ Todas las horas están ocupadas. Escribe otra fecha.");
             }
             return sb.toString();
         } catch (Exception e) {
-            return "âš ï¸ No pude consultar disponibilidad en este momento: " + e.getMessage();
+            return "⚠️ No pude consultar disponibilidad en este momento: " + e.getMessage();
         }
     }
 
@@ -1427,11 +1427,11 @@ public class ChatbotInboundController {
 
     private String formatAgenda(String documento, List<Clase> agenda) {
         if (agenda == null || agenda.isEmpty()) {
-            return "ðŸ“… No encontramos clases programadas para el documento " + documento + ".";
+            return "📅 No encontramos clases programadas para el documento " + documento + ".";
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append("ðŸ“… Agenda de clases para documento ").append(documento).append(":\n\n");
+        sb.append("📅 Agenda de clases para documento ").append(documento).append(":\n\n");
 
         int limit = Math.min(agenda.size(), 12);
         for (int i = 0; i < limit; i++) {
@@ -1585,12 +1585,12 @@ public class ChatbotInboundController {
 
     private String inactivityTimeoutText() {
         long minutes = Math.max(1, inactivityTimeoutMinutes);
-        return "â° ConversaciÃ³n expirada por inactividad (" + minutes + " minutos).\n\n" +
+        return "⏰ Conversación expirada por inactividad (" + minutes + " minutos).\n\n" +
                 "Escribe MENU para iniciar de nuevo.";
     }
 
     private String conversationEndedText() {
-        return "ðŸ‘‹ ConversaciÃ³n finalizada.\n\n" +
+        return "👋 Conversación finalizada.\n\n" +
                 "Gracias por escribir a CEA HARO.\n" +
                 "Si deseas iniciar de nuevo, escribe MENU.";
     }
@@ -1600,11 +1600,11 @@ public class ChatbotInboundController {
         if (displayName.isBlank()) {
             displayName = "estudiante";
         }
-        return "ðŸ‘‹ Hola " + displayName + ", Â¿quÃ© quieres hacer hoy?";
+        return "👋 Hola " + displayName + ", ¿qué quieres hacer hoy?";
     }
 
     private String advisorContactText() {
-        return "ðŸ¤ Para contactar un asesor, escribe aquÃ­:\n" + ADVISOR_WHATSAPP_LINK;
+        return "🤝 Para contactar un asesor, escribe aquí:\n" + ADVISOR_WHATSAPP_LINK;
     }
 
     // =========================
@@ -1702,125 +1702,125 @@ public class ChatbotInboundController {
         actions.add(textMsg(
                 "Gracias por elegirnos! Para proporcionarte un servicio personalizado, necesitamos algunos datos personales, " +
                         "puedes revisar nuestra politica de tratamiento de datos en nuestra pagina web y www.ceaharo.com\n\n" +
-                        "Â¿Autorizas el tratamiento de tus datos?\n" +
+                        "¿Autorizas el tratamiento de tus datos?\n" +
                         "Responde SI o NO."
         ));
     }
 
     // =========================
-    // TEXTOS (PLANTILLAS + QUITAR REPETICIÃ“N DE "CATEGORÃA ...")
+    // TEXTOS (PLANTILLAS + QUITAR REPETICIÓN DE "CATEGORÍA ...")
     // =========================
 
     private String mainMenuText() {
-        return "ðŸ‘‹ Hola, soy Ha-Rot, asistente virtual de CEA HARO.\n\n" +
-                "Â¿QuÃ© deseas hacer hoy?\n\n" +
-                "1ï¸âƒ£ Nuestros servicios (cursos y recategorizaciÃ³n)\n" +
-                "2ï¸âƒ£ Iniciar matrÃ­cula\n" +
-                "3ï¸âƒ£ Horarios de atenciÃ³n y sedes\n" +
-                "4ï¸âƒ£ Soy un estudiante (consultas y reservas)\n" +
-                "5ï¸âƒ£ Contactar un asesor\n\n" +
+        return "👋 Hola, soy Ha-Rot, asistente virtual de CEA HARO.\n\n" +
+                "¿Qué deseas hacer hoy?\n\n" +
+                "1️⃣ Nuestros servicios (cursos y recategorización)\n" +
+                "2️⃣ Iniciar matrícula\n" +
+                "3️⃣ Horarios de atención y sedes\n" +
+                "4️⃣ Soy un estudiante (consultas y reservas)\n" +
+                "5️⃣ Contactar un asesor\n\n" +
                 "Comandos: MENU | AYUDA | CANCELAR | TERMINAR";
     }
 
     private String coursesMenuText() {
-        return "ðŸ§¾ Nuestros Servicios\n" +
-                "Selecciona el servicio que deseas solicitar y agrÃ©galo a tu carrito. ðŸ›’\n\n" +
-                "1) ðŸï¸ Licencia A2\n" +
-                "2) ðŸš— Licencia B1\n" +
-                "3) ðŸš• Licencia C1\n" +
-                "4) ðŸï¸ðŸš— A2 y B1\n" +
-                "5) ðŸï¸ðŸš—ðŸš• A2, B1 y C1\n" +
-                "6) ðŸ”„ RecategorizaciÃ³n B1 a C1";
+        return "🧾 Nuestros Servicios\n" +
+                "Selecciona el servicio que deseas solicitar y agrégalo a tu carrito. 🛒\n\n" +
+                "1) 🏍️ Licencia A2\n" +
+                "2) 🚗 Licencia B1\n" +
+                "3) 🚕 Licencia C1\n" +
+                "4) 🏍️🚗 A2 y B1\n" +
+                "5) 🏍️🚗🚕 A2, B1 y C1\n" +
+                "6) 🔄 Recategorización B1 a C1";
     }
 
     private String allCategoriesMenuText() {
-        return "ðŸ§¾ Nuestros Servicios\n" +
-                "Selecciona el servicio que deseas solicitar y agrÃ©galo a tu carrito. ðŸ›’\n\n" +
-                "1) ðŸï¸ CategorÃ­a A2\n" +
-                "2) ðŸš— CategorÃ­a B1\n" +
-                "3) ðŸš• CategorÃ­a C1\n" +
-                "4) ðŸï¸ðŸš— CategorÃ­a A2 y B1\n" +
-                "5) ðŸï¸ðŸš—ðŸš• CategorÃ­a A2, B1 y C1\n" +
-                "6) ðŸ”„ RecategorizaciÃ³n B1 a C1";
+        return "🧾 Nuestros Servicios\n" +
+                "Selecciona el servicio que deseas solicitar y agrégalo a tu carrito. 🛒\n\n" +
+                "1) 🏍️ Categoría A2\n" +
+                "2) 🚗 Categoría B1\n" +
+                "3) 🚕 Categoría C1\n" +
+                "4) 🏍️🚗 Categoría A2 y B1\n" +
+                "5) 🏍️🚗🚕 Categoría A2, B1 y C1\n" +
+                "6) 🔄 Recategorización B1 a C1";
     }
 
-    // âœ… Quitado: "CategorÃ­a A2"
+    // ✅ Quitado: "Categoría A2"
     private String courseA2Text() {
-        return "CategorÃ­a A2\n\n" +
-                "Para motocicletas de cualquier tipo de cilindraje ðŸ›µðŸ\n\n" +
-                "ðŸ“Œ Valor curso: $920.000 (incluye examen mÃ©dico)\n" +
-                "ðŸ“Œ Valor licencia: $272.800 en ventanilla Ãºnica\n\n" +
+        return "Categoría A2\n\n" +
+                "Para motocicletas de cualquier tipo de cilindraje 🛵🏍\n\n" +
+                "📌 Valor curso: $920.000 (incluye examen médico)\n" +
+                "📌 Valor licencia: $272.800 en ventanilla única\n\n" +
                 "INCLUYE:\n" +
-                "â° 25 horas de teorÃ­a ðŸ‘©â€ðŸ«\n" +
-                "â° 3 horas de taller ðŸ› \n" +
-                "â° 15 horas de prÃ¡ctica ðŸš¦\n" +
-                "â° + Certificado ðŸ‘¨ðŸ»â€ðŸŽ“";
+                "⏰ 25 horas de teoría 👩‍🏫\n" +
+                "⏰ 3 horas de taller 🛠\n" +
+                "⏰ 15 horas de práctica 🚦\n" +
+                "⏰ + Certificado 👨🏻‍🎓";
     }
 
-    // âœ… Quitado: "CategorÃ­a B1"
+    // ✅ Quitado: "Categoría B1"
     private String courseB1Text() {
-        return "CategorÃ­a B1\n\n" +
-                "Es para vehÃ­culos de placa amarilla ðŸš—\n\n" +
-                "ðŸ“Œ Valor curso: $1.210.000 (incluye examen mÃ©dico)\n" +
-                "ðŸ“Œ Valor licencia: $329.900 en ventanilla Ãºnica\n\n" +
+        return "Categoría B1\n\n" +
+                "Es para vehículos de placa amarilla 🚗\n\n" +
+                "📌 Valor curso: $1.210.000 (incluye examen médico)\n" +
+                "📌 Valor licencia: $329.900 en ventanilla única\n\n" +
                 "INCLUYE:\n" +
-                "â° 25 horas de TeorÃ­a ðŸ‘©â€ðŸ«\n" +
-                "â° 5 horas de TallerðŸ› \n" +
-                "â° 20 horas de prÃ¡ctica (16 horas en ciudad y 4 en carretera). ðŸš˜\n" +
-                "â° + Certificado ðŸ‘¨ðŸ»â€ðŸŽ“";
+                "⏰ 25 horas de Teoría 👩‍🏫\n" +
+                "⏰ 5 horas de Taller🛠\n" +
+                "⏰ 20 horas de práctica (16 horas en ciudad y 4 en carretera). 🚘\n" +
+                "⏰ + Certificado 👨🏻‍🎓";
     }
 
-    // âœ… Quitado: "CategorÃ­a C1"
+    // ✅ Quitado: "Categoría C1"
     private String courseC1Text() {
-        return "CategorÃ­a C1\n\n" +
-                "Es para vehÃ­culos de placa blanca y amarilla ðŸš—ðŸš•\n\n" +
-                "ðŸ“Œ Valor curso: $1.350.000 (incluye examen mÃ©dico)\n" +
-                "ðŸ“Œ Valor licencia: $329.900 en ventanilla Ãºnica\n\n" +
+        return "Categoría C1\n\n" +
+                "Es para vehículos de placa blanca y amarilla 🚗🚕\n\n" +
+                "📌 Valor curso: $1.350.000 (incluye examen médico)\n" +
+                "📌 Valor licencia: $329.900 en ventanilla única\n\n" +
                 "INCLUYE:\n" +
-                "â° 30 horas de TeorÃ­a ðŸ‘©â€ðŸ«\n" +
-                "â° 5 horas de TallerðŸ› \n" +
-                "â° 30 horas de prÃ¡ctica (26 horas en ciudad y 4 en carretera). ðŸš˜\n" +
-                "â° + Certificado ðŸ‘¨ðŸ»â€ðŸŽ“";
+                "⏰ 30 horas de Teoría 👩‍🏫\n" +
+                "⏰ 5 horas de Taller🛠\n" +
+                "⏰ 30 horas de práctica (26 horas en ciudad y 4 en carretera). 🚘\n" +
+                "⏰ + Certificado 👨🏻‍🎓";
     }
 
-    // âœ… Quitado: "CategorÃ­a A2 y B1"
+    // ✅ Quitado: "Categoría A2 y B1"
     private String courseA2B1Text() {
-        return "CategorÃ­a A2 y B1\n\n" +
-                "Es para motocicletas de cualquier tipo de cilindraje y para vehÃ­culo particular.\n\n" +
-                "ðŸ“Œ Valor curso: $1.990.000 (incluye examen mÃ©dico)\n" +
-                "ðŸ“Œ Valor licencia: Moto $272.800 y carro $329.900 en ventanilla Ãºnica\n\n" +
+        return "Categoría A2 y B1\n\n" +
+                "Es para motocicletas de cualquier tipo de cilindraje y para vehículo particular.\n\n" +
+                "📌 Valor curso: $1.990.000 (incluye examen médico)\n" +
+                "📌 Valor licencia: Moto $272.800 y carro $329.900 en ventanilla única\n\n" +
                 "INCLUYE:\n" +
-                "â° 30 horas teÃ³ricas ðŸ‘©â€ðŸ«\n" +
-                "â° 20 horas prÃ¡cticas carro ðŸš˜\n" +
-                "â° 15 horas practicas moto ðŸ\n" +
-                "â° 5 horas taller ðŸ› \n" +
-                "â° + Certificado ðŸ‘¨ðŸ»â€ðŸŽ“";
+                "⏰ 30 horas teóricas 👩‍🏫\n" +
+                "⏰ 20 horas prácticas carro 🚘\n" +
+                "⏰ 15 horas practicas moto 🏍\n" +
+                "⏰ 5 horas taller 🛠\n" +
+                "⏰ + Certificado 👨🏻‍🎓";
     }
 
-    // âœ… Quitado: "CategorÃ­a A2, B1 y C1"
+    // ✅ Quitado: "Categoría A2, B1 y C1"
     private String courseA2B1C1Text() {
-        return "CategorÃ­a A2, B1 y C1\n\n" +
-                "Es para moto, servicio particular y pÃºblico ðŸ\n\n" +
-                "ðŸ“Œ Valor curso: $2.150.000 (incluye examen mÃ©dico)\n" +
-                "ðŸ“Œ Valor licencia: Moto $272.800 y carro $329.900 en ventanilla Ãºnica\n\n" +
+        return "Categoría A2, B1 y C1\n\n" +
+                "Es para moto, servicio particular y público 🏍\n\n" +
+                "📌 Valor curso: $2.150.000 (incluye examen médico)\n" +
+                "📌 Valor licencia: Moto $272.800 y carro $329.900 en ventanilla única\n\n" +
                 "INCLUYE:\n" +
-                "â° 30 horas de TeorÃ­a ðŸ‘©â€ðŸ«\n" +
-                "â° 5 horas de TallerðŸ› \n" +
-                "â° 15 horas de prÃ¡ctica. ðŸš˜\n" +
-                "â° 30 horas de prÃ¡ctica. ðŸ\n" +
-                "â° + Certificado ðŸ‘¨ðŸ»â€ðŸŽ“";
+                "⏰ 30 horas de Teoría 👩‍🏫\n" +
+                "⏰ 5 horas de Taller🛠\n" +
+                "⏰ 15 horas de práctica. 🚘\n" +
+                "⏰ 30 horas de práctica. 🏍\n" +
+                "⏰ + Certificado 👨🏻‍🎓";
     }
 
-    // âœ… Quitado: tÃ­tulo duplicado ("RecategorizaciÃ³n..." dos veces)
+    // ✅ Quitado: título duplicado ("Recategorización..." dos veces)
     private String courseRecategorizacionText() {
-        return "ðŸ”„ RecategorizaciÃ³n B1 a C1\n\n" +
-                "ðŸš—âž¡ï¸ðŸš• Es para pasar de servicio particular B1 a servicio pÃºblico C1\n\n" +
-                "ðŸ“Œ Valor curso: $950.000 (incluye examen mÃ©dico)\n" +
-                "ðŸ“Œ Valor licencia: $329.900 en ventanilla Ãºnica\n\n" +
-                "âœ… INCLUYE:\n" +
-                "â° 5 horas de TeorÃ­a ðŸ‘©â€ðŸ«\n" +
-                "â° 10 horas de prÃ¡ctica ðŸš˜\n" +
-                "â° + Certificado ðŸ‘¨ðŸ»â€ðŸŽ“";
+        return "🔄 Recategorización B1 a C1\n\n" +
+                "🚗➡️🚕 Es para pasar de servicio particular B1 a servicio público C1\n\n" +
+                "📌 Valor curso: $950.000 (incluye examen médico)\n" +
+                "📌 Valor licencia: $329.900 en ventanilla única\n\n" +
+                "✅ INCLUYE:\n" +
+                "⏰ 5 horas de Teoría 👩‍🏫\n" +
+                "⏰ 10 horas de práctica 🚘\n" +
+                "⏰ + Certificado 👨🏻‍🎓";
     }
 
     private String enrollmentInitialPromptText() {
@@ -1835,35 +1835,35 @@ public class ChatbotInboundController {
     }
 
     private String infoText() {
-        return "ðŸ“Œ *Horarios de AtenciÃ³n*\n\n" +
-                "*ðŸ—‚ï¸ Administrativo*\n" +
-                "Lunes a SÃ¡bado\n" +
-                "ðŸ•— 8:00 AM - 6:00 PM\n\n" +
+        return "📌 *Horarios de Atención*\n\n" +
+                "*🗂️ Administrativo*\n" +
+                "Lunes a Sábado\n" +
+                "🕗 8:00 AM - 6:00 PM\n\n" +
 
-                "*ðŸ“š Clases TeÃ³ricas*\n" +
-                "ðŸ—“ï¸ Lunes y Viernes: 6:00 AM - 2:00 PM\n" +
-                "ðŸ—“ï¸ Martes, MiÃ©rcoles y Jueves: 2:00 PM - 10:00 PM\n" +
-                "â³ Puedes ver mÃ­nimo 2 y mÃ¡ximo 8 horas al dÃ­a\n\n" +
+                "*📚 Clases Teóricas*\n" +
+                "🗓️ Lunes y Viernes: 6:00 AM - 2:00 PM\n" +
+                "🗓️ Martes, Miércoles y Jueves: 2:00 PM - 10:00 PM\n" +
+                "⏳ Puedes ver mínimo 2 y máximo 8 horas al día\n\n" +
 
-                "*ðŸš— Clases PrÃ¡cticas*\n" +
-                "ðŸ—“ï¸ Domingo a Domingo\n" +
-                "ðŸ•• 6:00 AM - 10:00 PM\n" +
+                "*🚗 Clases Prácticas*\n" +
+                "🗓️ Domingo a Domingo\n" +
+                "🕕 6:00 AM - 10:00 PM\n" +
                 "(Sujeto a disponibilidad)\n\n" +
 
-                "âœ¨ Â¡Nos adaptamos a tu tiempo!\n\n" +
+                "✨ ¡Nos adaptamos a tu tiempo!\n\n" +
 
-                "*ðŸ“ Sedes disponibles:*\n" +
-                "1ï¸âƒ£ Kennedy â€“ Av. 1 de Mayo #68D-23 Piso 2\n" +
-                "2ï¸âƒ£ CC El EdÃ©n â€“ Local L2-094A";
+                "*📍 Sedes disponibles:*\n" +
+                "1️⃣ Kennedy – Av. 1 de Mayo #68D-23 Piso 2\n" +
+                "2️⃣ CC El Edén – Local L2-094A";
     }
 
     private String studentMenuText() {
-        return "ðŸŽ“âœ¨ Soy estudiante CEA HARO\n\n" +
-                "1ï¸âƒ£ Consultar calendario de prÃ¡cticas\n" +
-                "2ï¸âƒ£ Agendar clase prÃ¡ctica\n" +
-                "3ï¸âƒ£ Consultar mi horario\n" +
-                "4ï¸âƒ£ Cancelar clase prÃ¡ctica\n" +
-                "5ï¸âƒ£ â¬…ï¸ Volver al menÃº";
+        return "🎓✨ Soy estudiante CEA HARO\n\n" +
+                "1️⃣ Consultar calendario de prácticas\n" +
+                "2️⃣ Agendar clase práctica\n" +
+                "3️⃣ Consultar mi horario\n" +
+                "4️⃣ Cancelar clase práctica\n" +
+                "5️⃣ ⬅️ Volver al menú";
     }
 
     private String helpText(ChatState state) {
@@ -1874,7 +1874,7 @@ public class ChatbotInboundController {
                 "- AYUDA: ver esta ayuda\n" +
                 "- ASESOR: contactar un asesor\n" +
                 "- CANCELAR: cancelar el proceso actual\n" +
-                "- TERMINAR: finalizar la conversaciÃ³n\n\n" +
+                "- TERMINAR: finalizar la conversación\n\n" +
                 "Inactividad:\n" +
                 "- Si no respondes en " + Math.max(1, inactivityTimeoutMinutes) + " minutos, la conversacion expira y debes iniciar de nuevo.";
     }

@@ -238,7 +238,7 @@ public class ChatbotProcesoService {
     public ChatbotMatriculaProceso markContractSignedByEmail(String email) {
         String mail = normalizeEmail(email);
         ChatbotMatriculaProceso proceso = procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail)
-                .orElseThrow(() -> new NoSuchElementException("No hay proceso de matrÃ­cula para " + mail));
+                .orElseThrow(() -> new NoSuchElementException("No hay proceso de matrícula para " + mail));
         proceso.setContractStatus("SIGNED");
         proceso.setFlowStatus("CONTRACT_SIGNED");
         proceso.setContractSignedAt(Instant.now());
@@ -347,7 +347,7 @@ public class ChatbotProcesoService {
         nuevo.setEstado("Activo");
         nuevo.setVisible(true);
         nuevo.setUsuario(generateUniqueUsername(proceso.getEmail(), doc));
-        // Si no llega contraseÃ±a, EstudianteService asigna default seguro
+        // Si no llega contraseña, EstudianteService asigna default seguro
         nuevo.setContrasena(null);
 
         Estudiante created = estudianteService.createEstudiante(nuevo);
@@ -380,7 +380,7 @@ public class ChatbotProcesoService {
 
         String email = trim(estudiante.getEmail()).toLowerCase(Locale.ROOT);
         if (email.isBlank()) {
-            throw new IllegalStateException("El estudiante no tiene correo registrado para verificaciÃ³n OTP");
+            throw new IllegalStateException("El estudiante no tiene correo registrado para verificación OTP");
         }
 
         String nombreCompleto = buildStudentDisplayName(estudiante);
@@ -447,10 +447,10 @@ public class ChatbotProcesoService {
         }
 
         Profesor profesor = pickAvailableProfesor(fecha, horaInicio, horaFin)
-                .orElseThrow(() -> new IllegalStateException("Ese horario estÃ¡ ocupado. Elige otra hora."));
+                .orElseThrow(() -> new IllegalStateException("Ese horario está ocupado. Elige otra hora."));
 
         Vehiculo vehiculo = pickAvailableVehiculo(fecha, horaInicio, horaFin)
-                .orElseThrow(() -> new IllegalStateException("Ese horario estÃ¡ ocupado. Elige otra hora."));
+                .orElseThrow(() -> new IllegalStateException("Ese horario está ocupado. Elige otra hora."));
 
         Clase clase = new Clase();
         clase.setId_estudiante(id);
@@ -810,12 +810,12 @@ public class ChatbotProcesoService {
         ZonedDateTime inicio = ZonedDateTime.of(clase.getFecha(), clase.getHoraInicio(), zone);
         ZonedDateTime fin = ZonedDateTime.of(clase.getFecha(), clase.getHoraFin(), zone);
 
-        String titulo = "Clase prÃ¡ctica HARO - " + safe(estudiante.getNombre()) + " " + safe(estudiante.getApellido());
+        String titulo = "Clase práctica HARO - " + safe(estudiante.getNombre()) + " " + safe(estudiante.getApellido());
         String descripcion =
-                "Clase prÃ¡ctica agendada desde chatbot.\n" +
+                "Clase práctica agendada desde chatbot.\n" +
                         "Documento estudiante: " + safe(estudiante.getNumeroDocumento()) + "\n" +
                         "Profesor ID: " + profesor.getId() + "\n" +
-                        "VehÃ­culo: " + safe(clase.getPlaca_vehiculo()) + "\n" +
+                        "Vehículo: " + safe(clase.getPlaca_vehiculo()) + "\n" +
                         "Clase ID: " + clase.getId();
 
         List<String> asistentes = new ArrayList<>();
@@ -843,7 +843,7 @@ public class ChatbotProcesoService {
     private ChatbotMatriculaProceso getByDocumentoOrThrow(String documento) {
         String doc = normalizeDoc(documento);
         return procesoRepository.findByNumeroDocumento(doc)
-                .orElseThrow(() -> new NoSuchElementException("No existe proceso de matrÃ­cula para documento " + doc));
+                .orElseThrow(() -> new NoSuchElementException("No existe proceso de matrícula para documento " + doc));
     }
 
     private String[] splitName(String fullName) {
@@ -918,7 +918,7 @@ public class ChatbotProcesoService {
     private String normalizeDoc(String doc) {
         String out = trim(doc).replaceAll("\\D+", "");
         if (out.length() < 5) {
-            throw new IllegalArgumentException("Documento invÃ¡lido");
+            throw new IllegalArgumentException("Documento inválido");
         }
         return out;
     }
@@ -926,7 +926,7 @@ public class ChatbotProcesoService {
     private String normalizeEmail(String email) {
         String out = trim(email).toLowerCase(Locale.ROOT);
         if (out.isBlank() || !out.contains("@")) {
-            throw new IllegalArgumentException("Email invÃ¡lido");
+            throw new IllegalArgumentException("Email inválido");
         }
         return out;
     }
@@ -934,7 +934,7 @@ public class ChatbotProcesoService {
     private String normalizePhone(String phone) {
         String out = trim(phone).replaceAll("[^0-9+]", "");
         if (out.isBlank()) {
-            throw new IllegalArgumentException("TelÃ©fono requerido");
+            throw new IllegalArgumentException("Teléfono requerido");
         }
         return out;
     }

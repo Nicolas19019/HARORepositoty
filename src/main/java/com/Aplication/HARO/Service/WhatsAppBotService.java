@@ -208,31 +208,31 @@ public class WhatsAppBotService {
         }
 
         waService.sendTextMessage(to,
-                "Gracias por elegirnos! Para proporcionarte un servicio personalizado, necesitamos algunos datos personales, "
-                        + "puedes revisar nuestra política de tratamiento de datos en nuestra página web y www.ceaharo.com");
-        waService.sendTextMessage(to, "¿Autorizas el tratamiento de tus datos?");
+                "👋 ¡Gracias por elegirnos! Para brindarte un servicio personalizado, necesitamos algunos datos personales. "
+                        + "Puedes revisar nuestra política de tratamiento de datos en www.ceaharo.com");
+        waService.sendTextMessage(to, "🛡️ ¿Autorizas el tratamiento de tus datos?");
     }
 
     private String buildReply(WhatsAppWebhookService.InboundMessage msg) {
         String normalized = normalize(msg.text());
         if (!StringUtils.hasText(normalized)) {
-            return "Recibimos tu mensaje. Escribe MENU para ver opciones.";
+            return "🤖 Recibimos tu mensaje. Escribe MENU para ver opciones.";
         }
 
         if (normalized.equals("menu") || normalized.equals("hola") || normalized.equals("buenas")) {
             return menuText();
         }
         if (normalized.equals("1") || normalized.contains("inscripcion")) {
-            return "Inscripciones: escribe tu nombre completo y categoria de licencia (A2, B1, C1).";
+            return "📝 Inscripciones: escribe tu nombre completo y categoría de licencia (A2, B1, C1).";
         }
         if (normalized.equals("2") || normalized.contains("horario")) {
-            return "Horarios CEA HARO: Lun-Vie 7:00 a.m. a 6:00 p.m., Sabado 7:00 a.m. a 1:00 p.m.";
+            return "🕒 Horarios CEA HARO: Lun-Vie 7:00 a.m. a 6:00 p.m., Sábado 7:00 a.m. a 1:00 p.m.";
         }
         if (normalized.equals("3") || normalized.contains("asesor") || normalized.contains("humano")) {
-            return "Perfecto. Un asesor te respondera en breve. Si deseas, comparte tu nombre y numero de documento.";
+            return "🙋 Perfecto. Un asesor te responderá en breve. Si deseas, comparte tu nombre y número de documento.";
         }
         if (normalized.equals("4") || normalized.contains("precio") || normalized.contains("costo")) {
-            return "Para cotizarte, indicanos categoria de licencia y ciudad. Te respondemos de inmediato.";
+            return "💰 Para cotizarte, indícanos categoría de licencia y ciudad. Te respondemos de inmediato.";
         }
 
         String fallback = trim(props.getBotFallbackReply());
@@ -244,16 +244,16 @@ public class WhatsAppBotService {
         if (StringUtils.hasText(configured)) {
             return configured;
         }
-        return "Bienvenido a CEA HARO. Soy tu asistente virtual. Escribe MENU para continuar.";
+        return "👋 ¡Bienvenido a CEA HARO! Soy tu asistente virtual. Escribe MENU para continuar.";
     }
 
     private String menuText() {
-        return "Hola, soy el asistente de CEA HARO.\n"
-                + "Responde con una opcion:\n"
-                + "1. Inscripciones\n"
-                + "2. Horarios\n"
-                + "3. Hablar con asesor\n"
-                + "4. Precios";
+        return "🤖 Hola, soy el asistente de CEA HARO.\n"
+                + "Responde con una opción:\n"
+                + "1️⃣ Inscripciones\n"
+                + "2️⃣ Horarios\n"
+                + "3️⃣ Hablar con asesor\n"
+                + "4️⃣ Precios";
     }
 
     private String normalize(String text) {

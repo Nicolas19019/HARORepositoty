@@ -389,12 +389,29 @@ public class EpaycoController {
         out.put("nextStep", status.nextStep);
         out.put("reference", xRefPayco);
 
+        String localDocument = xDocumento;
+        String localEmail = xEmail;
+
+        if (procesoOpt.isPresent()) {
+            ChatbotMatriculaProceso proceso = procesoOpt.get();
+            if (!StringUtils.hasText(localDocument)) {
+                localDocument = safeTrim(proceso.getNumeroDocumento());
+            }
+            if (!StringUtils.hasText(localEmail)) {
+                localEmail = safeTrim(proceso.getEmail());
+            }
+        }
+
+        if (StringUtils.hasText(localDocument)) out.put("document", localDocument);
+        if (StringUtils.hasText(localEmail)) out.put("email", localEmail);
+
         if (StringUtils.hasText(xTransactionId)) out.put("transactionId", xTransactionId);
         if (StringUtils.hasText(xInvoice)) out.put("invoice", xInvoice);
         if (StringUtils.hasText(xAmount)) out.put("amount", xAmount);
         if (StringUtils.hasText(xCurrency)) out.put("currency", xCurrency);
         if (StringUtils.hasText(xDocumento)) out.put("document", xDocumento);
         if (StringUtils.hasText(xEmail)) out.put("email", xEmail);
+        
 
         Map<String, String> gateway = new LinkedHashMap<>();
         if (StringUtils.hasText(xCodResponse)) gateway.put("codResponse", xCodResponse);

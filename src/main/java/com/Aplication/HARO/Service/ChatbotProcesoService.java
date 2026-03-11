@@ -12,6 +12,8 @@ import com.Aplication.HARO.Repository.EstadoCuentaRepository;
 import com.Aplication.HARO.Repository.EstudianteRepository;
 import com.Aplication.HARO.Repository.ProfesorRepository;
 import com.Aplication.HARO.Repository.VehiculoRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,6 +42,7 @@ import java.util.Set;
 @Service
 @Transactional
 public class ChatbotProcesoService {
+    private static final Logger log = LoggerFactory.getLogger(ChatbotProcesoService.class);
 
     private final ChatbotMatriculaProcesoRepository procesoRepository;
     private final EstudianteRepository estudianteRepository;
@@ -189,13 +192,21 @@ public class ChatbotProcesoService {
     }
 
     public ChatbotMatriculaProceso markPaymentPending(String documento) {
-        ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
-        p.setPaymentStatus("PENDING");
-        p.setExpectedAmount(resolveExpectedAmount(p));
-        p.setFlowStatus("PENDING_PAYMENT");
-        p.setPaymentLink(buildPaymentLink(p));
-        return procesoRepository.save(p);
-    }
+
+    ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
+
+    p.setPaymentStatus("PENDING");
+    p.setFlowStatus("PENDING_PAYMENT");
+    p.setPaymentLink(buildPaymentLink(p));
+
+    ChatbotMatriculaProceso saved = procesoRepository.save(p);
+
+    log.info("💳 Pago pendiente doc={} link={}",
+            saved.getNumeroDocumento(),
+            saved.getPaymentLink());
+
+    return saved;
+}
 
     public ChatbotMatriculaProceso markPaymentRejected(String documento) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
@@ -211,10 +222,6 @@ public class ChatbotProcesoService {
         return procesoRepository.save(p);
     }
 
-    public ChatbotMatriculaProceso markPaymentApproved(String documento) {
-        return markPaymentApproved(documento, null);
-    }
-
     public ChatbotMatriculaProceso markPaymentApproved(String documento, BigDecimal amountPaid) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
         p.setPaymentStatus("APPROVED");
@@ -224,7 +231,11 @@ public class ChatbotProcesoService {
         } else if (p.getPaymentAmount() == null) {
             p.setPaymentAmount(resolvePaidAmountForEstadoCuenta(p, resolveExpectedAmount(p)));
         }
-        return procesoRepository.save(p);
+        ChatbotMatriculaProceso saved = procesoRepository.save(p);
+        log.info("✅ Pago aprobado doc={} amount={}",
+                saved.getNumeroDocumento(),
+                saved.getPaymentAmount());
+        return saved;
     }
 
     public ChatbotMatriculaProceso markContractLinkSent(String documento, String contractLink) {

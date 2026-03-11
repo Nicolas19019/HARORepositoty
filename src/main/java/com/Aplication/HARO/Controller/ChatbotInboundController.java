@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+
 import org.springframework.web.bind.annotation.RestController;
 
 import java.text.Normalizer;
@@ -283,9 +284,9 @@ public class ChatbotInboundController {
                 case ENROLLMENT_SEDE_CAPTURE -> handleEnrollmentSedeCapture(from, text, session, actions);
                 case ENROLLMENT_CONFIRM -> handleEnrollmentConfirm(text, session, actions);
                 case PAYMENT_WAIT -> handlePaymentWait(text, session, actions);
-                case CONTRACT_WAIT -> handleContractWait(text, session, actions);
+                case CONTRACT_WAIT -> handleContractWait(from, text, session, actions);
 
-                case SEDE_SELECTION -> handleSedeSelection(text, session, actions);
+                case SEDE_SELECTION -> handleSedeSelection(from, text, session, actions);
 
                 case STUDENT_MENU -> handleStudentMenu(text, session, actions);
                 case STUDENT_DOC_CAPTURE -> handleStudentDocCapture(text, session, actions);
@@ -617,61 +618,70 @@ public class ChatbotInboundController {
         }
     }
 
-    private void handlePaymentWait(String text, SessionData session, List<BotAction> actions) {
+        private void handlePaymentWait(String text, SessionData session, List<BotAction> actions) {
+
         switch (text) {
+
             case "pendiente" -> {
                 actions.add(textMsg(
-                        "⏳ Tu pago está *PENDIENTE*.\n\n" +
-                                "Esto puede tardar unos minutos según tu entidad.\n" +
-                                "Si deseas ver el enlace otra vez escribe: LINK"
+                        "⏳ Tu pago aparece como *PENDIENTE*.\n\n" +
+                        "Esto puede tardar unos minutos dependiendo del banco.\n\n" +
+                        "🔁 Si necesitas el enlace nuevamente escribe *LINK*."
                 ));
                 actions.add(textMsg("Opciones: MENU"));
             }
+
             case "aprobado" -> {
+                actions.add(textMsg(
+                        "🔐 Por seguridad el pago no se valida por mensaje.\n\n" +
+                        "La confirmación se realiza automáticamente con la pasarela de pago.\n\n" +
+                        "Cuando el pago se confirme recibirás el siguiente paso en este chat."
+                ));
+                actions.add(textMsg("Opciones: MENU"));
+            }
+
+            case "ya pague", "ya pagué", "pague", "pagué" -> {
+
+                actions.add(textMsg(
+                        "✅ Perfecto.\n\n" +
+                        "Estamos validando tu pago con la pasarela.\n\n" +
+                        "📩 Cuando el pago sea confirmado te enviaremos el enlace para continuar con la firma del contrato."
+                ));
+
+                actions.add(textMsg("Opciones: MENU"));
+            }
+
+            case "link", "pagar" -> {
+
                 try {
-                    procesoService.markPaymentApproved(session.documento);
-                    String contractLink = createAndStoreContractLink(session.documento);
-                    session.state = ChatState.CONTRACT_WAIT;
+
+                    String link = procesoService.getPaymentLink(session.documento);
 
                     actions.add(textMsg(
-                            "✅ Pago aprobado.\n\n" +
-                                    "Siguiente paso: completa y firma los contratos del curso en el portal.\n\n" +
-                                    "Enlace único e intransferible:\n" + contractLink + "\n\n" +
-                                    "Al finalizar la firma, tu matrícula se activará automáticamente.\n" +
-                                    "Si deseas validarlo aquí, escribe: LISTO"
+                            "💳 *Enlace de pago*\n\n" +
+                            link + "\n\n" +
+                            "Después de pagar vuelve a este chat."
                     ));
-                    actions.add(textMsg("Opciones: MENU"));
+
                 } catch (Exception e) {
-                    actions.add(textMsg("⚠️ No pude confirmar el pago: " + e.getMessage()));
-                    actions.add(textMsg("Opciones: MENU"));
+
+                    actions.add(textMsg(
+                            "⚠️ No pude encontrar el enlace de pago para este proceso."
+                    ));
                 }
-            }
-            case "ya pague", "ya pagué", "pague", "pagué" -> {
-                actions.add(textMsg(
-                        "✅ Gracias. Estamos validando tu pago.\n\n" +
-                                "Cuando se confirme te enviaremos el enlace de contratos.\n" +
-                                "Si necesitas el enlace de pago nuevamente escribe: LINK"
-                ));
+
                 actions.add(textMsg("Opciones: MENU"));
             }
-            case "pagar", "link" -> {
-                try {
-                    String link = procesoService.getPaymentLink(session.documento);
-                    actions.add(textMsg("🔗 Enlace de pago:\n" + link + "\n\n" + paymentFlowInfo()));
-                    actions.add(textMsg("Opciones: MENU"));
-                } catch (Exception e) {
-                    actions.add(textMsg("⚠️ No encuentro un enlace de pago para este proceso."));
-                    actions.add(textMsg("Opciones: MENU"));
-                }
-            }
+
             default -> {
+
                 actions.add(textMsg(
-                        "💳 Estamos esperando confirmación de pago.\n\n" +
-                                "Puedes escribir:\n" +
-                                "- LINK (ver enlace de pago)\n" +
-                                "- YA PAGUÉ (si ya realizaste el pago)\n" +
-                                "- PENDIENTE / APROBADO (modo prueba)"
+                        "💳 Estamos esperando la confirmación de tu pago.\n\n" +
+                        "Puedes escribir:\n" +
+                        "🔹 *LINK* para ver el enlace de pago\n" +
+                        "🔹 *YA PAGUÉ* si ya realizaste el pago"
                 ));
+
                 actions.add(textMsg("Opciones: MENU | TERMINAR"));
             }
         }
@@ -788,75 +798,92 @@ public class ChatbotInboundController {
         return true;
     }
 
-    private void handleContractWait(String text, SessionData session, List<BotAction> actions) {
+        private void handleContractWait(String from, String text, SessionData session, List<BotAction> actions) {
+
         switch (text) {
+
             case "listo", "firmado", "hecho" -> {
+
                 try {
+
                     boolean signed = procesoService.isContractSigned(session.documento);
+
                     if (!signed) {
+
                         actions.add(textMsg(
-                                "⏳ Aún no vemos la firma validada.\n\n" +
-                                        "1) Abre el enlace de contratos\n" +
-                                        "2) Completa el proceso\n" +
-                                        "3) Luego escribe LISTO nuevamente"
+                                "⏳ Aún no vemos el contrato firmado.\n\n" +
+                                "1️⃣ Abre el enlace del contrato\n" +
+                                "2️⃣ Firma el documento\n" +
+                                "3️⃣ Luego escribe *LISTO* nuevamente."
                         ));
+
                         actions.add(textMsg("Opciones: MENU"));
                         return;
                     }
 
-                    Optional<ChatbotMatriculaProceso> procesoOpt =
-                            procesoService.findProcesoByDocumento(session.documento);
-                    if (procesoOpt.isPresent() && procesoOpt.get().getStudentId() != null) {
-                        session.state = ChatState.DONE;
-                        actions.add(textMsg(
-                                "✅ Contratos validados y matrícula activada.\n\n" +
-                                        "Ref estudiante: " + procesoOpt.get().getStudentId() + "\n\n" +
-                                        "Escribe MENU para continuar."
-                        ));
-                        actions.add(textMsg("Opciones: MENU | TERMINAR"));
-                        return;
-                    }
-
-                    if (!trim(session.sedeSeleccionada).isBlank()) {
-                        handleSedeSelection(session.sedeSeleccionada, session, actions);
-                        return;
-                    }
-
                     session.state = ChatState.SEDE_SELECTION;
+
                     actions.add(textMsg(
-                            "✅ Contratos validados.\n\n" +
-                                    "📍 Antes de finalizar, selecciona tu sede:\n\n" +
-                                    "1) Kennedy – Av. 1 de Mayo #68D-23 Piso 2\n" +
-                                    "2) CC El Edén – Local L2-094A\n\n" +
-                                    "Responde con 1 o 2."
+                            "✅ Contrato validado correctamente.\n\n" +
+                            "Ahora selecciona tu sede:\n\n" +
+                            "1️⃣ Kennedy\n" +
+                            "2️⃣ CC El Edén"
                     ));
+
                     actions.add(textMsg("Opciones: MENU"));
+
                 } catch (Exception e) {
-                    actions.add(textMsg("⚠️ No pude validar el contrato: " + e.getMessage()));
+
+                    actions.add(textMsg(
+                            "⚠️ No pude validar el contrato.\n\n" +
+                            "Detalle: " + e.getMessage()
+                    ));
+
                     actions.add(textMsg("Opciones: MENU"));
                 }
             }
+
             case "link", "contrato", "contratos" -> {
+
                 try {
-                    Optional<ChatbotMatriculaProceso> proceso = procesoService.findProcesoByDocumento(session.documento);
+
+                    Optional<ChatbotMatriculaProceso> proceso =
+                            procesoService.findProcesoByDocumento(session.documento);
+
                     String link = proceso.map(ChatbotMatriculaProceso::getContractLink).orElse("");
+
                     if (link == null || link.isBlank()) {
-                        actions.add(textMsg("⚠️ Aún no hay enlace de contratos para este proceso."));
+
+                        actions.add(textMsg(
+                                "⚠️ Aún no hay un enlace de contrato disponible."
+                        ));
+
                     } else {
-                        actions.add(textMsg("🔗 Enlace de contratos:\n" + link));
+
+                        actions.add(textMsg(
+                                "📄 *Enlace de contrato*\n\n" + link
+                        ));
                     }
+
                     actions.add(textMsg("Opciones: MENU"));
+
                 } catch (Exception e) {
-                    actions.add(textMsg("⚠️ No pude obtener el enlace de contratos."));
+
+                    actions.add(textMsg(
+                            "⚠️ No pude obtener el enlace del contrato."
+                    ));
+
                     actions.add(textMsg("Opciones: MENU"));
                 }
             }
+
             default -> {
+
                 actions.add(textMsg(
-                        "📄 En este paso debes firmar los contratos.\n\n" +
-                                "Cuando termines escribe: LISTO\n" +
-                                "Si necesitas el enlace otra vez escribe: LINK"
+                        "📄 Debes completar la firma del contrato.\n\n" +
+                        "Cuando termines escribe *LISTO*."
                 ));
+
                 actions.add(textMsg("Opciones: MENU"));
             }
         }
@@ -873,38 +900,47 @@ public class ChatbotInboundController {
         return "";
     }
 
-    private void handleSedeSelection(String text, SessionData session, List<BotAction> actions) {
+        private void handleSedeSelection(String from, String text, SessionData session, List<BotAction> actions) {
+
         String sede = resolveSedeSelection(text);
+
         if (sede.isBlank()) {
+
             actions.add(textMsg(
-                    "Debes seleccionar una sede valida.\n\n" +
-                            "1) Kennedy\n" +
-                            "2) CC El Eden\n\n" +
-                            "Responde con 1 o 2."
+                    "⚠️ Debes seleccionar una sede válida.\n\n" +
+                    "1️⃣ Kennedy\n" +
+                    "2️⃣ CC El Edén"
             ));
+
             actions.add(textMsg("Opciones: MENU"));
             return;
         }
+
         session.sedeSeleccionada = sede;
 
         try {
-            Long studentId = procesoService.createStudentFromSignedContract(session.documento, session.sedeSeleccionada);
+
+            Long studentId =
+                    procesoService.createStudentFromSignedContract(session.documento, sede);
 
             session.state = ChatState.DONE;
 
             actions.add(textMsg(
-                    "🎉 Matrícula finalizada correctamente.\n\n" +
-                            "📍 Sede asignada: *" + session.sedeSeleccionada + "*\n" +
-                            "✅ Proceso activo: *" + safe(session.categoria) + "*\n\n" +
-                            "👥 Grupo de clases teóricas:\n" +
-                            "URL_GRUPO_WHATSAPP_AQUI\n\n" +
-                            "📌 La teoría no requiere agendamiento.\n" +
-                            "⏰ Primera clase: llega 30 minutos antes para biométricos.\n\n" +
-                            "Ref: " + studentId
+                    "🎉 *Matrícula finalizada correctamente*\n\n" +
+                    "📍 Sede asignada: " + sede + "\n" +
+                    "🆔 Referencia estudiante: " + studentId + "\n\n" +
+                    "Gracias por completar tu proceso con *CEA HARO*."
             ));
-            actions.add(textMsg("Opciones: MENU | TERMINAR"));
+
+            sessions.remove(from);
+
         } catch (Exception e) {
-            actions.add(textMsg("⚠️ No pude crear el estudiante con sede: " + e.getMessage()));
+
+            actions.add(textMsg(
+                    "⚠️ No pude crear el estudiante.\n\n" +
+                    "Detalle: " + e.getMessage()
+            ));
+
             actions.add(textMsg("Opciones: MENU"));
         }
     }
@@ -1700,10 +1736,11 @@ public class ChatbotInboundController {
             }
         }
         actions.add(textMsg(
-                "Gracias por elegirnos! Para proporcionarte un servicio personalizado, necesitamos algunos datos personales, " +
-                        "puedes revisar nuestra politica de tratamiento de datos en nuestra pagina web y www.ceaharo.com\n\n" +
-                        "¿Autorizas el tratamiento de tus datos?\n" +
-                        "Responde SI o NO."
+                "👋 ¡Gracias por elegir CEA HARO!\n\n" +
+                        "Para brindarte un servicio personalizado, necesitamos algunos datos personales.\n" +
+                        "Puedes revisar nuestra política de tratamiento de datos en www.ceaharo.com\n\n" +
+                        "🔐 ¿Autorizas el tratamiento de tus datos?\n" +
+                        "Responde: *SI* o *NO*."
         ));
     }
 
@@ -1719,6 +1756,7 @@ public class ChatbotInboundController {
                 "3️⃣ Horarios de atención y sedes\n" +
                 "4️⃣ Soy un estudiante (consultas y reservas)\n" +
                 "5️⃣ Contactar un asesor\n\n" +
+                "✍️ Responde con el número de la opción.\n" +
                 "Comandos: MENU | AYUDA | CANCELAR | TERMINAR";
     }
 
@@ -1730,7 +1768,8 @@ public class ChatbotInboundController {
                 "3) 🚕 Licencia C1\n" +
                 "4) 🏍️🚗 A2 y B1\n" +
                 "5) 🏍️🚗🚕 A2, B1 y C1\n" +
-                "6) 🔄 Recategorización B1 a C1";
+                "6) 🔄 Recategorización B1 a C1\n\n" +
+                "✍️ Responde con un número del 1 al 6.";
     }
 
     private String allCategoriesMenuText() {
@@ -1741,97 +1780,98 @@ public class ChatbotInboundController {
                 "3) 🚕 Categoría C1\n" +
                 "4) 🏍️🚗 Categoría A2 y B1\n" +
                 "5) 🏍️🚗🚕 Categoría A2, B1 y C1\n" +
-                "6) 🔄 Recategorización B1 a C1";
+                "6) 🔄 Recategorización B1 a C1\n\n" +
+                "✍️ Responde con un número del 1 al 6.";
     }
 
     // ✅ Quitado: "Categoría A2"
     private String courseA2Text() {
-        return "Categoría A2\n\n" +
-                "Para motocicletas de cualquier tipo de cilindraje 🛵🏍\n\n" +
-                "📌 Valor curso: $920.000 (incluye examen médico)\n" +
-                "📌 Valor licencia: $272.800 en ventanilla única\n\n" +
-                "INCLUYE:\n" +
-                "⏰ 25 horas de teoría 👩‍🏫\n" +
-                "⏰ 3 horas de taller 🛠\n" +
-                "⏰ 15 horas de práctica 🚦\n" +
-                "⏰ + Certificado 👨🏻‍🎓";
+        return "🏍️ *Categoría A2*\n\n" +
+                "Para motocicletas de cualquier tipo de cilindraje.\n\n" +
+                "💰 *Valor curso:* $920.000 (incluye examen médico)\n" +
+                "🪪 *Valor licencia:* $272.800 en ventanilla única\n\n" +
+                "✅ *Incluye:*\n" +
+                "• 25 horas de teoría 👩‍🏫\n" +
+                "• 3 horas de taller 🛠\n" +
+                "• 15 horas de práctica 🚦\n" +
+                "• Certificado 👨🏻‍🎓";
     }
 
     // ✅ Quitado: "Categoría B1"
     private String courseB1Text() {
-        return "Categoría B1\n\n" +
-                "Es para vehículos de placa amarilla 🚗\n\n" +
-                "📌 Valor curso: $1.210.000 (incluye examen médico)\n" +
-                "📌 Valor licencia: $329.900 en ventanilla única\n\n" +
-                "INCLUYE:\n" +
-                "⏰ 25 horas de Teoría 👩‍🏫\n" +
-                "⏰ 5 horas de Taller🛠\n" +
-                "⏰ 20 horas de práctica (16 horas en ciudad y 4 en carretera). 🚘\n" +
-                "⏰ + Certificado 👨🏻‍🎓";
+        return "🚗 *Categoría B1*\n\n" +
+                "Para vehículos de placa amarilla.\n\n" +
+                "💰 *Valor curso:* $1.210.000 (incluye examen médico)\n" +
+                "🪪 *Valor licencia:* $329.900 en ventanilla única\n\n" +
+                "✅ *Incluye:*\n" +
+                "• 25 horas de teoría 👩‍🏫\n" +
+                "• 5 horas de taller 🛠\n" +
+                "• 20 horas de práctica (16 ciudad + 4 carretera) 🚘\n" +
+                "• Certificado 👨🏻‍🎓";
     }
 
     // ✅ Quitado: "Categoría C1"
     private String courseC1Text() {
-        return "Categoría C1\n\n" +
-                "Es para vehículos de placa blanca y amarilla 🚗🚕\n\n" +
-                "📌 Valor curso: $1.350.000 (incluye examen médico)\n" +
-                "📌 Valor licencia: $329.900 en ventanilla única\n\n" +
-                "INCLUYE:\n" +
-                "⏰ 30 horas de Teoría 👩‍🏫\n" +
-                "⏰ 5 horas de Taller🛠\n" +
-                "⏰ 30 horas de práctica (26 horas en ciudad y 4 en carretera). 🚘\n" +
-                "⏰ + Certificado 👨🏻‍🎓";
+        return "🚕 *Categoría C1*\n\n" +
+                "Para vehículos de placa blanca y amarilla.\n\n" +
+                "💰 *Valor curso:* $1.350.000 (incluye examen médico)\n" +
+                "🪪 *Valor licencia:* $329.900 en ventanilla única\n\n" +
+                "✅ *Incluye:*\n" +
+                "• 30 horas de teoría 👩‍🏫\n" +
+                "• 5 horas de taller 🛠\n" +
+                "• 30 horas de práctica (26 ciudad + 4 carretera) 🚘\n" +
+                "• Certificado 👨🏻‍🎓";
     }
 
     // ✅ Quitado: "Categoría A2 y B1"
     private String courseA2B1Text() {
-        return "Categoría A2 y B1\n\n" +
-                "Es para motocicletas de cualquier tipo de cilindraje y para vehículo particular.\n\n" +
-                "📌 Valor curso: $1.990.000 (incluye examen médico)\n" +
-                "📌 Valor licencia: Moto $272.800 y carro $329.900 en ventanilla única\n\n" +
-                "INCLUYE:\n" +
-                "⏰ 30 horas teóricas 👩‍🏫\n" +
-                "⏰ 20 horas prácticas carro 🚘\n" +
-                "⏰ 15 horas practicas moto 🏍\n" +
-                "⏰ 5 horas taller 🛠\n" +
-                "⏰ + Certificado 👨🏻‍🎓";
+        return "🏍️🚗 *Categoría A2 y B1*\n\n" +
+                "Para motocicleta y vehículo particular.\n\n" +
+                "💰 *Valor curso:* $1.990.000 (incluye examen médico)\n" +
+                "🪪 *Valor licencias:* Moto $272.800 y carro $329.900 en ventanilla única\n\n" +
+                "✅ *Incluye:*\n" +
+                "• 30 horas teóricas 👩‍🏫\n" +
+                "• 20 horas prácticas carro 🚘\n" +
+                "• 15 horas prácticas moto 🏍\n" +
+                "• 5 horas taller 🛠\n" +
+                "• Certificado 👨🏻‍🎓";
     }
 
     // ✅ Quitado: "Categoría A2, B1 y C1"
     private String courseA2B1C1Text() {
-        return "Categoría A2, B1 y C1\n\n" +
-                "Es para moto, servicio particular y público 🏍\n\n" +
-                "📌 Valor curso: $2.150.000 (incluye examen médico)\n" +
-                "📌 Valor licencia: Moto $272.800 y carro $329.900 en ventanilla única\n\n" +
-                "INCLUYE:\n" +
-                "⏰ 30 horas de Teoría 👩‍🏫\n" +
-                "⏰ 5 horas de Taller🛠\n" +
-                "⏰ 15 horas de práctica. 🚘\n" +
-                "⏰ 30 horas de práctica. 🏍\n" +
-                "⏰ + Certificado 👨🏻‍🎓";
+        return "🏍️🚗🚕 *Categoría A2, B1 y C1*\n\n" +
+                "Para moto, servicio particular y público.\n\n" +
+                "💰 *Valor curso:* $2.150.000 (incluye examen médico)\n" +
+                "🪪 *Valor licencias:* Moto $272.800 y carro $329.900 en ventanilla única\n\n" +
+                "✅ *Incluye:*\n" +
+                "• 30 horas de teoría 👩‍🏫\n" +
+                "• 5 horas de taller 🛠\n" +
+                "• 15 horas de práctica carro 🚘\n" +
+                "• 30 horas de práctica moto 🏍\n" +
+                "• Certificado 👨🏻‍🎓";
     }
 
     // ✅ Quitado: título duplicado ("Recategorización..." dos veces)
     private String courseRecategorizacionText() {
-        return "🔄 Recategorización B1 a C1\n\n" +
-                "🚗➡️🚕 Es para pasar de servicio particular B1 a servicio público C1\n\n" +
-                "📌 Valor curso: $950.000 (incluye examen médico)\n" +
-                "📌 Valor licencia: $329.900 en ventanilla única\n\n" +
-                "✅ INCLUYE:\n" +
-                "⏰ 5 horas de Teoría 👩‍🏫\n" +
-                "⏰ 10 horas de práctica 🚘\n" +
-                "⏰ + Certificado 👨🏻‍🎓";
+        return "🔄 *Recategorización B1 a C1*\n\n" +
+                "🚗➡️🚕 Para pasar de servicio particular B1 a servicio público C1.\n\n" +
+                "💰 *Valor curso:* $950.000 (incluye examen médico)\n" +
+                "🪪 *Valor licencia:* $329.900 en ventanilla única\n\n" +
+                "✅ *Incluye:*\n" +
+                "• 5 horas de teoría 👩‍🏫\n" +
+                "• 10 horas de práctica 🚘\n" +
+                "• Certificado 👨🏻‍🎓";
     }
 
     private String enrollmentInitialPromptText() {
-        return "Perfecto. Vamos a iniciar tu matricula en CEA HARO.\n\n" +
-                "Para continuar necesito esta informacion (en un solo mensaje):\n\n" +
+        return "📝 Perfecto. Vamos a iniciar tu matrícula en CEA HARO.\n\n" +
+                "Para continuar, envíame esta información *en un solo mensaje*:\n\n" +
                 "1) Nombre completo (como aparece en tu documento)\n" +
-                "2) Numero de documento (sin puntos ni comas)\n" +
-                "3) Categoria que deseas realizar (A2, B1, C1, A2 y B1, A2, B1 y C1)\n\n" +
-                "Ejemplo:\n" +
+                "2) Número de documento (sin puntos ni comas)\n" +
+                "3) Categoría que deseas realizar (A2, B1, C1, A2 y B1, A2, B1 y C1)\n\n" +
+                "✅ Ejemplo:\n" +
                 "Juan Perez 12345678 A2\n\n" +
-                "Luego te pedire la sede (Kennedy o CC El Eden).";
+                "Luego te pediré la sede (Kennedy o CC El Eden).";
     }
 
     private String infoText() {
@@ -1863,20 +1903,21 @@ public class ChatbotInboundController {
                 "2️⃣ Agendar clase práctica\n" +
                 "3️⃣ Consultar mi horario\n" +
                 "4️⃣ Cancelar clase práctica\n" +
-                "5️⃣ ⬅️ Volver al menú";
+                "5️⃣ ⬅️ Volver al menú\n\n" +
+                "✍️ Responde con un número del 1 al 5.";
     }
 
     private String helpText(ChatState state) {
-        return "Ayuda\n\n" +
-                "Estado actual: " + state + "\n\n" +
-                "Comandos:\n" +
-                "- MENU: volver al inicio\n" +
-                "- AYUDA: ver esta ayuda\n" +
-                "- ASESOR: contactar un asesor\n" +
-                "- CANCELAR: cancelar el proceso actual\n" +
-                "- TERMINAR: finalizar la conversación\n\n" +
-                "Inactividad:\n" +
-                "- Si no respondes en " + Math.max(1, inactivityTimeoutMinutes) + " minutos, la conversacion expira y debes iniciar de nuevo.";
+        return "🆘 *Ayuda*\n\n" +
+                "🧭 Estado actual: " + state + "\n\n" +
+                "Comandos disponibles:\n" +
+                "• MENU: volver al inicio\n" +
+                "• AYUDA: ver esta ayuda\n" +
+                "• ASESOR: contactar un asesor\n" +
+                "• CANCELAR: cancelar el proceso actual\n" +
+                "• TERMINAR: finalizar la conversación\n\n" +
+                "⏱️ Inactividad:\n" +
+                "• Si no respondes en " + Math.max(1, inactivityTimeoutMinutes) + " minutos, la conversación expira y debes iniciar de nuevo.";
     }
 }
 

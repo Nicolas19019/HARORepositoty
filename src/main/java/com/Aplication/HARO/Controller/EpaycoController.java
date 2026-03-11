@@ -763,46 +763,35 @@ public class EpaycoController {
 
     // URL de confirmacion (Webhook ePayco)
     @PostMapping(value = {"/confirmation", "/epayco/confirmation"}, consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    public ResponseEntity<?> confirmation(@RequestBody MultiValueMap<String, String> form) {
+public ResponseEntity<?> confirmation(@RequestBody MultiValueMap<String, String> form) {
 
-        String xRefPayco = form.getFirst("x_ref_payco");
-        String xTransactionId = form.getFirst("x_transaction_id");
-        String xAmount = form.getFirst("x_amount");
-        String xCurrencyCode = form.getFirst("x_currency_code");
-        String xCodResponse = form.getFirst("x_cod_response");
-        String xSignature = form.getFirst("x_signature");
-        String xDocumento = form.getFirst("x_extra1");
-        String estado = form.getFirst("x_response");
-        String xReason = form.getFirst("x_response_reason_text");
+    String xRefPayco = form.getFirst("x_ref_payco");
+    String xTransactionId = form.getFirst("x_transaction_id");
+    String xAmount = form.getFirst("x_amount");
+    String xCurrencyCode = form.getFirst("x_currency_code");
+    String xCodResponse = form.getFirst("x_cod_response");
+    String xSignature = form.getFirst("x_signature");
+    String xDocumento = form.getFirst("x_extra1");
+    String estado = form.getFirst("x_response");
 
-        boolean signatureOk = epaycoService.isValidSignature(xRefPayco, xTransactionId, xAmount, xCurrencyCode, xSignature);
-        if (!signatureOk) {
-            log.warn("Confirmacion ePayco rechazada por firma invalida ref={} trx={} doc={}", xRefPayco, xTransactionId, xDocumento);
-            return ResponseEntity.badRequest().body(java.util.Map.of("error", "Firma invalida"));
-        }
+    boolean signatureOk =
+            epaycoService.isValidSignature(xRefPayco, xTransactionId, xAmount, xCurrencyCode, xSignature);
 
-        if (isApproved(estado, xCodResponse)) {
-            log.info("Pago aprobado ePayco ref={} trx={} doc={}", xRefPayco, xTransactionId, xDocumento);
-            processApprovedPayment(xDocumento, xAmount);
-        } else if (isCancelled(estado, xCodResponse)) {
-            log.info("Pago cancelado/fallido ePayco ref={} trx={} estado={} cod={} doc={} reason={}",
-                    xRefPayco, xTransactionId, estado, xCodResponse, xDocumento, xReason);
-            processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.CANCELLED);
-        } else if (isRejected(estado, xCodResponse)) {
-            log.info("Pago rechazado ePayco ref={} trx={} estado={} cod={} doc={} reason={}",
-                    xRefPayco, xTransactionId, estado, xCodResponse, xDocumento, xReason);
-            processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.REJECTED);
-        } else if (isPending(estado, xCodResponse)) {
-            log.info("Pago pendiente ePayco ref={} trx={} doc={}", xRefPayco, xTransactionId, xDocumento);
-            processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.PENDING);
-        } else {
-            log.info("Pago estado desconocido ePayco ref={} trx={} estado={} cod={} doc={}",
-                    xRefPayco, xTransactionId, estado, xCodResponse, xDocumento);
-        }
+    if (!signatureOk) {
 
-        // ePayco espera 200
-        return ResponseEntity.ok(java.util.Map.of("status", "ok"));
+        log.warn("Firma inválida en confirmación ePayco ref={}", xRefPayco);
+        return ResponseEntity.badRequest().build();
     }
+
+    if (isApproved(estado, xCodResponse)) {
+
+        log.info("💰 Pago aprobado doc={} ref={}", xDocumento, xRefPayco);
+
+        processApprovedPayment(xDocumento, xAmount);
+    }
+
+    return ResponseEntity.ok(Map.of("status", "ok"));
+}
 
     private void processApprovedPayment(String documentoRaw, String amountRaw) {
         processApprovedPayment(documentoRaw, parseAmountOrNull(amountRaw), true, false, "", "");

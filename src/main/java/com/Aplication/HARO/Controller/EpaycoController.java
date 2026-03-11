@@ -101,49 +101,92 @@ public class EpaycoController {
      */
     @PostMapping(value = {"/response/sync", "/epayco/response/sync"}, consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) {
+        Map<String, Object> safePayload = payload == null ? Map.of() : payload;
+
         String refPayco = firstNotBlank(
-                safeTrim(asString(payload.get("ref_payco"))),
-                safeTrim(asString(payload.get("refPayco"))),
-                safeTrim(asString(payload.get("reference")))
+                safeTrim(asString(safePayload.get("ref_payco"))),
+                safeTrim(asString(safePayload.get("refPayco"))),
+                safeTrim(asString(safePayload.get("reference")))
         );
         String documentHint = firstNotBlank(
-                safeTrim(asString(payload.get("document"))),
-                safeTrim(asString(payload.get("x_extra1")))
+                safeTrim(asString(safePayload.get("document"))),
+                safeTrim(asString(safePayload.get("x_extra1")))
         );
         String emailHint = firstNotBlank(
-                safeTrim(asString(payload.get("email"))),
-                safeTrim(asString(payload.get("customer_email")))
+                safeTrim(asString(safePayload.get("email"))),
+                safeTrim(asString(safePayload.get("customer_email")))
         );
 
-        if (!StringUtils.hasText(refPayco)) {
+        String payloadStatus = firstNotBlank(
+                safeTrim(asString(safePayload.get("status"))),
+                safeTrim(asString(safePayload.get("paymentStatus"))),
+                safeTrim(asString(safePayload.get("x_response"))),
+                safeTrim(asString(safePayload.get("response")))
+        );
+        String payloadCodResponse = firstNotBlank(
+                safeTrim(asString(safePayload.get("x_cod_response"))),
+                safeTrim(asString(safePayload.get("codResponse")))
+        );
+        String payloadReason = firstNotBlank(
+                safeTrim(asString(safePayload.get("x_response_reason_text"))),
+                safeTrim(asString(safePayload.get("reason"))),
+                safeTrim(asString(safePayload.get("message")))
+        );
+        boolean approvedByPayload = asBoolean(safePayload.get("paymentApproved"), false)
+                || resolvePaymentUserStatus(payloadStatus, payloadCodResponse, payloadReason) == PaymentUserStatus.APPROVED;
+
+        if (!StringUtils.hasText(refPayco) && !approvedByPayload) {
             return ResponseEntity.badRequest().body(Map.of(
                     "status", "ERROR",
-                    "message", "ref_payco es requerido"
+                    "message", "ref_payco es requerido o debes enviar estado aprobado en payload"
             ));
         }
 
-        String rawData;
-        try {
-            rawData = epaycoService.fetchTransactionByRefPayco(refPayco);
-        } catch (Exception ex) {
-            log.error("responseSync no pudo consultar ePayco ref={}: {}", refPayco, ex.getMessage(), ex);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
-                    "status", "ERROR",
-                    "reference", refPayco,
-                    "message", "No fue posible consultar ePayco"
-            ));
+        Map<String, Object> summary;
+        String statusSource = "epayco";
+        if (StringUtils.hasText(refPayco)) {
+            try {
+                String rawData = epaycoService.fetchTransactionByRefPayco(refPayco);
+                summary = new LinkedHashMap<>(buildUserPaymentSummary(refPayco, rawData, documentHint));
+            } catch (Exception ex) {
+                if (!approvedByPayload) {
+                    log.error("responseSync no pudo consultar ePayco ref={}: {}", refPayco, ex.getMessage(), ex);
+                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                            "status", "ERROR",
+                            "reference", refPayco,
+                            "message", "No fue posible consultar ePayco"
+                    ));
+                }
+                log.warn("responseSync usara payload aprobado por falla temporal consultando ePayco. ref={} err={}",
+                        refPayco, ex.getMessage());
+                summary = buildSyncSummaryFromPayload(refPayco, safePayload, documentHint, emailHint);
+                statusSource = "payload_fallback";
+            }
+        } else {
+            summary = buildSyncSummaryFromPayload(refPayco, safePayload, documentHint, emailHint);
+            statusSource = "payload_only";
         }
 
-        Map<String, Object> summary = buildUserPaymentSummary(refPayco, rawData, documentHint);
         String status = safeTrim(asString(summary.get("status")));
+        if (!"APPROVED".equalsIgnoreCase(status) && approvedByPayload) {
+            status = PaymentUserStatus.APPROVED.code;
+            summary.put("status", status);
+            summary.putIfAbsent("title", PaymentUserStatus.APPROVED.title);
+            summary.putIfAbsent("nextStep", PaymentUserStatus.APPROVED.nextStep);
+            if (!StringUtils.hasText(safeTrim(asString(summary.get("message"))))) {
+                summary.put("message", PaymentUserStatus.APPROVED.defaultMessage);
+            }
+        }
 
         Map<String, Object> out = new LinkedHashMap<>(summary);
         boolean chatbotSynced = false;
         if ("APPROVED".equalsIgnoreCase(status)) {
-            chatbotSynced = syncApprovedPaymentToFlow(summary, payload, documentHint, emailHint);
+            chatbotSynced = syncApprovedPaymentToFlow(summary, safePayload, documentHint, emailHint);
         }
         out.put("chatbotSynced", chatbotSynced);
+        out.put("approvedByPayload", approvedByPayload);
         out.put("syncSource", "response_page");
+        out.put("statusSource", statusSource);
         out.put("syncAt", ZonedDateTime.now(ZoneId.of("America/Bogota"))
                 .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z")));
         return ResponseEntity.ok(out);
@@ -157,21 +200,34 @@ public class EpaycoController {
             return false;
         }
 
+        Map<String, Object> safePayload = payload == null ? Map.of() : payload;
+        boolean notifyContractLinkByChatbot = asBoolean(safePayload.get("notifyContractLinkByChatbot"), true);
+        boolean forceResendContractLink = asBoolean(safePayload.get("forceResendContractLink"), true);
+        String chatbotMessageText = safeTrim(asString(safePayload.get("chatbotMessageText")));
+        String chatbotMessageTemplate = safeTrim(asString(safePayload.get("chatbotMessageTemplate")));
+
         BigDecimal amount = parseAmountOrNull(firstNotBlank(
                 safeTrim(asString(summary.get("amount"))),
-                safeTrim(asString(payload.get("x_amount")))
+                safeTrim(asString(safePayload.get("x_amount")))
         ));
 
         String documento = firstNotBlank(
                 safeTrim(asString(summary.get("document"))),
-                safeTrim(asString(payload.get("document"))),
-                safeTrim(asString(payload.get("x_extra1"))),
+                safeTrim(asString(safePayload.get("document"))),
+                safeTrim(asString(safePayload.get("x_extra1"))),
                 safeTrim(documentHint)
         );
 
         if (StringUtils.hasText(documento)) {
             try {
-                processApprovedPayment(documento, amount);
+                processApprovedPayment(
+                        documento,
+                        amount,
+                        notifyContractLinkByChatbot,
+                        forceResendContractLink,
+                        chatbotMessageText,
+                        chatbotMessageTemplate
+                );
                 return true;
             } catch (Exception ex) {
                 log.error("No fue posible sincronizar pago aprobado por documento doc={}: {}", documento, ex.getMessage(), ex);
@@ -181,8 +237,8 @@ public class EpaycoController {
 
         String email = firstNotBlank(
                 safeTrim(asString(summary.get("email"))),
-                safeTrim(asString(payload.get("email"))),
-                safeTrim(asString(payload.get("customer_email"))),
+                safeTrim(asString(safePayload.get("email"))),
+                safeTrim(asString(safePayload.get("customer_email"))),
                 safeTrim(emailHint)
         );
         if (!StringUtils.hasText(email)) {
@@ -201,7 +257,14 @@ public class EpaycoController {
                 return false;
             }
 
-            processApprovedPayment(fromEmailDoc, amount);
+            processApprovedPayment(
+                    fromEmailDoc,
+                    amount,
+                    notifyContractLinkByChatbot,
+                    forceResendContractLink,
+                    chatbotMessageText,
+                    chatbotMessageTemplate
+            );
             summary.put("document", fromEmailDoc);
             return true;
         } catch (Exception ex) {
@@ -350,6 +413,89 @@ public class EpaycoController {
                 }
             }
         }
+
+        return out;
+    }
+
+    private Map<String, Object> buildSyncSummaryFromPayload(String refPaycoRaw,
+                                                            Map<String, Object> payload,
+                                                            String documentHintRaw,
+                                                            String emailHintRaw) {
+        Map<String, Object> safePayload = payload == null ? Map.of() : payload;
+        Map<String, Object> out = new LinkedHashMap<>();
+
+        String refPayco = firstNotBlank(
+                safeTrim(refPaycoRaw),
+                safeTrim(asString(safePayload.get("ref_payco"))),
+                safeTrim(asString(safePayload.get("refPayco"))),
+                safeTrim(asString(safePayload.get("reference")))
+        );
+        String xCodResponse = firstNotBlank(
+                safeTrim(asString(safePayload.get("x_cod_response"))),
+                safeTrim(asString(safePayload.get("codResponse")))
+        );
+        String xResponse = firstNotBlank(
+                safeTrim(asString(safePayload.get("x_response"))),
+                safeTrim(asString(safePayload.get("response"))),
+                safeTrim(asString(safePayload.get("status"))),
+                safeTrim(asString(safePayload.get("paymentStatus")))
+        );
+        String xReason = firstNotBlank(
+                safeTrim(asString(safePayload.get("x_response_reason_text"))),
+                safeTrim(asString(safePayload.get("reason"))),
+                safeTrim(asString(safePayload.get("message")))
+        );
+        String xAmount = firstNotBlank(
+                safeTrim(asString(safePayload.get("x_amount"))),
+                safeTrim(asString(safePayload.get("amount")))
+        );
+        String xCurrency = firstNotBlank(
+                safeTrim(asString(safePayload.get("x_currency_code"))),
+                safeTrim(asString(safePayload.get("currency")))
+        );
+        String xTransactionId = firstNotBlank(
+                safeTrim(asString(safePayload.get("x_transaction_id"))),
+                safeTrim(asString(safePayload.get("transactionId"))),
+                safeTrim(asString(safePayload.get("transaction_id")))
+        );
+        String xInvoice = firstNotBlank(
+                safeTrim(asString(safePayload.get("x_id_invoice"))),
+                safeTrim(asString(safePayload.get("invoice")))
+        );
+        String xDocumento = firstNotBlank(
+                safeTrim(asString(safePayload.get("x_extra1"))),
+                safeTrim(asString(safePayload.get("document"))),
+                safeTrim(documentHintRaw)
+        );
+        String xEmail = firstNotBlank(
+                safeTrim(asString(safePayload.get("customer_email"))),
+                safeTrim(asString(safePayload.get("email"))),
+                safeTrim(emailHintRaw)
+        );
+
+        PaymentUserStatus status = resolvePaymentUserStatus(xResponse, xCodResponse, xReason);
+        if (asBoolean(safePayload.get("paymentApproved"), false)) {
+            status = PaymentUserStatus.APPROVED;
+        }
+
+        out.put("status", status.code);
+        out.put("title", status.title);
+        out.put("message", status.message(xReason));
+        out.put("nextStep", status.nextStep);
+
+        if (StringUtils.hasText(refPayco)) out.put("reference", refPayco);
+        if (StringUtils.hasText(xTransactionId)) out.put("transactionId", xTransactionId);
+        if (StringUtils.hasText(xInvoice)) out.put("invoice", xInvoice);
+        if (StringUtils.hasText(xAmount)) out.put("amount", xAmount);
+        if (StringUtils.hasText(xCurrency)) out.put("currency", xCurrency);
+        if (StringUtils.hasText(xDocumento)) out.put("document", xDocumento);
+        if (StringUtils.hasText(xEmail)) out.put("email", xEmail);
+
+        Map<String, String> gateway = new LinkedHashMap<>();
+        if (StringUtils.hasText(xCodResponse)) gateway.put("codResponse", xCodResponse);
+        if (StringUtils.hasText(xResponse)) gateway.put("response", xResponse);
+        if (StringUtils.hasText(xReason)) gateway.put("reason", xReason);
+        if (!gateway.isEmpty()) out.put("gateway", gateway);
 
         return out;
     }
@@ -659,10 +805,19 @@ public class EpaycoController {
     }
 
     private void processApprovedPayment(String documentoRaw, String amountRaw) {
-        processApprovedPayment(documentoRaw, parseAmountOrNull(amountRaw));
+        processApprovedPayment(documentoRaw, parseAmountOrNull(amountRaw), true, false, "", "");
     }
 
     private void processApprovedPayment(String documentoRaw, BigDecimal amount) {
+        processApprovedPayment(documentoRaw, amount, true, false, "", "");
+    }
+
+    private void processApprovedPayment(String documentoRaw,
+                                        BigDecimal amount,
+                                        boolean notifyContractLinkByChatbot,
+                                        boolean forceResendContractLink,
+                                        String customMessageTextRaw,
+                                        String customMessageTemplateRaw) {
         String documento = safeTrim(documentoRaw);
         if (!StringUtils.hasText(documento)) {
             log.warn("Pago aprobado sin x_extra1 (documento). No se sincroniza chatbot.");
@@ -677,7 +832,7 @@ public class EpaycoController {
             return;
         }
 
-        if (!autoSendContractOnPayment) {
+        if (!autoSendContractOnPayment || !notifyContractLinkByChatbot) {
             return;
         }
 
@@ -685,7 +840,9 @@ public class EpaycoController {
         ChatbotMatriculaProceso current = currentOpt.orElse(proceso);
 
         String flowStatus = safeTrim(current.getFlowStatus()).toUpperCase(Locale.ROOT);
-        if ("CONTRACT_LINK_SENT".equals(flowStatus) && StringUtils.hasText(current.getContractLink())) {
+        if ("CONTRACT_LINK_SENT".equals(flowStatus)
+                && StringUtils.hasText(current.getContractLink())
+                && !forceResendContractLink) {
             log.info("Contrato ya enviado para doc={}. Se evita reenvio.", documento);
             return;
         }
@@ -716,12 +873,8 @@ public class EpaycoController {
         }
 
         try {
-            waService.sendTextMessage(
-                    phone,
-                    "✅ Pago aprobado.\n\n" +
-                            "Siguiente paso: completa y firma tus contratos en este enlace unico:\n" + contractLink + "\n\n" +
-                            "Al finalizar la firma, tu matricula se activa automaticamente."
-            );
+            String msg = buildApprovedPaymentMessage(contractLink, customMessageTextRaw, customMessageTemplateRaw);
+            waService.sendTextMessage(phone, msg);
             log.info("Enlace de contrato enviado por WhatsApp doc={} to={}", documento, maskPhone(phone));
         } catch (Exception ex) {
             log.error("No se pudo enviar enlace de contrato por WhatsApp doc={} to={}: {}",
@@ -861,6 +1014,42 @@ public class EpaycoController {
         }
     }
 
+    private String buildApprovedPaymentMessage(String contractLinkRaw,
+                                               String customMessageTextRaw,
+                                               String customMessageTemplateRaw) {
+        String contractLink = safeTrim(contractLinkRaw);
+        if (!StringUtils.hasText(contractLink)) {
+            return "Pago recibido.";
+        }
+
+        String template = safeTrim(customMessageTemplateRaw);
+        if (StringUtils.hasText(template)) {
+            return injectContractUrl(template, contractLink);
+        }
+
+        String text = safeTrim(customMessageTextRaw);
+        if (StringUtils.hasText(text)) {
+            String withInlinePlaceholder = injectContractUrl(text, contractLink);
+            if (!withInlinePlaceholder.equals(text)) {
+                return withInlinePlaceholder;
+            }
+            return text + ": " + contractLink;
+        }
+
+        return "Pago recibido sigue con la contratacion con esta url: " + contractLink;
+    }
+
+    private String injectContractUrl(String templateRaw, String contractLink) {
+        String template = safeTrim(templateRaw);
+        if (!StringUtils.hasText(template)) {
+            return template;
+        }
+        return template
+                .replace("{{contract_url}}", contractLink)
+                .replace("{contract_url}", contractLink)
+                .replace("${contract_url}", contractLink);
+    }
+
     private String buildContractUserLink(VerificationService.ContractLinkResult out) {
         if (out == null) return "";
 
@@ -891,6 +1080,18 @@ public class EpaycoController {
 
     private String asString(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private boolean asBoolean(Object value, boolean defaultValue) {
+        if (value == null) return defaultValue;
+        if (value instanceof Boolean b) return b;
+        String raw = safeTrim(String.valueOf(value)).toLowerCase(Locale.ROOT);
+        if (!StringUtils.hasText(raw)) return defaultValue;
+        return switch (raw) {
+            case "1", "true", "t", "yes", "si", "y", "on" -> true;
+            case "0", "false", "f", "no", "n", "off" -> false;
+            default -> defaultValue;
+        };
     }
 
     private String safeTrim(String value) {

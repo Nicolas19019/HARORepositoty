@@ -107,97 +107,122 @@ public class EpaycoController {
      * - document | x_extra1
      */
     @PostMapping(value = {"/response/sync", "/epayco/response/sync"}, consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) {
-        Map<String, Object> safePayload = payload == null ? Map.of() : payload;
+public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) {
+    Map<String, Object> safePayload = payload == null ? Map.of() : payload;
 
-        String refPayco = firstNotBlank(
-                safeTrim(asString(safePayload.get("ref_payco"))),
-                safeTrim(asString(safePayload.get("refPayco"))),
-                safeTrim(asString(safePayload.get("reference")))
-        );
-        String documentHint = firstNotBlank(
-                safeTrim(asString(safePayload.get("document"))),
-                safeTrim(asString(safePayload.get("x_extra1")))
-        );
-        String emailHint = firstNotBlank(
-                safeTrim(asString(safePayload.get("email"))),
-                safeTrim(asString(safePayload.get("customer_email")))
-        );
+    String refPayco = firstNotBlank(
+            safeTrim(asString(safePayload.get("ref_payco"))),
+            safeTrim(asString(safePayload.get("refPayco"))),
+            safeTrim(asString(safePayload.get("reference")))
+    );
+    String documentHint = firstNotBlank(
+            safeTrim(asString(safePayload.get("document"))),
+            safeTrim(asString(safePayload.get("x_extra1")))
+    );
+    String emailHint = firstNotBlank(
+            safeTrim(asString(safePayload.get("email"))),
+            safeTrim(asString(safePayload.get("customer_email")))
+    );
 
-        String payloadStatus = firstNotBlank(
-                safeTrim(asString(safePayload.get("status"))),
-                safeTrim(asString(safePayload.get("paymentStatus"))),
-                safeTrim(asString(safePayload.get("x_response"))),
-                safeTrim(asString(safePayload.get("response")))
-        );
-        String payloadCodResponse = firstNotBlank(
-                safeTrim(asString(safePayload.get("x_cod_response"))),
-                safeTrim(asString(safePayload.get("codResponse")))
-        );
-        String payloadReason = firstNotBlank(
-                safeTrim(asString(safePayload.get("x_response_reason_text"))),
-                safeTrim(asString(safePayload.get("reason"))),
-                safeTrim(asString(safePayload.get("message")))
-        );
-        boolean approvedByPayload = asBoolean(safePayload.get("paymentApproved"), false)
-                || resolvePaymentUserStatus(payloadStatus, payloadCodResponse, payloadReason) == PaymentUserStatus.APPROVED;
+    String payloadStatus = firstNotBlank(
+            safeTrim(asString(safePayload.get("status"))),
+            safeTrim(asString(safePayload.get("paymentStatus"))),
+            safeTrim(asString(safePayload.get("x_response"))),
+            safeTrim(asString(safePayload.get("response")))
+    );
+    String payloadCodResponse = firstNotBlank(
+            safeTrim(asString(safePayload.get("x_cod_response"))),
+            safeTrim(asString(safePayload.get("codResponse")))
+    );
+    String payloadReason = firstNotBlank(
+            safeTrim(asString(safePayload.get("x_response_reason_text"))),
+            safeTrim(asString(safePayload.get("reason"))),
+            safeTrim(asString(safePayload.get("message")))
+    );
 
-        if (!StringUtils.hasText(refPayco) && !approvedByPayload) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "status", "ERROR",
-                    "message", "ref_payco es requerido o debes enviar estado aprobado en payload"
-            ));
-        }
+    boolean approvedByPayload = asBoolean(safePayload.get("paymentApproved"), false)
+            || resolvePaymentUserStatus(payloadStatus, payloadCodResponse, payloadReason) == PaymentUserStatus.APPROVED;
 
-        Map<String, Object> summary;
-        String statusSource = "epayco";
-        if (StringUtils.hasText(refPayco)) {
-            try {
-                String rawData = epaycoService.fetchTransactionByRefPayco(refPayco);
-                summary = new LinkedHashMap<>(buildUserPaymentSummary(refPayco, rawData, documentHint));
-            } catch (Exception ex) {
-                if (!approvedByPayload) {
-                    log.error("responseSync no pudo consultar ePayco ref={}: {}", refPayco, ex.getMessage(), ex);
-                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
-                            "status", "ERROR",
-                            "reference", refPayco,
-                            "message", "No fue posible consultar ePayco"
-                    ));
-                }
-                log.warn("responseSync usara payload aprobado por falla temporal consultando ePayco. ref={} err={}",
-                        refPayco, ex.getMessage());
-                summary = buildSyncSummaryFromPayload(refPayco, safePayload, documentHint, emailHint);
-                statusSource = "payload_fallback";
-            }
-        } else {
-            summary = buildSyncSummaryFromPayload(refPayco, safePayload, documentHint, emailHint);
-            statusSource = "payload_only";
-        }
-
-        String status = safeTrim(asString(summary.get("status")));
-        if (!"APPROVED".equalsIgnoreCase(status) && approvedByPayload) {
-            status = PaymentUserStatus.APPROVED.code;
-            summary.put("status", status);
-            summary.putIfAbsent("title", PaymentUserStatus.APPROVED.title);
-            summary.putIfAbsent("nextStep", PaymentUserStatus.APPROVED.nextStep);
-            if (!StringUtils.hasText(safeTrim(asString(summary.get("message"))))) {
-                summary.put("message", PaymentUserStatus.APPROVED.defaultMessage);
-            }
-        }
-
-        Map<String, Object> out = new LinkedHashMap<>(summary);
-        boolean chatbotSynced = false;
-        if ("APPROVED".equalsIgnoreCase(status)) {
-            chatbotSynced = syncApprovedPaymentToFlow(summary, safePayload, documentHint, emailHint);
-        }
-        out.put("chatbotSynced", chatbotSynced);
-        out.put("approvedByPayload", approvedByPayload);
-        out.put("syncSource", "response_page");
-        out.put("statusSource", statusSource);
-        out.put("syncAt", ZonedDateTime.now(ZoneId.of("America/Bogota"))
-                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z")));
-        return ResponseEntity.ok(out);
+    if (!StringUtils.hasText(refPayco) && !approvedByPayload) {
+        return ResponseEntity.badRequest().body(Map.of(
+                "status", "ERROR",
+                "message", "ref_payco es requerido o debes enviar estado aprobado en payload"
+        ));
     }
+
+    Map<String, Object> summary;
+    String statusSource = "epayco";
+
+    if (StringUtils.hasText(refPayco)) {
+        try {
+            String rawData = epaycoService.fetchTransactionByRefPayco(refPayco);
+            summary = new LinkedHashMap<>(buildUserPaymentSummary(refPayco, rawData, documentHint));
+        } catch (Exception ex) {
+            if (!approvedByPayload) {
+                log.error("responseSync no pudo consultar ePayco ref={}: {}", refPayco, ex.getMessage(), ex);
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                        "status", "ERROR",
+                        "reference", refPayco,
+                        "message", "No fue posible consultar ePayco"
+                ));
+            }
+            log.warn("responseSync usara payload aprobado por falla temporal consultando ePayco. ref={} err={}",
+                    refPayco, ex.getMessage());
+            summary = buildSyncSummaryFromPayload(refPayco, safePayload, documentHint, emailHint);
+            statusSource = "payload_fallback";
+        }
+    } else {
+        summary = buildSyncSummaryFromPayload(refPayco, safePayload, documentHint, emailHint);
+        statusSource = "payload_only";
+    }
+
+    String status = safeTrim(asString(summary.get("status")));
+    if (!"APPROVED".equalsIgnoreCase(status) && approvedByPayload) {
+        status = PaymentUserStatus.APPROVED.code;
+        summary.put("status", status);
+        summary.put("title", PaymentUserStatus.APPROVED.title);
+        summary.put("message", PaymentUserStatus.APPROVED.defaultMessage);
+        summary.put("nextStep", PaymentUserStatus.APPROVED.nextStep);
+    }
+
+    Map<String, Object> out = new LinkedHashMap<>(summary);
+    boolean chatbotSynced = false;
+
+    if ("APPROVED".equalsIgnoreCase(status)) {
+        chatbotSynced = syncApprovedPaymentToFlow(summary, safePayload, documentHint, emailHint);
+
+        String finalDocument = firstNotBlank(
+                safeTrim(asString(summary.get("document"))),
+                safeTrim(asString(safePayload.get("document"))),
+                safeTrim(asString(safePayload.get("x_extra1"))),
+                safeTrim(documentHint)
+        );
+
+        if (StringUtils.hasText(finalDocument)) {
+            chatbotProcesoService.findProcesoByDocumento(finalDocument).ifPresent(p -> {
+                out.put("flowStatus", safeTrim(p.getFlowStatus()));
+                out.put("paymentStatus", safeTrim(p.getPaymentStatus()));
+                out.put("document", safeTrim(p.getNumeroDocumento()));
+                out.put("email", firstNotBlank(safeTrim(p.getEmail()), safeTrim(asString(out.get("email")))));
+                if (StringUtils.hasText(safeTrim(p.getContractLink()))) {
+                    out.put("contractLink", safeTrim(p.getContractLink()));
+                    out.put("nextStep",
+                            "Tu pago fue aprobado. Continúa con la contratación en este enlace: " + safeTrim(p.getContractLink()));
+                }
+            });
+        }
+    }
+
+    out.put("status", status);
+    out.put("chatbotSynced", chatbotSynced);
+    out.put("approvedByPayload", approvedByPayload);
+    out.put("syncSource", "response_page");
+    out.put("statusSource", statusSource);
+    out.put("syncAt", ZonedDateTime.now(ZoneId.of("America/Bogota"))
+            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z")));
+
+    return ResponseEntity.ok(out);
+}
 
     private boolean syncApprovedPaymentToFlow(Map<String, Object> summary,
                                              Map<String, Object> payload,
@@ -1109,6 +1134,10 @@ public ResponseEntity<?> confirmation(@RequestBody MultiValueMap<String, String>
                 + URLEncoder.encode(key, StandardCharsets.UTF_8)
                 + "="
                 + URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private Map<String, Object> mutableMap(Map<String, Object> source) {
+        return source == null ? new LinkedHashMap<>() : new LinkedHashMap<>(source);
     }
 
     private String asString(Object value) {

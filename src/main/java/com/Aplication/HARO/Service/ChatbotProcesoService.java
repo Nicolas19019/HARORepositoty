@@ -77,8 +77,8 @@ public class ChatbotProcesoService {
     @Value("${chatbot.payment.link.a2b1c1:${chatbot.payment.link}}")
     private String paymentLinkA2B1C1;
 
-    @Value("${chatbot.payment.confirmation-url:https://ceaharo.com/confirmation}")
-    private String paymentConfirmationUrl;
+    @Value("${chatbot.payment.confirmation-url:https://harorepositoty2-590358146556.europe-west1.run.app/confirmation}")
+private String paymentConfirmationUrl;
 
     @Value("${chatbot.payment.return-url:https://ceaharo.com/respuesta.html}")
     private String paymentReturnUrl;
@@ -192,10 +192,10 @@ public class ChatbotProcesoService {
     }
 
     public ChatbotMatriculaProceso markPaymentPending(String documento) {
-
     ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
 
     p.setPaymentStatus("PENDING");
+    p.setExpectedAmount(resolveExpectedAmount(p));
     p.setFlowStatus("PENDING_PAYMENT");
     p.setPaymentLink(buildPaymentLink(p));
 
@@ -672,27 +672,35 @@ public class ChatbotProcesoService {
     }
 
     private String buildPaymentLink(ChatbotMatriculaProceso proceso) {
-        String base = trim(resolvePaymentBaseLink(proceso));
-        if (base.isBlank()) {
-            return "";
-        }
-
-        boolean paycoHostedLink = isPaycoHostedLink(base);
-        BigDecimal expectedAmount = safeAmount(resolveExpectedAmount(proceso));
-        String confirmationParam = normalizeCallbackParam(paymentConfirmationParam, "confirmation");
-        String responseParam = normalizeCallbackParam(paymentReturnParam, "response");
-
-        String link = base;
-        link = appendQueryParam(link, paymentDocumentParam, proceso == null ? null : proceso.getNumeroDocumento());
-        link = appendQueryParam(link, paymentEmailParam, proceso == null ? null : proceso.getEmail());
-        // payco.link ya tiene valor configurado en el link; no forzar montos 0 o incompatibles.
-        if (!paycoHostedLink && expectedAmount.signum() > 0) {
-            link = appendQueryParam(link, paymentAmountParam, expectedAmount.toPlainString());
-        }
-        link = appendQueryParam(link, confirmationParam, paymentConfirmationUrl);
-        link = appendQueryParam(link, responseParam, paymentReturnUrl);
-        return link;
+    String base = trim(resolvePaymentBaseLink(proceso));
+    if (base.isBlank()) {
+        return "";
     }
+
+    boolean paycoHostedLink = isPaycoHostedLink(base);
+    BigDecimal expectedAmount = safeAmount(resolveExpectedAmount(proceso));
+    String confirmationParam = normalizeCallbackParam(paymentConfirmationParam, "confirmation");
+    String responseParam = normalizeCallbackParam(paymentReturnParam, "response");
+
+    String link = base;
+    link = appendQueryParam(link, paymentDocumentParam, proceso == null ? null : proceso.getNumeroDocumento());
+    link = appendQueryParam(link, paymentEmailParam, proceso == null ? null : proceso.getEmail());
+
+    if (!paycoHostedLink && expectedAmount.signum() > 0) {
+        link = appendQueryParam(link, paymentAmountParam, expectedAmount.toPlainString());
+    }
+
+    link = appendQueryParam(link, confirmationParam, paymentConfirmationUrl);
+    link = appendQueryParam(link, responseParam, paymentReturnUrl);
+
+    log.info("🔗 LINK PAGO generado doc={} confirmation={} response={} link={}",
+            proceso != null ? proceso.getNumeroDocumento() : null,
+            paymentConfirmationUrl,
+            paymentReturnUrl,
+            link);
+
+    return link;
+}
 
     private String resolvePaymentBaseLink(ChatbotMatriculaProceso proceso) {
         if (proceso == null) {

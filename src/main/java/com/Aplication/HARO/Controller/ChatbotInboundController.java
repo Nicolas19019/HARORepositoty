@@ -32,7 +32,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.text.Normalizer;
+
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -108,14 +108,14 @@ public class ChatbotInboundController {
         this.waService = waService;
     }
 
-    public record InboundMessage(
-            String from,
-            String text,
-            String messageId,
-            String timestamp,
-            String phoneNumberId
-    ) {}
-
+   public record InboundMessage(
+        String from,
+        String text,
+        String messageId,
+        String timestamp,
+        String phoneNumberId,
+        Boolean newConversation
+) {}
     public record BotAction(
             String type,
             String body,
@@ -202,8 +202,18 @@ public class ChatbotInboundController {
             )));
         }
 
+        boolean newConversation = msg != null && Boolean.TRUE.equals(msg.newConversation());
+        if (newConversation) {
+            sessions.remove(from);
+            log.info("NEW CONVERSATION RESET -> from={}", maskPhone(from));
+        }
+
         SessionData session = sessions.computeIfAbsent(from, k -> new SessionData());
-        log.debug("CHATBOT INBOUND from={} state={} textLength={}", maskPhone(from), session.state, rawText.length());
+        log.debug("CHATBOT INBOUND from={} state={} textLength={} newConversation={}",
+                maskPhone(from),
+                session.state,
+                rawText.length(),
+                newConversation);
 
         List<BotAction> actions = new ArrayList<>();
 
@@ -294,7 +304,10 @@ public class ChatbotInboundController {
                 case STUDENT_BOOKING_SLOT -> handleStudentBookingSlot(rawText, session, actions);
                 case STUDENT_CANCEL_CLASS_PICK -> handleStudentCancelClassPick(text, session, actions);
 
-                case DONE -> actions.add(textMsg("✅ Tu proceso ya fue completado.\n\nEscribe MENU para volver al inicio."));
+                case DONE -> {
+                sessions.remove(from);
+                actions.add(textMsg("✅ Tu proceso ya fue completado.\n\nEscribe *MENU* para iniciar una nueva solicitud."));
+            }
             }
 
             session.lastSeen = now;
@@ -620,72 +633,62 @@ public class ChatbotInboundController {
 
         private void handlePaymentWait(String text, SessionData session, List<BotAction> actions) {
 
-        switch (text) {
+    switch (text) {
 
-            case "pendiente" -> {
-                actions.add(textMsg(
-                        "⏳ Tu pago aparece como *PENDIENTE*.\n\n" +
-                        "Esto puede tardar unos minutos dependiendo del banco.\n\n" +
-                        "🔁 Si necesitas el enlace nuevamente escribe *LINK*."
-                ));
-                actions.add(textMsg("Opciones: MENU"));
-            }
+        case "pendiente" -> {
+            actions.add(textMsg(
+                    "⏳ Tu pago aparece como *PENDIENTE*.\n\n" +
+                    "Esto puede tardar unos minutos dependiendo del banco.\n\n" +
+                    "🔁 Si necesitas el enlace nuevamente escribe *LINK*."
+            ));
+            actions.add(textMsg("Opciones: MENU"));
+        }
 
-            case "aprobado" -> {
-                actions.add(textMsg(
-                        "🔐 Por seguridad el pago no se valida por mensaje.\n\n" +
-                        "La confirmación se realiza automáticamente con la pasarela de pago.\n\n" +
-                        "Cuando el pago se confirme recibirás el siguiente paso en este chat."
-                ));
-                actions.add(textMsg("Opciones: MENU"));
-            }
+        case "aprobado" -> {
+            actions.add(textMsg(
+                    "🔐 Por seguridad, el pago no se valida por mensaje.\n\n" +
+                    "La confirmación se realiza automáticamente con la pasarela de pago.\n\n" +
+                    "Cuando el pago se confirme recibirás el siguiente paso en este chat."
+            ));
+            actions.add(textMsg("Opciones: MENU"));
+        }
 
-            case "ya pague", "ya pagué", "pague", "pagué" -> {
+        case "ya pague", "ya pagué", "pague", "pagué" -> {
+            actions.add(textMsg(
+                    "✅ Perfecto.\n\n" +
+                    "Estamos validando tu pago con la pasarela.\n\n" +
+                    "📩 Cuando el pago sea confirmado te enviaremos el enlace para continuar con la firma del contrato."
+            ));
+            actions.add(textMsg("Opciones: MENU"));
+        }
 
-                actions.add(textMsg(
-                        "✅ Perfecto.\n\n" +
-                        "Estamos validando tu pago con la pasarela.\n\n" +
-                        "📩 Cuando el pago sea confirmado te enviaremos el enlace para continuar con la firma del contrato."
-                ));
-
-                actions.add(textMsg("Opciones: MENU"));
-            }
-
-            case "link", "pagar" -> {
-
-                try {
-
-                    String link = procesoService.getPaymentLink(session.documento);
-
-                    actions.add(textMsg(
-                            "💳 *Enlace de pago*\n\n" +
-                            link + "\n\n" +
-                            "Después de pagar vuelve a este chat."
-                    ));
-
-                } catch (Exception e) {
-
-                    actions.add(textMsg(
-                            "⚠️ No pude encontrar el enlace de pago para este proceso."
-                    ));
-                }
-
-                actions.add(textMsg("Opciones: MENU"));
-            }
-
-            default -> {
+        case "link", "pagar" -> {
+            try {
+                String link = procesoService.getPaymentLink(session.documento);
 
                 actions.add(textMsg(
-                        "💳 Estamos esperando la confirmación de tu pago.\n\n" +
-                        "Puedes escribir:\n" +
-                        "🔹 *LINK* para ver el enlace de pago\n" +
-                        "🔹 *YA PAGUÉ* si ya realizaste el pago"
+                        "💳 *Enlace de pago*\n\n" +
+                        link + "\n\n" +
+                        "Después de pagar vuelve a este chat."
                 ));
-
-                actions.add(textMsg("Opciones: MENU | TERMINAR"));
+            } catch (Exception e) {
+                actions.add(textMsg("⚠️ No pude encontrar el enlace de pago para este proceso."));
             }
+
+            actions.add(textMsg("Opciones: MENU"));
+        }
+
+        default -> {
+            actions.add(textMsg(
+                    "💳 Estamos esperando la confirmación de tu pago.\n\n" +
+                    "Puedes escribir:\n" +
+                    "🔹 *LINK* para ver el enlace de pago\n" +
+                    "🔹 *YA PAGUÉ* si ya realizaste el pago"
+            ));
+            actions.add(textMsg("Opciones: MENU | TERMINAR"));
         }
     }
+}
 
     private String paymentFlowInfo() {
         String confirmation = safe(procesoService.getPaymentConfirmationUrl());
@@ -800,94 +803,72 @@ public class ChatbotInboundController {
 
         private void handleContractWait(String from, String text, SessionData session, List<BotAction> actions) {
 
-        switch (text) {
+    switch (text) {
 
-            case "listo", "firmado", "hecho" -> {
+        case "listo", "firmado", "hecho" -> {
+            try {
+                boolean signed = procesoService.isContractSigned(session.documento);
 
-                try {
-
-                    boolean signed = procesoService.isContractSigned(session.documento);
-
-                    if (!signed) {
-
-                        actions.add(textMsg(
-                                "⏳ Aún no vemos el contrato firmado.\n\n" +
-                                "1️⃣ Abre el enlace del contrato\n" +
-                                "2️⃣ Firma el documento\n" +
-                                "3️⃣ Luego escribe *LISTO* nuevamente."
-                        ));
-
-                        actions.add(textMsg("Opciones: MENU"));
-                        return;
-                    }
-
-                    session.state = ChatState.SEDE_SELECTION;
-
+                if (!signed) {
                     actions.add(textMsg(
-                            "✅ Contrato validado correctamente.\n\n" +
-                            "Ahora selecciona tu sede:\n\n" +
-                            "1️⃣ Kennedy\n" +
-                            "2️⃣ CC El Edén"
+                            "⏳ Aún no vemos el contrato firmado.\n\n" +
+                            "1️⃣ Abre el enlace del contrato\n" +
+                            "2️⃣ Firma el documento\n" +
+                            "3️⃣ Luego escribe *LISTO* nuevamente."
                     ));
-
                     actions.add(textMsg("Opciones: MENU"));
-
-                } catch (Exception e) {
-
-                    actions.add(textMsg(
-                            "⚠️ No pude validar el contrato.\n\n" +
-                            "Detalle: " + e.getMessage()
-                    ));
-
-                    actions.add(textMsg("Opciones: MENU"));
+                    return;
                 }
-            }
 
-            case "link", "contrato", "contratos" -> {
-
-                try {
-
-                    Optional<ChatbotMatriculaProceso> proceso =
-                            procesoService.findProcesoByDocumento(session.documento);
-
-                    String link = proceso.map(ChatbotMatriculaProceso::getContractLink).orElse("");
-
-                    if (link == null || link.isBlank()) {
-
-                        actions.add(textMsg(
-                                "⚠️ Aún no hay un enlace de contrato disponible."
-                        ));
-
-                    } else {
-
-                        actions.add(textMsg(
-                                "📄 *Enlace de contrato*\n\n" + link
-                        ));
-                    }
-
-                    actions.add(textMsg("Opciones: MENU"));
-
-                } catch (Exception e) {
-
-                    actions.add(textMsg(
-                            "⚠️ No pude obtener el enlace del contrato."
-                    ));
-
-                    actions.add(textMsg("Opciones: MENU"));
-                }
-            }
-
-            default -> {
+                session.state = ChatState.SEDE_SELECTION;
 
                 actions.add(textMsg(
-                        "📄 Debes completar la firma del contrato.\n\n" +
-                        "Cuando termines escribe *LISTO*."
+                        "✅ Contrato validado correctamente.\n\n" +
+                        "Ahora selecciona tu sede:\n\n" +
+                        "1️⃣ Kennedy\n" +
+                        "2️⃣ CC El Edén"
                 ));
+                actions.add(textMsg("Opciones: MENU"));
 
+            } catch (Exception e) {
+                actions.add(textMsg(
+                        "⚠️ No pude validar el contrato.\n\n" +
+                        "Detalle: " + e.getMessage()
+                ));
                 actions.add(textMsg("Opciones: MENU"));
             }
         }
+
+        case "link", "contrato", "contratos" -> {
+            try {
+                Optional<ChatbotMatriculaProceso> proceso =
+                        procesoService.findProcesoByDocumento(session.documento);
+
+                String link = proceso.map(ChatbotMatriculaProceso::getContractLink).orElse("");
+
+                if (link == null || link.isBlank()) {
+                    actions.add(textMsg("⚠️ Aún no hay un enlace de contrato disponible."));
+                } else {
+                    actions.add(textMsg("📄 *Enlace de contrato*\n\n" + link));
+                }
+
+                actions.add(textMsg("Opciones: MENU"));
+
+            } catch (Exception e) {
+                actions.add(textMsg("⚠️ No pude obtener el enlace del contrato."));
+                actions.add(textMsg("Opciones: MENU"));
+            }
+        }
+
+        default -> {
+            actions.add(textMsg(
+                    "📄 Debes completar la firma del contrato.\n\n" +
+                    "Cuando termines escribe *LISTO*."
+            ));
+            actions.add(textMsg("Opciones: MENU"));
+        }
     }
+}
 
     private String resolveSedeSelection(String text) {
         String t = normalizeInput(text);

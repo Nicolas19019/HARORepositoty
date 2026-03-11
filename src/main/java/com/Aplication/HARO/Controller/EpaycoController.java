@@ -1,22 +1,5 @@
 package com.Aplication.HARO.Controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
-import com.Aplication.HARO.Service.ChatbotProcesoService;
-import com.Aplication.HARO.Service.EpaycoService;
-import com.Aplication.HARO.Service.VerificationService;
-import com.Aplication.HARO.Service.WhatsAppTemplateService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.util.MultiValueMap;
-import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.*;
-
 import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -29,6 +12,30 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.MultiValueMap;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
+import com.Aplication.HARO.Service.ChatbotProcesoService;
+import com.Aplication.HARO.Service.EpaycoService;
+import com.Aplication.HARO.Service.VerificationService;
+import com.Aplication.HARO.Service.WhatsAppTemplateService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @RestController
 @CrossOrigin(originPatterns = {
@@ -372,9 +379,7 @@ public class EpaycoController {
         }
 
         if (status == PaymentUserStatus.APPROVED && StringUtils.hasText(xDocumento)) {
-            // Refuerza continuidad del flujo aunque el webhook se retrase.
-            processApprovedPayment(xDocumento, xAmount);
-            procesoOpt = chatbotProcesoService.findProcesoByDocumento(xDocumento);
+        procesoOpt = chatbotProcesoService.findProcesoByDocumento(xDocumento);
         }
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -773,21 +778,35 @@ public ResponseEntity<?> confirmation(@RequestBody MultiValueMap<String, String>
     String xSignature = form.getFirst("x_signature");
     String xDocumento = form.getFirst("x_extra1");
     String estado = form.getFirst("x_response");
+    String xReason = form.getFirst("x_response_reason_text");
 
     boolean signatureOk =
             epaycoService.isValidSignature(xRefPayco, xTransactionId, xAmount, xCurrencyCode, xSignature);
 
     if (!signatureOk) {
-
-        log.warn("Firma inválida en confirmación ePayco ref={}", xRefPayco);
-        return ResponseEntity.badRequest().build();
+        log.warn("Firma inválida en confirmación ePayco ref={} doc={}", xRefPayco, xDocumento);
+        return ResponseEntity.badRequest().body(Map.of("error", "Firma invalida"));
     }
 
     if (isApproved(estado, xCodResponse)) {
-
-        log.info("💰 Pago aprobado doc={} ref={}", xDocumento, xRefPayco);
-
+        log.info("💰 Pago aprobado doc={} ref={} amount={}", xDocumento, xRefPayco, xAmount);
         processApprovedPayment(xDocumento, xAmount);
+
+    } else if (isCancelled(estado, xCodResponse)) {
+        log.info("❌ Pago cancelado doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
+        processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.CANCELLED);
+
+    } else if (isRejected(estado, xCodResponse)) {
+        log.info("🚫 Pago rechazado doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
+        processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.REJECTED);
+
+    } else if (isPending(estado, xCodResponse, xReason)) {
+        log.info("⏳ Pago pendiente doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
+        processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.PENDING);
+
+    } else {
+        log.info("ℹ️ Estado no reconocido en confirmación doc={} ref={} cod={} estado={}",
+                xDocumento, xRefPayco, xCodResponse, estado);
     }
 
     return ResponseEntity.ok(Map.of("status", "ok"));
@@ -852,7 +871,15 @@ public ResponseEntity<?> confirmation(@RequestBody MultiValueMap<String, String>
         String phone = safeTrim(current.getPhone());
         if (!StringUtils.hasText(phone) || !StringUtils.hasText(contractLink)) {
             log.warn("Pago aprobado doc={} sin telefono/link para notificar. phonePresent={} linkPresent={}",
-                    documento, StringUtils.hasText(phone), StringUtils.hasText(contractLink));
+                documento, StringUtils.hasText(phone), StringUtils.hasText(contractLink));
+            return;
+        }
+
+        log.info("📲 Preparando envío por WhatsApp doc={} to={} contractLinkPresent={}",
+            documento, maskPhone(phone), StringUtils.hasText(contractLink));
+
+        if (!waService.getConfigStatus().ready()) {
+            log.warn("Pago aprobado doc={} pero WhatsApp no esta listo: {}", documento, waService.getConfigStatus().message());
             return;
         }
 

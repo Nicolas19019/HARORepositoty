@@ -106,7 +106,7 @@ public class EpaycoController {
      * - ref_payco | refPayco
      * - document | x_extra1
      */
-    @PostMapping(value = {"/response/sync", "/epayco/response/sync"}, consumes = MediaType.APPLICATION_JSON_VALUE)
+   @PostMapping(value = {"/response/sync", "/epayco/response/sync"}, consumes = MediaType.APPLICATION_JSON_VALUE)
 public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) {
     Map<String, Object> safePayload = payload == null ? Map.of() : payload;
 
@@ -930,7 +930,7 @@ public ResponseEntity<?> confirmation(@RequestBody MultiValueMap<String, String>
             return;
         }
 
-        try {
+       try {
             String msg = buildApprovedPaymentMessage(contractLink, customMessageTextRaw, customMessageTemplateRaw);
             waService.sendTextMessage(phone, msg);
             log.info("Enlace de contrato enviado por WhatsApp doc={} to={}", documento, maskPhone(phone));

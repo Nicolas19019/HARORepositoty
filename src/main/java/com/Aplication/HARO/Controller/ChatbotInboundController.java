@@ -633,8 +633,17 @@ public class ChatbotInboundController {
 
         private void handlePaymentWait(String text, SessionData session, List<BotAction> actions) {
 
+        if (text == null) {
+            log.warn("valio verga");
+            log.info(text);   
+        }else {
+            log.warn("no valio verga");
+            log.info(text);   
+        }    
+        
     switch (text) {
 
+       
         case "pendiente" -> {
             actions.add(textMsg(
                     "⏳ Tu pago aparece como *PENDIENTE*.\n\n" +

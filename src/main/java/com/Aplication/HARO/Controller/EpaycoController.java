@@ -809,58 +809,58 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     }
 
     // URL de confirmacion (Webhook ePayco)
-    @PostMapping(value = {"/confirmation", "/epayco/confirmation"}, consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-public ResponseEntity<?> confirmation(@RequestBody MultiValueMap<String, String> form) {
+   @PostMapping(value = {"/confirmation", "/epayco/confirmation"}, consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    public ResponseEntity<?> confirmation(@RequestBody MultiValueMap<String, String> form) {
 
-    String xRefPayco = form.getFirst("x_ref_payco");
-    String xTransactionId = form.getFirst("x_transaction_id");
-    String xAmount = form.getFirst("x_amount");
-    String xCurrencyCode = form.getFirst("x_currency_code");
-    String xCodResponse = form.getFirst("x_cod_response");
-    String xSignature = form.getFirst("x_signature");
-    String xDocumento = form.getFirst("x_extra1");
-    String estado = form.getFirst("x_response");
-    String xReason = form.getFirst("x_response_reason_text");
+        String xRefPayco = form.getFirst("x_ref_payco");
+        String xTransactionId = form.getFirst("x_transaction_id");
+        String xAmount = form.getFirst("x_amount");
+        String xCurrencyCode = form.getFirst("x_currency_code");
+        String xCodResponse = form.getFirst("x_cod_response");
+        String xSignature = form.getFirst("x_signature");
+        String xDocumento = form.getFirst("x_extra1");
+        String estado = form.getFirst("x_response");
+        String xReason = form.getFirst("x_response_reason_text");
 
-    boolean signatureOk =
-            epaycoService.isValidSignature(xRefPayco, xTransactionId, xAmount, xCurrencyCode, xSignature);
+        log.info("CONFIRM webhook ref={} trx={} doc={} cod={} estado={} amount={}",
+                xRefPayco, xTransactionId, xDocumento, xCodResponse, estado, xAmount);
 
-    if (!signatureOk) {
-        log.warn("Firma inválida en confirmación ePayco ref={} doc={}", xRefPayco, xDocumento);
-        return ResponseEntity.badRequest().body(Map.of("error", "Firma invalida"));
+        boolean signatureOk =
+                epaycoService.isValidSignature(xRefPayco, xTransactionId, xAmount, xCurrencyCode, xSignature);
+
+        if (!signatureOk) {
+            log.warn("Firma inválida en confirmación ePayco ref={} doc={}", xRefPayco, xDocumento);
+            return ResponseEntity.badRequest().body(Map.of("error", "Firma invalida"));
+        }
+
+        if (isApproved(estado, xCodResponse)) {
+            log.info("💰 Pago aprobado doc={} ref={} amount={}", xDocumento, xRefPayco, xAmount);
+            processApprovedPayment(xDocumento, xAmount);
+
+        } else if (isCancelled(estado, xCodResponse)) {
+            log.info("❌ Pago cancelado doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
+            processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.CANCELLED);
+
+        } else if (isRejected(estado, xCodResponse)) {
+            log.info("🚫 Pago rechazado doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
+            processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.REJECTED);
+
+        } else if (isPending(estado, xCodResponse, xReason)) {
+            log.info("⏳ Pago pendiente doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
+            processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.PENDING);
+
+        } else {
+            log.info("ℹ️ Estado no reconocido en confirmación doc={} ref={} cod={} estado={}",
+                    xDocumento, xRefPayco, xCodResponse, estado);
+        }
+
+        return ResponseEntity.ok(Map.of("status", "ok"));
     }
-
-    if (isApproved(estado, xCodResponse)) {
-        log.info("💰 Pago aprobado doc={} ref={} amount={}", xDocumento, xRefPayco, xAmount);
-        processApprovedPayment(xDocumento, xAmount);
-
-    } else if (isCancelled(estado, xCodResponse)) {
-        log.info("❌ Pago cancelado doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
-        processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.CANCELLED);
-
-    } else if (isRejected(estado, xCodResponse)) {
-        log.info("🚫 Pago rechazado doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
-        processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.REJECTED);
-
-    } else if (isPending(estado, xCodResponse, xReason)) {
-        log.info("⏳ Pago pendiente doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
-        processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.PENDING);
-
-    } else {
-        log.info("ℹ️ Estado no reconocido en confirmación doc={} ref={} cod={} estado={}",
-                xDocumento, xRefPayco, xCodResponse, estado);
-    }
-
-    return ResponseEntity.ok(Map.of("status", "ok"));
-}
 
     private void processApprovedPayment(String documentoRaw, String amountRaw) {
         processApprovedPayment(documentoRaw, parseAmountOrNull(amountRaw), true, false, "", "");
     }
 
-    private void processApprovedPayment(String documentoRaw, BigDecimal amount) {
-        processApprovedPayment(documentoRaw, amount, true, false, "", "");
-    }
 
     private void processApprovedPayment(String documentoRaw,
                                         BigDecimal amount,
@@ -913,12 +913,12 @@ public ResponseEntity<?> confirmation(@RequestBody MultiValueMap<String, String>
         String phone = safeTrim(current.getPhone());
         if (!StringUtils.hasText(phone) || !StringUtils.hasText(contractLink)) {
             log.warn("Pago aprobado doc={} sin telefono/link para notificar. phonePresent={} linkPresent={}",
-                documento, StringUtils.hasText(phone), StringUtils.hasText(contractLink));
+                    documento, StringUtils.hasText(phone), StringUtils.hasText(contractLink));
             return;
         }
 
         log.info("📲 Preparando envío por WhatsApp doc={} to={} contractLinkPresent={}",
-            documento, maskPhone(phone), StringUtils.hasText(contractLink));
+                documento, maskPhone(phone), StringUtils.hasText(contractLink));
 
         if (!waService.getConfigStatus().ready()) {
             log.warn("Pago aprobado doc={} pero WhatsApp no esta listo: {}", documento, waService.getConfigStatus().message());

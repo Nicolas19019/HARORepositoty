@@ -761,12 +761,20 @@ private String paymentConfirmationUrl;
 
         String documento = trim(proceso.getNumeroDocumento());
         String email = trim(proceso.getEmail()).toLowerCase(Locale.ROOT);
+        String phone = trim(proceso.getPhone());
+        if (phone.isBlank()) {
+            phone = trim(proceso.getTelefono());
+        }
 
         // Llaves redundantes para maximizar compatibilidad entre front/back.
         out = appendQueryParam(out, "document", documento);
         out = appendQueryParam(out, "x_extra1", documento);
         out = appendQueryParam(out, "email", email);
         out = appendQueryParam(out, "customer_email", email);
+        out = appendQueryParam(out, "phone", phone);
+        out = appendQueryParam(out, "customer_phone", phone);
+        out = appendQueryParam(out, "x_customer_phone", phone);
+        out = appendQueryParam(out, "x_customer_mobile", phone);
         return out;
     }
 

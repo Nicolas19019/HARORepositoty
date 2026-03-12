@@ -311,6 +311,15 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(asString(safePayload.get("customer_email"))),
                 safeTrim(asString(safePayload.get("x_customer_email")))
         );
+        String customerPhoneRaw = firstNotBlank(
+                safeTrim(asString(summary.get("phone"))),
+                safeTrim(asString(summary.get("customerPhone"))),
+                safeTrim(asString(safePayload.get("phone"))),
+                safeTrim(asString(safePayload.get("customer_phone"))),
+                safeTrim(asString(safePayload.get("x_customer_phone"))),
+                safeTrim(asString(safePayload.get("x_customer_mobile"))),
+                safeTrim(asString(safePayload.get("x_customer_movil")))
+        );
 
         if (StringUtils.hasText(documento)) {
             try {
@@ -364,6 +373,11 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 }
             }
 
+            Optional<SyncDecision> byPhone = trySyncByPhone(summary, safePayload, amount, customerPhoneRaw);
+            if (byPhone.isPresent()) {
+                return byPhone.get();
+            }
+
             log.warn("Sync pago aprobado sin identificadores resolubles. docRaw={} emailRaw={} reference={} gatewayRef={} invoice={}",
                     customerDocRaw,
                     customerEmailRaw,
@@ -377,6 +391,10 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         try {
             Optional<ChatbotMatriculaProceso> proceso = chatbotProcesoService.findLatestProcesoByEmail(email);
             if (proceso.isEmpty()) {
+                Optional<SyncDecision> byPhone = trySyncByPhone(summary, safePayload, amount, customerPhoneRaw);
+                if (byPhone.isPresent()) {
+                    return byPhone.get();
+                }
                 log.info("No se pudo resolver proceso por email para sync de pago. email={}", email);
                 return new SyncDecision(false, "process_not_found_by_email", "email");
             }
@@ -394,6 +412,47 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         } catch (Exception ex) {
             log.error("No fue posible sincronizar pago aprobado por email. email={}: {}", email, ex.getMessage(), ex);
             return new SyncDecision(false, "error_processing_by_email", "email");
+        }
+    }
+
+    private Optional<SyncDecision> trySyncByPhone(Map<String, Object> summary,
+                                                  Map<String, Object> safePayload,
+                                                  BigDecimal amount,
+                                                  String customerPhoneRaw) {
+        String phone = sanitizePhoneCandidate(firstNotBlank(
+                safeTrim(asString(summary.get("phone"))),
+                safeTrim(asString(summary.get("customerPhone"))),
+                safeTrim(asString(safePayload.get("phone"))),
+                safeTrim(asString(safePayload.get("customer_phone"))),
+                safeTrim(asString(safePayload.get("x_customer_phone"))),
+                safeTrim(asString(safePayload.get("x_customer_mobile"))),
+                safeTrim(asString(safePayload.get("x_customer_movil"))),
+                safeTrim(customerPhoneRaw)
+        ));
+        if (!StringUtils.hasText(phone)) {
+            return Optional.empty();
+        }
+        try {
+            Optional<ChatbotMatriculaProceso> proceso = chatbotProcesoService.findLatestProcesoByPhone(phone);
+            if (proceso.isEmpty()) {
+                log.info("No se pudo resolver proceso por phone para sync de pago. phone={}", maskPhone(phone));
+                return Optional.of(new SyncDecision(false, "process_not_found_by_phone", "phone"));
+            }
+
+            String fromPhoneDoc = safeTrim(proceso.get().getNumeroDocumento());
+            if (!StringUtils.hasText(fromPhoneDoc)) {
+                return Optional.of(new SyncDecision(false, "process_without_document_by_phone", "phone"));
+            }
+
+            PaymentApprovalService.ApprovalResult approval =
+                    paymentApprovalService.handleApprovedPayment(fromPhoneDoc, amount);
+            applyApprovalResultToSummary(summary, approval, fromPhoneDoc, safeTrim(proceso.get().getEmail()));
+            summary.put("phone", phone);
+            boolean synced = approval.whatsappSent() || approval.duplicate();
+            return Optional.of(new SyncDecision(synced, synced ? "processed_by_phone" : "processed_by_phone_without_whatsapp_confirmation", "phone"));
+        } catch (Exception ex) {
+            log.error("No fue posible sincronizar pago aprobado por phone. phone={}: {}", maskPhone(phone), ex.getMessage(), ex);
+            return Optional.of(new SyncDecision(false, "error_processing_by_phone", "phone"));
         }
     }
 
@@ -503,6 +562,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         String customerEmailRaw = readFirstField(tx, root,
                 "x_customer_email", "customer_email", "x_email", "email");
         String xEmail = sanitizeEmailCandidate(customerEmailRaw);
+        String customerPhoneRaw = readFirstField(tx, root,
+                "x_customer_phone", "x_customer_mobile", "x_customer_movil", "customer_phone", "customer_mobile", "phone", "telefono", "x_phone");
+        String xPhone = sanitizePhoneCandidate(customerPhoneRaw);
 
         String lookupRefPayco = resolveLookupRefPayco(refPayco, readFirstField(root, tx, "ref_payco", "reference"));
 
@@ -553,8 +615,10 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
 
         if (StringUtils.hasText(localDocument)) out.put("document", localDocument);
         if (StringUtils.hasText(localEmail)) out.put("email", localEmail);
+        if (StringUtils.hasText(xPhone)) out.put("phone", xPhone);
         if (!StringUtils.hasText(localDocument) && StringUtils.hasText(customerDocumentRaw)) out.put("customerDocument", customerDocumentRaw);
         if (!StringUtils.hasText(localEmail) && StringUtils.hasText(customerEmailRaw)) out.put("customerEmail", customerEmailRaw);
+        if (!StringUtils.hasText(xPhone) && StringUtils.hasText(customerPhoneRaw)) out.put("customerPhone", customerPhoneRaw);
 
         if (StringUtils.hasText(xTransactionId)) out.put("transactionId", xTransactionId);
         if (StringUtils.hasText(xInvoice)) out.put("invoice", xInvoice);
@@ -657,6 +721,17 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(emailHintRaw)
         );
         String xEmail = sanitizeEmailCandidate(rawEmail);
+        String rawPhone = firstNotBlank(
+                safeTrim(asString(safePayload.get("phone"))),
+                safeTrim(asString(safePayload.get("customer_phone"))),
+                safeTrim(asString(safePayload.get("x_customer_phone"))),
+                safeTrim(asString(safePayload.get("x_customer_mobile"))),
+                safeTrim(asString(safePayload.get("x_customer_movil"))),
+                safeTrim(asString(safePayload.get("customer_mobile"))),
+                safeTrim(asString(safePayload.get("mobile"))),
+                safeTrim(asString(safePayload.get("telefono")))
+        );
+        String xPhone = sanitizePhoneCandidate(rawPhone);
 
         PaymentUserStatus status = resolvePaymentUserStatus(xResponse, xCodResponse, xReason);
         if (asBoolean(safePayload.get("paymentApproved"), false)) {
@@ -680,8 +755,10 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         if (StringUtils.hasText(xCurrency)) out.put("currency", xCurrency);
         if (StringUtils.hasText(xDocumento)) out.put("document", xDocumento);
         if (StringUtils.hasText(xEmail)) out.put("email", xEmail);
+        if (StringUtils.hasText(xPhone)) out.put("phone", xPhone);
         if (!StringUtils.hasText(xDocumento) && StringUtils.hasText(rawDocument)) out.put("customerDocument", rawDocument);
         if (!StringUtils.hasText(xEmail) && StringUtils.hasText(rawEmail)) out.put("customerEmail", rawEmail);
+        if (!StringUtils.hasText(xPhone) && StringUtils.hasText(rawPhone)) out.put("customerPhone", rawPhone);
 
         Map<String, String> gateway = new LinkedHashMap<>();
         if (StringUtils.hasText(xCodResponse)) gateway.put("codResponse", xCodResponse);
@@ -792,6 +869,28 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             return "";
         }
         return value;
+    }
+
+    private String sanitizePhoneCandidate(String raw) {
+        String value = safeTrim(raw);
+        if (!StringUtils.hasText(value) || value.contains("*")) {
+            return "";
+        }
+        String normalized = value.replaceAll("[^0-9+]", "");
+        if (normalized.startsWith("00")) {
+            normalized = normalized.substring(2);
+        }
+        if (!StringUtils.hasText(normalized)) {
+            return "";
+        }
+        String digits = normalized.replaceAll("\\D+", "");
+        if (digits.length() < 8) {
+            return "";
+        }
+        if (normalized.startsWith("+")) {
+            return "+" + digits;
+        }
+        return digits;
     }
 
     private String firstNotBlank(String... values) {

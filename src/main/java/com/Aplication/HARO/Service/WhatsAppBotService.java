@@ -1,4 +1,4 @@
-package com.Aplication.HARO.Service;
+﻿package com.Aplication.HARO.Service;
 
 import com.Aplication.HARO.Config.WhatsAppProperties;
 import org.slf4j.Logger;
@@ -9,11 +9,14 @@ import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 import java.text.Normalizer;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.regex.Pattern;
 
 @Service
 public class WhatsAppBotService {
@@ -21,7 +24,9 @@ public class WhatsAppBotService {
     private static final Logger log = LoggerFactory.getLogger(WhatsAppBotService.class);
     private static final int MAX_PROCESSED_IDS = 500;
     private static final int MAX_GREETED_SENDERS = 2_000;
-
+    private static final Charset WINDOWS_1252 = Charset.forName("windows-1252");
+    private static final Pattern MOJIBAKE_PATTERN =
+            Pattern.compile("[\\u00C3\\u00C2\\u00E2\\u00F0\\u00EF]");
     private final WhatsAppProperties props;
     private final WhatsAppTemplateService waService;
     private final Deque<String> processedOrder = new ConcurrentLinkedDeque<>();
@@ -112,7 +117,7 @@ public class WhatsAppBotService {
         }
 
         if (isFirstContact(fromKey)) {
-            waService.sendTextMessage(msg.from(), welcomeText());
+            waService.sendTextMessage(msg.from(), normalizeOutboundText(welcomeText()));
             if (!syntheticTestId) {
                 markProcessed(messageId);
             }
@@ -127,7 +132,7 @@ public class WhatsAppBotService {
             return;
         }
 
-        waService.sendTextMessage(msg.from(), reply);
+        waService.sendTextMessage(msg.from(), normalizeOutboundText(reply));
         if (!syntheticTestId) {
             markProcessed(messageId);
         }
@@ -207,10 +212,10 @@ public class WhatsAppBotService {
                     maskedTo);
         }
 
-        waService.sendTextMessage(to,
+        waService.sendTextMessage(to, normalizeOutboundText(
                 "👋 ¡Gracias por elegirnos! Para brindarte un servicio personalizado, necesitamos algunos datos personales. "
-                        + "Puedes revisar nuestra política de tratamiento de datos en www.ceaharo.com");
-        waService.sendTextMessage(to, "🛡️ ¿Autorizas el tratamiento de tus datos?");
+                        + "Puedes revisar nuestra política de tratamiento de datos en www.ceaharo.com"));
+        waService.sendTextMessage(to, normalizeOutboundText("🛡️ ¿Autorizas el tratamiento de tus datos?"));
     }
 
     private String buildReply(WhatsAppWebhookService.InboundMessage msg) {
@@ -271,6 +276,38 @@ public class WhatsAppBotService {
         return StringUtils.hasText(value) ? value : null;
     }
 
+    private String normalizeOutboundText(String textRaw) {
+        String text = trim(textRaw);
+        if (!StringUtils.hasText(text)) {
+            return text;
+        }
+        String fixed = fixMojibake(text);
+        fixed = fixMojibake(fixed);
+        return fixed;
+    }
+
+    private String fixMojibake(String text) {
+        if (!MOJIBAKE_PATTERN.matcher(text).find()) {
+            return text;
+        }
+        String decoded = new String(text.getBytes(WINDOWS_1252), StandardCharsets.UTF_8);
+        if (decoded.indexOf('\uFFFD') >= 0) {
+            return text;
+        }
+        return mojibakeScore(decoded) <= mojibakeScore(text) ? decoded : text;
+    }
+
+    private int mojibakeScore(String text) {
+        int score = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (ch == '\u00C3' || ch == '\u00C2' || ch == '\u00E2' || ch == '\u00F0' || ch == '\u00EF' || ch == '\uFFFD') {
+                score++;
+            }
+        }
+        return score;
+    }
+
     private boolean isSyntheticTestMessageId(String messageId) {
         if (!StringUtils.hasText(messageId)) {
             return false;
@@ -293,3 +330,4 @@ public class WhatsAppBotService {
         return "*".repeat(Math.max(1, normalized.length() - 4)) + normalized.substring(normalized.length() - 4);
     }
 }
+

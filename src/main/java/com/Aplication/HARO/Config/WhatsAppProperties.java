@@ -1,4 +1,4 @@
-package com.Aplication.HARO.Config;
+﻿package com.Aplication.HARO.Config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
@@ -13,7 +13,7 @@ public class WhatsAppProperties {
     private String phoneNumberId;
     private String accessToken;
     private String defaultTo;
-    private boolean restrictToDefault = true;
+    private boolean restrictToDefault = false;
     private String defaultLanguageCode = "es_CO";
     private String webhookVerifyToken;
     private String appSecret;
@@ -143,3 +143,4 @@ public class WhatsAppProperties {
         this.readTimeoutMs = readTimeoutMs;
     }
 }
+

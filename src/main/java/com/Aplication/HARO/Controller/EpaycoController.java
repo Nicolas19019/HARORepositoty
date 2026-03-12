@@ -1,4 +1,4 @@
-package com.Aplication.HARO.Controller;
+﻿package com.Aplication.HARO.Controller;
 
 import java.math.BigDecimal;
 import java.net.URLEncoder;
@@ -834,10 +834,10 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 return ResponseEntity.badRequest().body(Map.of("error", "Firma invalida"));
             }
 
-        if (isApproved(estado, xCodResponse)) {
+            if (isApproved(estado, xCodResponse)) {
             log.info("💰 Pago aprobado doc={} ref={} amount={}", xDocumento, xRefPayco, xAmount);
             processApprovedPayment(xDocumento, xAmount);
-
+            
         } else if (isCancelled(estado, xCodResponse)) {
             log.info("❌ Pago cancelado doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
             processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.CANCELLED);
@@ -921,13 +921,10 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         log.info("📲 Preparando envío por WhatsApp doc={} to={} contractLinkPresent={}",
                 documento, maskPhone(phone), StringUtils.hasText(contractLink));
 
-        if (!waService.getConfigStatus().ready()) {
-            log.warn("Pago aprobado doc={} pero WhatsApp no esta listo: {}", documento, waService.getConfigStatus().message());
-            return;
-        }
-
-        if (!waService.getConfigStatus().ready()) {
-            log.warn("Pago aprobado doc={} pero WhatsApp no esta listo: {}", documento, waService.getConfigStatus().message());
+        WhatsAppTemplateService.ConfigStatus waStatus = waService.getConfigStatus();
+        if (!waStatus.ready()) {
+            log.warn("Pago aprobado doc={} pero WhatsApp no esta listo. enabled={} restrictToDefault={} defaultTo={} detail={}",
+                    documento, waStatus.enabled(), waStatus.restrictToDefault(), waStatus.defaultToMasked(), waStatus.message());
             return;
         }
 
@@ -1000,18 +997,18 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
 
         String headline = status == PaymentUserStatus.CANCELLED
-                ? "Tu pago fue cancelado o no finalizado."
-                : "Tu pago no fue aprobado.";
+                ? "❌ Tu pago fue cancelado o no finalizado."
+                : "🚫 Tu pago no fue aprobado.";
 
         StringBuilder msg = new StringBuilder();
         msg.append(headline);
         if (StringUtils.hasText(detail)) {
-            msg.append("\nDetalle: ").append(detail);
+            msg.append("\n🧾 Detalle: ").append(detail);
         }
         if (StringUtils.hasText(paymentLink)) {
-            msg.append("\n\nPuedes reintentar aqui:\n").append(paymentLink);
+            msg.append("\n\n🔁 Puedes reintentar aquí:\n").append(paymentLink);
         }
-        msg.append("\n\nSi necesitas ayuda, escribe ASESOR.");
+        msg.append("\n\n🤝 Si necesitas ayuda, escribe ASESOR.");
 
         try {
             waService.sendTextMessage(phone, msg.toString());
@@ -1078,7 +1075,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                                                String customMessageTemplateRaw) {
         String contractLink = safeTrim(contractLinkRaw);
         if (!StringUtils.hasText(contractLink)) {
-            return "Pago recibido.";
+            return "✅ Pago recibido.";
         }
 
         String template = safeTrim(customMessageTemplateRaw);
@@ -1095,7 +1092,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             return text + ": " + contractLink;
         }
 
-        return "Pago recibido sigue con la contratacion con esta url: " + contractLink;
+        return "✅ Pago aprobado.\n\n📄 Continúa con la contratación en este enlace:\n"
+                + contractLink
+                + "\n\n🤝 Si necesitas ayuda, escribe ASESOR.";
     }
 
     private String injectContractUrl(String templateRaw, String contractLink) {
@@ -1167,3 +1166,4 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return "*".repeat(Math.max(1, digits.length() - 4)) + digits.substring(digits.length() - 4);
     }
 }
+

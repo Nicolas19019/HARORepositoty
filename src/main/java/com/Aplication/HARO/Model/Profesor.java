@@ -26,7 +26,7 @@ public class Profesor {
     @Column(name = "correo")
     private String correo;
     @Column(name = "especialidad")
-    private String especialidad; // ENUM(TeÃ³rico, PrÃ¡ctico)
+    private String especialidad; // ENUM(Teórico, Práctico)
     @Column(name = "categoria")
     private String categoria;
     @Column(name = "telefono")

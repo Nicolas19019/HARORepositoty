@@ -165,7 +165,7 @@ public class VerificationService {
         }
     }
 
-    /** EnvÃ­a OTP SOLO para activaciÃ³n de cuenta de estudiante del mÃ³dulo de aprendizaje. */
+    /** Envía OTP SOLO para activación de cuenta de estudiante del módulo de aprendizaje. */
     @Transactional
     public void sendStudentActivationEmailVerification(String rawEmail) {
         final String email = normalizeEmail(rawEmail);
@@ -183,7 +183,7 @@ public class VerificationService {
             OtpToken last = lastNotConsumed.get();
             if (last.getSentAt() != null && now.isBefore(last.getSentAt().plusSeconds(cooldownSeconds))) {
                 long wait = Math.max(1, ChronoUnit.SECONDS.between(now, last.getSentAt().plusSeconds(cooldownSeconds)));
-                throw new IllegalStateException("Espera " + wait + "s para reenviar el cÃ³digo.");
+                throw new IllegalStateException("Espera " + wait + "s para reenviar el código.");
             }
         }
 
@@ -304,7 +304,7 @@ public class VerificationService {
             String fileUrl
     ) {}
 
-    /** Genera cÃ³digo alfanumÃ©rico para firma y devuelve URL verificable. */
+    /** Genera código alfanumérico para firma y devuelve URL verificable. */
     @Transactional
     public ContractLinkResult createContractVerificationLink(String rawEmail, String rawBaseUrl) {
         final String email = normalizeEmail(rawEmail);
@@ -348,7 +348,7 @@ public class VerificationService {
         return new ContractLinkResult(email, code, url, token.getExpiresAt());
     }
 
-    /** Valida y consume cÃ³digo de firma de contrato. */
+    /** Valida y consume código de firma de contrato. */
     @Transactional
     public boolean verifyContractCode(String rawEmail, String rawCode) {
         final String email = normalizeEmail(rawEmail);
@@ -393,7 +393,7 @@ public class VerificationService {
         return ok;
     }
 
-    /** Valida cÃ³digo de acceso a contratos sin consumirlo. */
+    /** Valida código de acceso a contratos sin consumirlo. */
     @Transactional
     public ContractAccessResult validateContractAccessCode(String rawEmail, String rawCode) {
         final String email = normalizeEmail(rawEmail);
@@ -440,7 +440,7 @@ public class VerificationService {
         return new ContractAccessResult(true, "Codigo valido", token.getExpiresAt());
     }
 
-    /** Consume cÃ³digo de contrato y activa matrÃ­cula (creaciÃ³n de estudiante) si aplica. */
+    /** Consume código de contrato y activa matrícula (creación de estudiante) si aplica. */
     @Transactional
     public ContractCompletionResult completeContractSigning(String rawEmail, String rawCode) {
         final String email = normalizeEmail(rawEmail);
@@ -608,8 +608,7 @@ public class VerificationService {
         String x = (s == null ? "" : s).trim();
         if (x.length() >= 2) {
             char f = x.charAt(0), l = x.charAt(x.length() - 1);
-            if ((f == '"' && l == '"') || (f == '\'' && l == '\'')
-                || (f == '“' && l == '”') || (f == '‘' && l == '’')) {
+            if ((f == '"' && l == '"') || (f == '\'' && l == '\'')) {
                 return x.substring(1, x.length() - 1);
             }
         }

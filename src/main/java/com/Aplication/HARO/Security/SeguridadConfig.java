@@ -33,7 +33,7 @@ public class SeguridadConfig {
      Helpers
      =========================== */
 
-  // Â¿Es HEX (solo [0-9A-Fa-f]) despuÃ©s de normalizar?
+  // ¿Es HEX (solo [0-9A-Fa-f]) después de normalizar?
   private static boolean isHexEvenLength(String s) {
     if (s == null) return false;
     String norm = s.trim();
@@ -44,19 +44,19 @@ public class SeguridadConfig {
     return norm.matches("[0-9A-Fa-f]*");
   }
 
-  // Decodifica HEX tolerante (0x, espacios). Lanza IllegalArgumentException si no es HEX vÃƒÂ¡lido.
+  // Decodifica HEX tolerante (0x, espacios). Lanza IllegalArgumentException si no es HEX válido.
   private static byte[] hexToBytesStrict(String s) {
     if (s == null) throw new IllegalArgumentException("HEX nulo");
     String hex = s.trim().replaceFirst("(?i)^0x", "").replaceAll("\\s+", "");
     if ((hex.length() & 1) != 0 || !hex.matches("[0-9A-Fa-f]*")) {
-      throw new IllegalArgumentException("HEX invÃƒÂ¡lido");
+      throw new IllegalArgumentException("HEX inválido");
     }
     int len = hex.length();
     byte[] out = new byte[len / 2];
     for (int i = 0; i < len; i += 2) {
       int hi = Character.digit(hex.charAt(i), 16);
       int lo = Character.digit(hex.charAt(i + 1), 16);
-      if (hi < 0 || lo < 0) throw new IllegalArgumentException("HEX invÃƒÂ¡lido");
+      if (hi < 0 || lo < 0) throw new IllegalArgumentException("HEX inválido");
       out[i / 2] = (byte) ((hi << 4) + lo);
     }
     return out;
@@ -78,8 +78,8 @@ public class SeguridadConfig {
   /* ===========================================================
      Encoder: BCrypt(  Base64( SHA256( clientInput + PEPPER ) )  )
      - clientInput puede ser:
-       a) HEX de SHA-256(password)  -> lo decodificamos (modo â€œlegacy/clienteâ€)
-       b) password en texto plano   -> le hacemos SHA-256 aquÃ­ (modo â€œtoleranteâ€)
+       a) HEX de SHA-256(password)  -> lo decodificamos (modo "legacy/cliente")
+       b) password en texto plano   -> le hacemos SHA-256 aquí (modo "tolerante")
      - PEPPER (texto) se concatena en bytes UTF-8
      =========================================================== */
 

@@ -690,8 +690,11 @@ private String paymentConfirmationUrl;
         link = appendQueryParam(link, paymentAmountParam, expectedAmount.toPlainString());
     }
 
-    link = appendQueryParam(link, confirmationParam, paymentConfirmationUrl);
-    link = appendQueryParam(link, responseParam, paymentReturnUrl);
+    String confirmationUrlWithContext = buildCallbackUrlWithContext(paymentConfirmationUrl, proceso);
+    String responseUrlWithContext = buildCallbackUrlWithContext(paymentReturnUrl, proceso);
+
+    link = appendQueryParam(link, confirmationParam, confirmationUrlWithContext);
+    link = appendQueryParam(link, responseParam, responseUrlWithContext);
 
     log.info("🔗 LINK PAGO generado doc={} confirmation={} response={} link={}",
             proceso != null ? proceso.getNumeroDocumento() : null,
@@ -701,6 +704,23 @@ private String paymentConfirmationUrl;
 
     return link;
 }
+
+    private String buildCallbackUrlWithContext(String baseUrl, ChatbotMatriculaProceso proceso) {
+        String out = trim(baseUrl);
+        if (out.isBlank() || proceso == null) {
+            return out;
+        }
+
+        String documento = trim(proceso.getNumeroDocumento());
+        String email = trim(proceso.getEmail()).toLowerCase(Locale.ROOT);
+
+        // Llaves redundantes para maximizar compatibilidad entre front/back.
+        out = appendQueryParam(out, "document", documento);
+        out = appendQueryParam(out, "x_extra1", documento);
+        out = appendQueryParam(out, "email", email);
+        out = appendQueryParam(out, "customer_email", email);
+        return out;
+    }
 
     private String resolvePaymentBaseLink(ChatbotMatriculaProceso proceso) {
         if (proceso == null) {

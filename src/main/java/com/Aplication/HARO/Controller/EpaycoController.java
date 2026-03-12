@@ -47,6 +47,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class EpaycoController {
 
     private static final Logger log = LoggerFactory.getLogger(EpaycoController.class);
+    private record SyncDecision(boolean synced, String reason, String resolvedBy) {}
 
     private final EpaycoService epaycoService;
     private final ChatbotProcesoService chatbotProcesoService;
@@ -200,7 +201,14 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     boolean chatbotSynced = false;
 
     if ("APPROVED".equalsIgnoreCase(status)) {
-        chatbotSynced = syncApprovedPaymentToFlow(summary, safePayload, documentHint, emailHint);
+        SyncDecision syncDecision = syncApprovedPaymentToFlow(summary, safePayload, documentHint, emailHint);
+        chatbotSynced = syncDecision.synced();
+        if (StringUtils.hasText(syncDecision.reason())) {
+            out.put("syncReason", syncDecision.reason());
+        }
+        if (StringUtils.hasText(syncDecision.resolvedBy())) {
+            out.put("syncResolvedBy", syncDecision.resolvedBy());
+        }
         if (summary.containsKey("whatsappSent")) {
             out.put("whatsappSent", summary.get("whatsappSent"));
         }
@@ -250,12 +258,12 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     return ResponseEntity.ok(out);
 }
 
-    private boolean syncApprovedPaymentToFlow(Map<String, Object> summary,
-                                             Map<String, Object> payload,
-                                             String documentHint,
-                                             String emailHint) {
+    private SyncDecision syncApprovedPaymentToFlow(Map<String, Object> summary,
+                                                  Map<String, Object> payload,
+                                                  String documentHint,
+                                                  String emailHint) {
         if (summary == null) {
-            return false;
+            return new SyncDecision(false, "summary_empty", "");
         }
 
         Map<String, Object> safePayload = payload == null ? Map.of() : payload;
@@ -285,10 +293,11 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 }
                 summary.put("whatsappSent", approval.whatsappSent());
                 summary.put("duplicatePaymentProcessing", approval.duplicate());
-                return approval.whatsappSent() || approval.duplicate();
+                boolean synced = approval.whatsappSent() || approval.duplicate();
+                return new SyncDecision(synced, synced ? "processed_by_document" : "processed_by_document_without_whatsapp_confirmation", "document");
             } catch (Exception ex) {
                 log.error("No fue posible sincronizar pago aprobado por documento doc={}: {}", documento, ex.getMessage(), ex);
-                return false;
+                return new SyncDecision(false, "error_processing_by_document", "document");
             }
         }
 
@@ -301,19 +310,35 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(emailHint)
         ));
         if (!StringUtils.hasText(email)) {
-            return false;
+            String customerDocRaw = firstNotBlank(
+                    safeTrim(asString(summary.get("customerDocument"))),
+                    safeTrim(asString(safePayload.get("customer_document"))),
+                    safeTrim(asString(safePayload.get("x_customer_document")))
+            );
+            String customerEmailRaw = firstNotBlank(
+                    safeTrim(asString(summary.get("customerEmail"))),
+                    safeTrim(asString(safePayload.get("customer_email"))),
+                    safeTrim(asString(safePayload.get("x_customer_email")))
+            );
+            log.warn("Sync pago aprobado sin identificadores resolubles. docRaw={} emailRaw={} reference={} gatewayRef={} invoice={}",
+                    customerDocRaw,
+                    customerEmailRaw,
+                    safeTrim(asString(summary.get("reference"))),
+                    firstNotBlank(safeTrim(asString(summary.get("gatewayReference"))), safeTrim(asString(safePayload.get("x_ref_payco")))),
+                    safeTrim(asString(summary.get("invoice"))));
+            return new SyncDecision(false, "missing_unmasked_document_and_email", "");
         }
 
         try {
             Optional<ChatbotMatriculaProceso> proceso = chatbotProcesoService.findLatestProcesoByEmail(email);
             if (proceso.isEmpty()) {
                 log.info("No se pudo resolver proceso por email para sync de pago. email={}", email);
-                return false;
+                return new SyncDecision(false, "process_not_found_by_email", "email");
             }
 
             String fromEmailDoc = safeTrim(proceso.get().getNumeroDocumento());
             if (!StringUtils.hasText(fromEmailDoc)) {
-                return false;
+                return new SyncDecision(false, "process_without_document_by_email", "email");
             }
 
             PaymentApprovalService.ApprovalResult approval =
@@ -326,10 +351,11 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             }
             summary.put("whatsappSent", approval.whatsappSent());
             summary.put("duplicatePaymentProcessing", approval.duplicate());
-            return approval.whatsappSent() || approval.duplicate();
+            boolean synced = approval.whatsappSent() || approval.duplicate();
+            return new SyncDecision(synced, synced ? "processed_by_email" : "processed_by_email_without_whatsapp_confirmation", "email");
         } catch (Exception ex) {
             log.error("No fue posible sincronizar pago aprobado por email. email={}: {}", email, ex.getMessage(), ex);
-            return false;
+            return new SyncDecision(false, "error_processing_by_email", "email");
         }
     }
 

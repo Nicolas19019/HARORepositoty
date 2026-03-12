@@ -297,6 +297,14 @@ private String paymentConfirmationUrl;
     }
 
     @Transactional(readOnly = true)
+    public Optional<ChatbotMatriculaProceso> findProcesoById(Long procesoId) {
+        if (procesoId == null) {
+            return Optional.empty();
+        }
+        return procesoRepository.findById(procesoId);
+    }
+
+    @Transactional(readOnly = true)
     public Optional<ChatbotMatriculaProceso> findLatestProcesoByEmail(String email) {
         return procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(normalizeEmail(email));
     }
@@ -756,8 +764,8 @@ private String paymentConfirmationUrl;
             if (!paycoHostedLink && expectedAmount.signum() > 0) {
                 compactLink = appendQueryParam(compactLink, paymentAmountParam, expectedAmount.toPlainString());
             }
-            compactLink = appendQueryParam(compactLink, confirmationParam, trim(paymentConfirmationUrl));
-            compactLink = appendQueryParam(compactLink, responseParam, trim(paymentReturnUrl));
+            compactLink = appendQueryParam(compactLink, confirmationParam, buildCallbackUrlWithFlowId(paymentConfirmationUrl, proceso));
+            compactLink = appendQueryParam(compactLink, responseParam, buildCallbackUrlWithFlowId(paymentReturnUrl, proceso));
             link = compactLink;
             log.warn("LINK PAGO generado en modo compacto doc={} len={}",
                     proceso != null ? proceso.getNumeroDocumento() : null,
@@ -782,12 +790,22 @@ private String paymentConfirmationUrl;
         String documento = trim(proceso.getNumeroDocumento());
         String email = trim(proceso.getEmail()).toLowerCase(Locale.ROOT);
         String phone = resolvePhoneForPayment(proceso);
+        String flowId = proceso.getId() == null ? "" : String.valueOf(proceso.getId());
 
         // Contexto minimo para evitar enlaces de pago gigantes.
+        out = appendQueryParam(out, "flow_id", flowId);
         out = appendQueryParam(out, "document", documento);
         out = appendQueryParam(out, "email", email);
         out = appendQueryParam(out, "phone", phone);
         return out;
+    }
+
+    private String buildCallbackUrlWithFlowId(String baseUrl, ChatbotMatriculaProceso proceso) {
+        String out = trim(baseUrl);
+        if (out.isBlank() || proceso == null || proceso.getId() == null) {
+            return out;
+        }
+        return appendQueryParam(out, "flow_id", String.valueOf(proceso.getId()));
     }
 
     private String resolvePhoneForPayment(ChatbotMatriculaProceso proceso) {
@@ -1248,5 +1266,3 @@ private String paymentConfirmationUrl;
         return studentId;
     }
 }
-
-

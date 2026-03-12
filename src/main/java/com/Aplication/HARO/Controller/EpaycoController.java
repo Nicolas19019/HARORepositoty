@@ -145,6 +145,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     );
 
     boolean approvedByPayload = asBoolean(safePayload.get("paymentApproved"), false)
+            || asBoolean(safePayload.get("approved"), false)
             || resolvePaymentUserStatus(payloadStatus, payloadCodResponse, payloadReason) == PaymentUserStatus.APPROVED;
 
     if (!StringUtils.hasText(refPayco) && !approvedByPayload) {
@@ -194,6 +195,12 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
 
     if ("APPROVED".equalsIgnoreCase(status)) {
         chatbotSynced = syncApprovedPaymentToFlow(summary, safePayload, documentHint, emailHint);
+        if (summary.containsKey("whatsappSent")) {
+            out.put("whatsappSent", summary.get("whatsappSent"));
+        }
+        if (summary.containsKey("duplicatePaymentProcessing")) {
+            out.put("duplicatePaymentProcessing", summary.get("duplicatePaymentProcessing"));
+        }
 
         String finalDocument = firstNotBlank(
                 safeTrim(asString(summary.get("document"))),
@@ -261,7 +268,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 if (StringUtils.hasText(approval.contractLink())) {
                     summary.put("contractLink", approval.contractLink());
                 }
-                return true;
+                summary.put("whatsappSent", approval.whatsappSent());
+                summary.put("duplicatePaymentProcessing", approval.duplicate());
+                return approval.whatsappSent() || approval.duplicate();
             } catch (Exception ex) {
                 log.error("No fue posible sincronizar pago aprobado por documento doc={}: {}", documento, ex.getMessage(), ex);
                 return false;
@@ -298,7 +307,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             if (StringUtils.hasText(approval.contractLink())) {
                 summary.put("contractLink", approval.contractLink());
             }
-            return true;
+            summary.put("whatsappSent", approval.whatsappSent());
+            summary.put("duplicatePaymentProcessing", approval.duplicate());
+            return approval.whatsappSent() || approval.duplicate();
         } catch (Exception ex) {
             log.error("No fue posible sincronizar pago aprobado por email. email={}: {}", email, ex.getMessage(), ex);
             return false;

@@ -822,16 +822,17 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         String estado = form.getFirst("x_response");
         String xReason = form.getFirst("x_response_reason_text");
 
-        log.info("CONFIRM webhook ref={} trx={} doc={} cod={} estado={} amount={}",
-                xRefPayco, xTransactionId, xDocumento, xCodResponse, estado, xAmount);
+        log.info("CONFIRM webhook ref={} trx={} doc={} cod={} estado={} amount={} signaturePresent={}",
+                xRefPayco, xTransactionId, xDocumento, xCodResponse, estado, xAmount, xSignature != null && !xSignature.isBlank());
 
-        boolean signatureOk =
-                epaycoService.isValidSignature(xRefPayco, xTransactionId, xAmount, xCurrencyCode, xSignature);
+            boolean signatureOk =
+            epaycoService.isValidSignature(xRefPayco, xTransactionId, xAmount, xCurrencyCode, xSignature);
 
-        if (!signatureOk) {
-            log.warn("Firma inválida en confirmación ePayco ref={} doc={}", xRefPayco, xDocumento);
-            return ResponseEntity.badRequest().body(Map.of("error", "Firma invalida"));
-        }
+            if (!signatureOk) {
+                log.warn("Firma inválida en confirmación ePayco ref={} trx={} doc={} cod={} estado={} amount={}",
+                        xRefPayco, xTransactionId, xDocumento, xCodResponse, estado, xAmount);
+                return ResponseEntity.badRequest().body(Map.of("error", "Firma invalida"));
+            }
 
         if (isApproved(estado, xCodResponse)) {
             log.info("💰 Pago aprobado doc={} ref={} amount={}", xDocumento, xRefPayco, xAmount);

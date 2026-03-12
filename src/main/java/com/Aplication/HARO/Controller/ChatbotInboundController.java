@@ -25,6 +25,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -1933,4 +1934,3 @@ public class ChatbotInboundController {
                 "• Si no respondes en " + Math.max(1, inactivityTimeoutMinutes) + " minutos, la conversación expira y debes iniciar de nuevo.";
     }
 }
-

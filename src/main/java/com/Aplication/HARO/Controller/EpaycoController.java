@@ -1288,7 +1288,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
 
     // URL de confirmacion (Webhook ePayco)
    @PostMapping(value = {"/confirmation", "/epayco/confirmation"}, consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    public ResponseEntity<?> confirmation(@RequestBody MultiValueMap<String, String> form) {
+    public ResponseEntity<?> confirmation(@RequestParam MultiValueMap<String, String> form) {
 
         String xRefPayco = form.getFirst("x_ref_payco");
         String xTransactionId = form.getFirst("x_transaction_id");
@@ -1296,17 +1296,28 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         String xCurrencyCode = form.getFirst("x_currency_code");
         String xCodResponse = form.getFirst("x_cod_response");
         String xSignature = form.getFirst("x_signature");
-        String xDocumento = firstResolvedDocument(form.getFirst("x_extra1"));
+        String xDocumento = firstResolvedDocument(
+                form.getFirst("x_extra1"),
+                form.getFirst("document"),
+                form.getFirst("customer_document"),
+                form.getFirst("x_customer_document")
+        );
         String estado = form.getFirst("x_response");
         String xReason = form.getFirst("x_response_reason_text");
         String xInvoice = firstNotBlank(form.getFirst("x_id_invoice"), form.getFirst("x_id_factura"), form.getFirst("invoice"));
-        String xEmail = firstResolvedEmail(form.getFirst("x_customer_email"), form.getFirst("customer_email"), form.getFirst("email"));
+        String xEmail = firstResolvedEmail(
+                form.getFirst("email"),
+                form.getFirst("customer_email"),
+                form.getFirst("x_customer_email")
+        );
         String xPhone = firstResolvedPhone(
+                form.getFirst("phone"),
+                form.getFirst("customer_phone"),
                 form.getFirst("x_customer_phone"),
                 form.getFirst("x_customer_mobile"),
                 form.getFirst("x_customer_movil"),
-                form.getFirst("customer_phone"),
-                form.getFirst("phone")
+                form.getFirst("customer_mobile"),
+                form.getFirst("mobile")
         );
 
         log.info("CONFIRM webhook ref={} trx={} doc={} cod={} estado={} amount={} signaturePresent={}",

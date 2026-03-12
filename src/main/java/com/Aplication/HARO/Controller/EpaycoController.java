@@ -11,6 +11,7 @@ import java.util.Currency;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -130,11 +131,13 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             safeTrim(asString(safePayload.get("x_ref_payco"))),
             safeTrim(asString(safePayload.get("gatewayReference")))
     );
-    String documentHint = firstNotBlank(
+    String documentHint = firstResolvedDocument(
+            safeTrim(asString(safePayload.get("x_extra1"))),
             safeTrim(asString(safePayload.get("document"))),
-            safeTrim(asString(safePayload.get("x_extra1")))
+            safeTrim(asString(safePayload.get("customer_document"))),
+            safeTrim(asString(safePayload.get("x_customer_document")))
     );
-    String emailHint = firstNotBlank(
+    String emailHint = firstResolvedEmail(
             safeTrim(asString(safePayload.get("email"))),
             safeTrim(asString(safePayload.get("customer_email")))
     );
@@ -148,7 +151,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             safeTrim(asString(safePayload.get("transactionId"))),
             safeTrim(asString(safePayload.get("transaction_id")))
     );
-    String phoneHint = firstNotBlank(
+    String phoneHint = firstResolvedPhone(
             safeTrim(asString(safePayload.get("phone"))),
             safeTrim(asString(safePayload.get("customer_phone"))),
             safeTrim(asString(safePayload.get("x_customer_phone"))),
@@ -270,18 +273,21 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     );
     if (stagedContext.isPresent()) {
         PaymentSyncContextService.ResolvedContext ctx = stagedContext.get();
-        if (!StringUtils.hasText(safeTrim(asString(summary.get("document")))) && StringUtils.hasText(ctx.document())) {
+        if (!StringUtils.hasText(normalizeDocumentoCandidate(safeTrim(asString(summary.get("document")))))
+                && StringUtils.hasText(ctx.document())) {
             summary.put("document", ctx.document());
         }
-        if (!StringUtils.hasText(safeTrim(asString(summary.get("email")))) && StringUtils.hasText(ctx.email())) {
+        if (!StringUtils.hasText(sanitizeEmailCandidate(safeTrim(asString(summary.get("email")))))
+                && StringUtils.hasText(ctx.email())) {
             summary.put("email", ctx.email());
         }
-        if (!StringUtils.hasText(safeTrim(asString(summary.get("phone")))) && StringUtils.hasText(ctx.phone())) {
+        if (!StringUtils.hasText(sanitizePhoneCandidate(safeTrim(asString(summary.get("phone")))))
+                && StringUtils.hasText(ctx.phone())) {
             summary.put("phone", ctx.phone());
         }
-        documentHint = firstNotBlank(documentHint, ctx.document());
-        emailHint = firstNotBlank(emailHint, ctx.email());
-        phoneHint = firstNotBlank(phoneHint, ctx.phone());
+        documentHint = firstResolvedDocument(documentHint, ctx.document());
+        emailHint = firstResolvedEmail(emailHint, ctx.email());
+        phoneHint = firstResolvedPhone(phoneHint, ctx.phone());
     }
 
     String status = safeTrim(asString(summary.get("status")));
@@ -296,15 +302,18 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     Map<String, Object> out = new LinkedHashMap<>(summary);
     boolean chatbotSynced = false;
     Map<String, Object> syncPayload = new LinkedHashMap<>(safePayload);
-    if (!StringUtils.hasText(safeTrim(asString(syncPayload.get("document")))) && StringUtils.hasText(documentHint)) {
+    if (!StringUtils.hasText(normalizeDocumentoCandidate(safeTrim(asString(syncPayload.get("document")))))
+            && StringUtils.hasText(documentHint)) {
         syncPayload.put("document", documentHint);
         syncPayload.put("x_extra1", documentHint);
     }
-    if (!StringUtils.hasText(safeTrim(asString(syncPayload.get("email")))) && StringUtils.hasText(emailHint)) {
+    if (!StringUtils.hasText(sanitizeEmailCandidate(safeTrim(asString(syncPayload.get("email")))))
+            && StringUtils.hasText(emailHint)) {
         syncPayload.put("email", emailHint);
         syncPayload.put("customer_email", emailHint);
     }
-    if (!StringUtils.hasText(safeTrim(asString(syncPayload.get("phone")))) && StringUtils.hasText(phoneHint)) {
+    if (!StringUtils.hasText(sanitizePhoneCandidate(safeTrim(asString(syncPayload.get("phone")))))
+            && StringUtils.hasText(phoneHint)) {
         syncPayload.put("phone", phoneHint);
         syncPayload.put("customer_phone", phoneHint);
         syncPayload.put("x_customer_phone", phoneHint);
@@ -327,20 +336,21 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             out.put("duplicatePaymentProcessing", summary.get("duplicatePaymentProcessing"));
         }
 
-        String finalDocument = firstNotBlank(
-                safeTrim(asString(summary.get("document"))),
-                safeTrim(asString(safePayload.get("document"))),
+        String finalDocument = firstResolvedDocument(
                 safeTrim(asString(safePayload.get("x_extra1"))),
-                safeTrim(documentHint)
+                safeTrim(documentHint),
+                safeTrim(asString(safePayload.get("document"))),
+                safeTrim(asString(summary.get("document"))),
+                safeTrim(asString(summary.get("customerDocument")))
         );
         String finalDocumentNormalized = normalizeDocumentoCandidate(finalDocument);
-        String finalEmail = sanitizeEmailCandidate(firstNotBlank(
+        String finalEmail = firstResolvedEmail(
                 safeTrim(asString(out.get("email"))),
                 safeTrim(asString(summary.get("email"))),
                 safeTrim(asString(safePayload.get("email"))),
                 safeTrim(asString(safePayload.get("customer_email"))),
                 safeTrim(emailHint)
-        ));
+        );
 
         if (StringUtils.hasText(finalDocumentNormalized)) {
             chatbotProcesoService.findProcesoByDocumento(finalDocumentNormalized).ifPresent(p -> {
@@ -413,15 +423,15 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(asString(safePayload.get("x_amount")))
         ));
 
-        String documento = normalizeDocumentoCandidate(firstNotBlank(
-                safeTrim(asString(summary.get("document"))),
-                safeTrim(asString(summary.get("customerDocument"))),
-                safeTrim(asString(safePayload.get("document"))),
+        String documento = firstResolvedDocument(
                 safeTrim(asString(safePayload.get("x_extra1"))),
+                safeTrim(documentHint),
+                safeTrim(asString(safePayload.get("document"))),
                 safeTrim(asString(safePayload.get("customer_document"))),
                 safeTrim(asString(safePayload.get("x_customer_document"))),
-                safeTrim(documentHint)
-        ));
+                safeTrim(asString(summary.get("document"))),
+                safeTrim(asString(summary.get("customerDocument")))
+        );
         String customerDocRaw = firstNotBlank(
                 safeTrim(asString(summary.get("customerDocument"))),
                 safeTrim(asString(safePayload.get("customer_document"))),
@@ -448,20 +458,22 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 applyApprovalResultToSummary(summary, approval, documento, "");
                 boolean synced = approval.whatsappSent() || approval.duplicate();
                 return new SyncDecision(synced, synced ? "processed_by_document" : "processed_by_document_without_whatsapp_confirmation", "document");
+            } catch (NoSuchElementException ex) {
+                // Si el documento enviado no corresponde a un proceso vigente, intentamos fallback automático.
+                log.warn("No se encontro proceso por documento doc={}. Se intentara fallback por email/phone/contexto.", documento);
             } catch (Exception ex) {
-                log.error("No fue posible sincronizar pago aprobado por documento doc={}: {}", documento, ex.getMessage(), ex);
-                return new SyncDecision(false, "error_processing_by_document", "document");
+                log.error("Error procesando por documento doc={}. Se intentara fallback: {}", documento, ex.getMessage(), ex);
             }
         }
 
-        String email = sanitizeEmailCandidate(firstNotBlank(
+        String email = firstResolvedEmail(
                 safeTrim(asString(summary.get("email"))),
                 safeTrim(asString(summary.get("customerEmail"))),
                 safeTrim(asString(safePayload.get("email"))),
                 safeTrim(asString(safePayload.get("customer_email"))),
                 safeTrim(asString(safePayload.get("x_customer_email"))),
                 safeTrim(emailHint)
-        ));
+        );
         if (!StringUtils.hasText(email)) {
             Optional<ChatbotMatriculaProceso> maskedProceso =
                     chatbotProcesoService.findLatestProcesoByMaskedHints(customerDocRaw, customerEmailRaw);
@@ -540,7 +552,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                                                   Map<String, Object> safePayload,
                                                   BigDecimal amount,
                                                   String customerPhoneRaw) {
-        String phone = sanitizePhoneCandidate(firstNotBlank(
+        String phone = firstResolvedPhone(
                 safeTrim(asString(summary.get("phone"))),
                 safeTrim(asString(summary.get("customerPhone"))),
                 safeTrim(asString(safePayload.get("phone"))),
@@ -549,7 +561,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(asString(safePayload.get("x_customer_mobile"))),
                 safeTrim(asString(safePayload.get("x_customer_movil"))),
                 safeTrim(customerPhoneRaw)
-        ));
+        );
         if (!StringUtils.hasText(phone)) {
             return Optional.empty();
         }
@@ -677,15 +689,15 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         String xRefPayco = readFirstField(tx, root, "x_ref_payco", "ref_payco", "refPayco");
 
         String customerDocumentRaw = readFirstField(tx, root,
-                "x_customer_document", "customer_document", "x_customer_docnumber", "x_doc_number", "x_extra1", "document");
-        String xDocumento = normalizeDocumentoCandidate(firstNotBlank(customerDocumentRaw, documentHintRaw));
+                "x_extra1", "document", "x_customer_document", "customer_document", "x_customer_docnumber", "x_doc_number");
+        String xDocumento = firstResolvedDocument(customerDocumentRaw, documentHintRaw);
 
         String customerEmailRaw = readFirstField(tx, root,
                 "x_customer_email", "customer_email", "x_email", "email");
-        String xEmail = sanitizeEmailCandidate(customerEmailRaw);
+        String xEmail = firstResolvedEmail(customerEmailRaw);
         String customerPhoneRaw = readFirstField(tx, root,
                 "x_customer_phone", "x_customer_mobile", "x_customer_movil", "customer_phone", "customer_mobile", "phone", "telefono", "x_phone");
-        String xPhone = sanitizePhoneCandidate(customerPhoneRaw);
+        String xPhone = firstResolvedPhone(customerPhoneRaw);
 
         String lookupRefPayco = resolveLookupRefPayco(refPayco, readFirstField(root, tx, "ref_payco", "reference"));
 
@@ -834,14 +846,14 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(asString(safePayload.get("x_customer_document"))),
                 safeTrim(documentHintRaw)
         );
-        String xDocumento = normalizeDocumentoCandidate(rawDocument);
+        String xDocumento = firstResolvedDocument(rawDocument);
         String rawEmail = firstNotBlank(
                 safeTrim(asString(safePayload.get("customer_email"))),
                 safeTrim(asString(safePayload.get("x_customer_email"))),
                 safeTrim(asString(safePayload.get("email"))),
                 safeTrim(emailHintRaw)
         );
-        String xEmail = sanitizeEmailCandidate(rawEmail);
+        String xEmail = firstResolvedEmail(rawEmail);
         String rawPhone = firstNotBlank(
                 safeTrim(asString(safePayload.get("phone"))),
                 safeTrim(asString(safePayload.get("customer_phone"))),
@@ -852,7 +864,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(asString(safePayload.get("mobile"))),
                 safeTrim(asString(safePayload.get("telefono")))
         );
-        String xPhone = sanitizePhoneCandidate(rawPhone);
+        String xPhone = firstResolvedPhone(rawPhone);
 
         PaymentUserStatus status = resolvePaymentUserStatus(xResponse, xCodResponse, xReason);
         if (asBoolean(safePayload.get("paymentApproved"), false)) {
@@ -1012,6 +1024,39 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             return "+" + digits;
         }
         return digits;
+    }
+
+    private String firstResolvedDocument(String... candidates) {
+        if (candidates == null) return "";
+        for (String candidate : candidates) {
+            String normalized = normalizeDocumentoCandidate(candidate);
+            if (StringUtils.hasText(normalized)) {
+                return normalized;
+            }
+        }
+        return "";
+    }
+
+    private String firstResolvedEmail(String... candidates) {
+        if (candidates == null) return "";
+        for (String candidate : candidates) {
+            String normalized = sanitizeEmailCandidate(candidate);
+            if (StringUtils.hasText(normalized)) {
+                return normalized;
+            }
+        }
+        return "";
+    }
+
+    private String firstResolvedPhone(String... candidates) {
+        if (candidates == null) return "";
+        for (String candidate : candidates) {
+            String normalized = sanitizePhoneCandidate(candidate);
+            if (StringUtils.hasText(normalized)) {
+                return normalized;
+            }
+        }
+        return "";
     }
 
     private String firstNotBlank(String... values) {
@@ -1251,12 +1296,12 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         String xCurrencyCode = form.getFirst("x_currency_code");
         String xCodResponse = form.getFirst("x_cod_response");
         String xSignature = form.getFirst("x_signature");
-        String xDocumento = form.getFirst("x_extra1");
+        String xDocumento = firstResolvedDocument(form.getFirst("x_extra1"));
         String estado = form.getFirst("x_response");
         String xReason = form.getFirst("x_response_reason_text");
         String xInvoice = firstNotBlank(form.getFirst("x_id_invoice"), form.getFirst("x_id_factura"), form.getFirst("invoice"));
-        String xEmail = firstNotBlank(form.getFirst("x_customer_email"), form.getFirst("customer_email"), form.getFirst("email"));
-        String xPhone = firstNotBlank(
+        String xEmail = firstResolvedEmail(form.getFirst("x_customer_email"), form.getFirst("customer_email"), form.getFirst("email"));
+        String xPhone = firstResolvedPhone(
                 form.getFirst("x_customer_phone"),
                 form.getFirst("x_customer_mobile"),
                 form.getFirst("x_customer_movil"),
@@ -1296,9 +1341,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                         xTransactionId
                 );
                 if (staged.isPresent()) {
-                    xDocumento = firstNotBlank(xDocumento, staged.get().document());
-                    xEmail = firstNotBlank(xEmail, staged.get().email());
-                    xPhone = firstNotBlank(xPhone, staged.get().phone());
+                    xDocumento = firstResolvedDocument(xDocumento, staged.get().document());
+                    xEmail = firstResolvedEmail(xEmail, staged.get().email());
+                    xPhone = firstResolvedPhone(xPhone, staged.get().phone());
                 }
             }
 

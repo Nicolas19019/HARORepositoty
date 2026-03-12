@@ -1,4 +1,4 @@
-﻿package com.Aplication.HARO.Config;
+package com.Aplication.HARO.Config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;

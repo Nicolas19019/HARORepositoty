@@ -1,4 +1,4 @@
-﻿package com.Aplication.HARO.Controller;
+package com.Aplication.HARO.Controller;
 
 import java.math.BigDecimal;
 import java.net.URLEncoder;
@@ -32,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Service.ChatbotProcesoService;
 import com.Aplication.HARO.Service.EpaycoService;
+import com.Aplication.HARO.Service.PaymentApprovalService;
 import com.Aplication.HARO.Service.VerificationService;
 import com.Aplication.HARO.Service.WhatsAppTemplateService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -49,6 +50,7 @@ public class EpaycoController {
 
     private final EpaycoService epaycoService;
     private final ChatbotProcesoService chatbotProcesoService;
+    private final PaymentApprovalService paymentApprovalService;
     private final VerificationService verificationService;
     private final WhatsAppTemplateService waService;
     private final ObjectMapper objectMapper;
@@ -64,11 +66,13 @@ public class EpaycoController {
 
     public EpaycoController(EpaycoService epaycoService,
                             ChatbotProcesoService chatbotProcesoService,
+                            PaymentApprovalService paymentApprovalService,
                             VerificationService verificationService,
                             WhatsAppTemplateService waService,
                             ObjectMapper objectMapper) {
         this.epaycoService = epaycoService;
         this.chatbotProcesoService = chatbotProcesoService;
+        this.paymentApprovalService = paymentApprovalService;
         this.verificationService = verificationService;
         this.waService = waService;
         this.objectMapper = objectMapper;
@@ -220,6 +224,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     out.put("statusSource", statusSource);
     out.put("syncAt", ZonedDateTime.now(ZoneId.of("America/Bogota"))
             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z")));
+    out.putIfAbsent("paymentStatus", safeTrim(asString(out.get("paymentStatus"))));
+    out.putIfAbsent("flowStatus", safeTrim(asString(out.get("flowStatus"))));
+    out.putIfAbsent("contractLink", safeTrim(asString(out.get("contractLink"))));
 
     return ResponseEntity.ok(out);
 }
@@ -233,10 +240,6 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
 
         Map<String, Object> safePayload = payload == null ? Map.of() : payload;
-        boolean notifyContractLinkByChatbot = asBoolean(safePayload.get("notifyContractLinkByChatbot"), true);
-        boolean forceResendContractLink = asBoolean(safePayload.get("forceResendContractLink"), true);
-        String chatbotMessageText = safeTrim(asString(safePayload.get("chatbotMessageText")));
-        String chatbotMessageTemplate = safeTrim(asString(safePayload.get("chatbotMessageTemplate")));
 
         BigDecimal amount = parseAmountOrNull(firstNotBlank(
                 safeTrim(asString(summary.get("amount"))),
@@ -252,14 +255,12 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
 
         if (StringUtils.hasText(documento)) {
             try {
-                processApprovedPayment(
-                        documento,
-                        amount,
-                        notifyContractLinkByChatbot,
-                        forceResendContractLink,
-                        chatbotMessageText,
-                        chatbotMessageTemplate
-                );
+                PaymentApprovalService.ApprovalResult approval = paymentApprovalService.handleApprovedPayment(documento, amount);
+                summary.put("paymentStatus", approval.paymentStatus());
+                summary.put("flowStatus", approval.flowStatus());
+                if (StringUtils.hasText(approval.contractLink())) {
+                    summary.put("contractLink", approval.contractLink());
+                }
                 return true;
             } catch (Exception ex) {
                 log.error("No fue posible sincronizar pago aprobado por documento doc={}: {}", documento, ex.getMessage(), ex);
@@ -289,15 +290,14 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 return false;
             }
 
-            processApprovedPayment(
-                    fromEmailDoc,
-                    amount,
-                    notifyContractLinkByChatbot,
-                    forceResendContractLink,
-                    chatbotMessageText,
-                    chatbotMessageTemplate
-            );
+            PaymentApprovalService.ApprovalResult approval =
+                    paymentApprovalService.handleApprovedPayment(fromEmailDoc, amount);
             summary.put("document", fromEmailDoc);
+            summary.put("paymentStatus", approval.paymentStatus());
+            summary.put("flowStatus", approval.flowStatus());
+            if (StringUtils.hasText(approval.contractLink())) {
+                summary.put("contractLink", approval.contractLink());
+            }
             return true;
         } catch (Exception ex) {
             log.error("No fue posible sincronizar pago aprobado por email. email={}: {}", email, ex.getMessage(), ex);
@@ -836,8 +836,18 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
 
             if (isApproved(estado, xCodResponse)) {
             log.info("💰 Pago aprobado doc={} ref={} amount={}", xDocumento, xRefPayco, xAmount);
-            processApprovedPayment(xDocumento, xAmount);
-            
+            try {
+                PaymentApprovalService.ApprovalResult approval =
+                        paymentApprovalService.handleApprovedPayment(xDocumento, parseAmountOrNull(xAmount));
+                log.info("✅ Pago aprobado procesado doc={} paymentStatus={} flowStatus={} contractLinkPresent={}",
+                        xDocumento,
+                        approval.paymentStatus(),
+                        approval.flowStatus(),
+                        StringUtils.hasText(approval.contractLink()));
+            } catch (Exception ex) {
+                log.error("❌ Error procesando pago aprobado doc={} ref={}: {}", xDocumento, xRefPayco, ex.getMessage(), ex);
+            }
+
         } else if (isCancelled(estado, xCodResponse)) {
             log.info("❌ Pago cancelado doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
             processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.CANCELLED);
@@ -874,67 +884,10 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             log.warn("Pago aprobado sin x_extra1 (documento). No se sincroniza chatbot.");
             return;
         }
-
-        ChatbotMatriculaProceso proceso;
         try {
-            proceso = chatbotProcesoService.markPaymentApproved(documento, amount);
+            paymentApprovalService.handleApprovedPayment(documento, amount);
         } catch (Exception ex) {
-            log.error("No se pudo marcar pago aprobado doc={}: {}", documento, ex.getMessage(), ex);
-            return;
-        }
-
-        if (!autoSendContractOnPayment || !notifyContractLinkByChatbot) {
-            return;
-        }
-
-        Optional<ChatbotMatriculaProceso> currentOpt = chatbotProcesoService.findProcesoByDocumento(documento);
-        ChatbotMatriculaProceso current = currentOpt.orElse(proceso);
-
-        String flowStatus = safeTrim(current.getFlowStatus()).toUpperCase(Locale.ROOT);
-        if ("CONTRACT_LINK_SENT".equals(flowStatus)
-                && StringUtils.hasText(current.getContractLink())
-                && !forceResendContractLink) {
-            log.info("Contrato ya enviado para doc={}. Se evita reenvio.", documento);
-            return;
-        }
-
-        String contractLink = safeTrim(current.getContractLink());
-        if (!StringUtils.hasText(contractLink)) {
-            try {
-                VerificationService.ContractLinkResult out =
-                        verificationService.createContractVerificationLink(current.getEmail(), contractBaseUrl);
-                contractLink = buildContractUserLink(out);
-                chatbotProcesoService.markContractLinkSent(documento, contractLink);
-            } catch (Exception ex) {
-                log.error("Pago aprobado doc={} pero no se pudo generar link de contrato: {}", documento, ex.getMessage(), ex);
-                return;
-            }
-        }
-
-        String phone = safeTrim(current.getPhone());
-        if (!StringUtils.hasText(phone) || !StringUtils.hasText(contractLink)) {
-            log.warn("Pago aprobado doc={} sin telefono/link para notificar. phonePresent={} linkPresent={}",
-                    documento, StringUtils.hasText(phone), StringUtils.hasText(contractLink));
-            return;
-        }
-
-        log.info("📲 Preparando envío por WhatsApp doc={} to={} contractLinkPresent={}",
-                documento, maskPhone(phone), StringUtils.hasText(contractLink));
-
-        WhatsAppTemplateService.ConfigStatus waStatus = waService.getConfigStatus();
-        if (!waStatus.ready()) {
-            log.warn("Pago aprobado doc={} pero WhatsApp no esta listo. enabled={} restrictToDefault={} defaultTo={} detail={}",
-                    documento, waStatus.enabled(), waStatus.restrictToDefault(), waStatus.defaultToMasked(), waStatus.message());
-            return;
-        }
-
-       try {
-            String msg = buildApprovedPaymentMessage(contractLink, customMessageTextRaw, customMessageTemplateRaw);
-            waService.sendTextMessage(phone, msg);
-            log.info("Enlace de contrato enviado por WhatsApp doc={} to={}", documento, maskPhone(phone));
-        } catch (Exception ex) {
-            log.error("No se pudo enviar enlace de contrato por WhatsApp doc={} to={}: {}",
-                    documento, maskPhone(phone), ex.getMessage(), ex);
+            log.error("No se pudo procesar pago aprobado doc={}: {}", documento, ex.getMessage(), ex);
         }
     }
 

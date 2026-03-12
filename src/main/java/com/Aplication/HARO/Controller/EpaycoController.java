@@ -114,10 +114,16 @@ public class EpaycoController {
 public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) {
     Map<String, Object> safePayload = payload == null ? Map.of() : payload;
 
-    String refPayco = firstNotBlank(
+    String refPayco = resolveLookupRefPayco(
             safeTrim(asString(safePayload.get("ref_payco"))),
             safeTrim(asString(safePayload.get("refPayco"))),
+            safeTrim(asString(safePayload.get("lookupReference"))),
+            safeTrim(asString(safePayload.get("lookup_ref_payco"))),
             safeTrim(asString(safePayload.get("reference")))
+    );
+    String gatewayRefPayco = firstNotBlank(
+            safeTrim(asString(safePayload.get("x_ref_payco"))),
+            safeTrim(asString(safePayload.get("gatewayReference")))
     );
     String documentHint = firstNotBlank(
             safeTrim(asString(safePayload.get("document"))),
@@ -225,6 +231,12 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     }
 
     out.put("status", status);
+    if (StringUtils.hasText(refPayco)) {
+        out.put("reference", refPayco);
+    }
+    if (StringUtils.hasText(gatewayRefPayco)) {
+        out.put("gatewayReference", gatewayRefPayco);
+    }
     out.put("chatbotSynced", chatbotSynced);
     out.put("approvedByPayload", approvedByPayload);
     out.put("syncSource", "response_page");
@@ -253,12 +265,15 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(asString(safePayload.get("x_amount")))
         ));
 
-        String documento = firstNotBlank(
+        String documento = normalizeDocumentoCandidate(firstNotBlank(
                 safeTrim(asString(summary.get("document"))),
+                safeTrim(asString(summary.get("customerDocument"))),
                 safeTrim(asString(safePayload.get("document"))),
                 safeTrim(asString(safePayload.get("x_extra1"))),
+                safeTrim(asString(safePayload.get("customer_document"))),
+                safeTrim(asString(safePayload.get("x_customer_document"))),
                 safeTrim(documentHint)
-        );
+        ));
 
         if (StringUtils.hasText(documento)) {
             try {
@@ -277,12 +292,14 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             }
         }
 
-        String email = firstNotBlank(
+        String email = sanitizeEmailCandidate(firstNotBlank(
                 safeTrim(asString(summary.get("email"))),
+                safeTrim(asString(summary.get("customerEmail"))),
                 safeTrim(asString(safePayload.get("email"))),
                 safeTrim(asString(safePayload.get("customer_email"))),
+                safeTrim(asString(safePayload.get("x_customer_email"))),
                 safeTrim(emailHint)
-        );
+        ));
         if (!StringUtils.hasText(email)) {
             return false;
         }
@@ -379,25 +396,29 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
 
         JsonNode tx = resolveTransactionNode(root);
-        String xCodResponse = firstNotBlank(readField(tx, "x_cod_response"), readField(root, "x_cod_response"));
-        String xResponse = firstNotBlank(readField(tx, "x_response"), readField(root, "x_response"));
+        String xCodResponse = readFirstField(tx, root,
+                "x_cod_response", "x_cod_respuesta", "cod_response", "codResponse");
+        String xResponse = readFirstField(tx, root,
+                "x_response", "x_respuesta", "x_transaction_state", "transaction_state");
         String xReason = firstNotBlank(
-                readField(tx, "x_response_reason_text"),
-                readField(root, "x_response_reason_text"),
+                readFirstField(tx, root, "x_response_reason_text", "response_reason_text", "text_response"),
                 readField(root, "text_response")
         );
-        String xAmount = firstNotBlank(readField(tx, "x_amount"), readField(root, "x_amount"));
-        String xCurrency = firstNotBlank(readField(tx, "x_currency_code"), readField(root, "x_currency_code"));
-        String xTransactionId = firstNotBlank(readField(tx, "x_transaction_id"), readField(root, "x_transaction_id"));
-        String xInvoice = firstNotBlank(readField(tx, "x_id_invoice"), readField(root, "x_id_invoice"));
-        String xDocumento = firstNotBlank(readField(tx, "x_extra1"), readField(root, "x_extra1"), documentHintRaw);
-        String xEmail = firstNotBlank(
-                readField(tx, "x_customer_email"),
-                readField(tx, "customer_email"),
-                readField(root, "customer_email"),
-                readField(root, "x_customer_email")
-        );
-        String xRefPayco = firstNotBlank(readField(tx, "x_ref_payco"), readField(root, "x_ref_payco"), refPayco);
+        String xAmount = readFirstField(tx, root, "x_amount", "amount", "x_amount_ok", "x_amount_country", "x_amount_base");
+        String xCurrency = readFirstField(tx, root, "x_currency_code", "currency", "currency_code");
+        String xTransactionId = readFirstField(tx, root, "x_transaction_id", "transaction_id");
+        String xInvoice = readFirstField(tx, root, "x_id_invoice", "x_id_factura", "id_invoice", "invoice");
+        String xRefPayco = readFirstField(tx, root, "x_ref_payco", "ref_payco", "refPayco");
+
+        String customerDocumentRaw = readFirstField(tx, root,
+                "x_customer_document", "customer_document", "x_customer_docnumber", "x_doc_number", "x_extra1", "document");
+        String xDocumento = normalizeDocumentoCandidate(firstNotBlank(customerDocumentRaw, documentHintRaw));
+
+        String customerEmailRaw = readFirstField(tx, root,
+                "x_customer_email", "customer_email", "x_email", "email");
+        String xEmail = sanitizeEmailCandidate(customerEmailRaw);
+
+        String lookupRefPayco = resolveLookupRefPayco(refPayco, readFirstField(root, tx, "ref_payco", "reference"));
 
         PaymentUserStatus status = resolvePaymentUserStatus(xResponse, xCodResponse, xReason);
 
@@ -413,9 +434,12 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 }
             }
         }
+        if (procesoOpt.isEmpty() && StringUtils.hasText(xEmail)) {
+            procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(xEmail);
+        }
 
         if (status == PaymentUserStatus.APPROVED && StringUtils.hasText(xDocumento)) {
-        procesoOpt = chatbotProcesoService.findProcesoByDocumento(xDocumento);
+            procesoOpt = chatbotProcesoService.findProcesoByDocumento(xDocumento);
         }
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -423,7 +447,10 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         out.put("title", status.title);
         out.put("message", status.message(xReason));
         out.put("nextStep", status.nextStep);
-        out.put("reference", xRefPayco);
+        out.put("reference", firstNotBlank(lookupRefPayco, xRefPayco));
+        if (StringUtils.hasText(xRefPayco) && !xRefPayco.equals(out.get("reference"))) {
+            out.put("gatewayReference", xRefPayco);
+        }
 
         String localDocument = xDocumento;
         String localEmail = xEmail;
@@ -440,19 +467,19 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
 
         if (StringUtils.hasText(localDocument)) out.put("document", localDocument);
         if (StringUtils.hasText(localEmail)) out.put("email", localEmail);
+        if (!StringUtils.hasText(localDocument) && StringUtils.hasText(customerDocumentRaw)) out.put("customerDocument", customerDocumentRaw);
+        if (!StringUtils.hasText(localEmail) && StringUtils.hasText(customerEmailRaw)) out.put("customerEmail", customerEmailRaw);
 
         if (StringUtils.hasText(xTransactionId)) out.put("transactionId", xTransactionId);
         if (StringUtils.hasText(xInvoice)) out.put("invoice", xInvoice);
         if (StringUtils.hasText(xAmount)) out.put("amount", xAmount);
         if (StringUtils.hasText(xCurrency)) out.put("currency", xCurrency);
-        if (StringUtils.hasText(xDocumento)) out.put("document", xDocumento);
-        if (StringUtils.hasText(xEmail)) out.put("email", xEmail);
-        
 
         Map<String, String> gateway = new LinkedHashMap<>();
         if (StringUtils.hasText(xCodResponse)) gateway.put("codResponse", xCodResponse);
         if (StringUtils.hasText(xResponse)) gateway.put("response", xResponse);
         if (StringUtils.hasText(xReason)) gateway.put("reason", xReason);
+        if (StringUtils.hasText(xRefPayco)) gateway.put("xRefPayco", xRefPayco);
         if (!gateway.isEmpty()) out.put("gateway", gateway);
 
         if (procesoOpt.isPresent()) {
@@ -482,18 +509,26 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         Map<String, Object> safePayload = payload == null ? Map.of() : payload;
         Map<String, Object> out = new LinkedHashMap<>();
 
-        String refPayco = firstNotBlank(
+        String refPayco = resolveLookupRefPayco(
                 safeTrim(refPaycoRaw),
                 safeTrim(asString(safePayload.get("ref_payco"))),
                 safeTrim(asString(safePayload.get("refPayco"))),
+                safeTrim(asString(safePayload.get("lookupReference"))),
+                safeTrim(asString(safePayload.get("lookup_ref_payco"))),
                 safeTrim(asString(safePayload.get("reference")))
+        );
+        String gatewayRefPayco = firstNotBlank(
+                safeTrim(asString(safePayload.get("x_ref_payco"))),
+                safeTrim(asString(safePayload.get("gatewayReference")))
         );
         String xCodResponse = firstNotBlank(
                 safeTrim(asString(safePayload.get("x_cod_response"))),
+                safeTrim(asString(safePayload.get("x_cod_respuesta"))),
                 safeTrim(asString(safePayload.get("codResponse")))
         );
         String xResponse = firstNotBlank(
                 safeTrim(asString(safePayload.get("x_response"))),
+                safeTrim(asString(safePayload.get("x_respuesta"))),
                 safeTrim(asString(safePayload.get("response"))),
                 safeTrim(asString(safePayload.get("status"))),
                 safeTrim(asString(safePayload.get("paymentStatus")))
@@ -518,18 +553,24 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         );
         String xInvoice = firstNotBlank(
                 safeTrim(asString(safePayload.get("x_id_invoice"))),
+                safeTrim(asString(safePayload.get("x_id_factura"))),
                 safeTrim(asString(safePayload.get("invoice")))
         );
-        String xDocumento = firstNotBlank(
+        String rawDocument = firstNotBlank(
                 safeTrim(asString(safePayload.get("x_extra1"))),
                 safeTrim(asString(safePayload.get("document"))),
+                safeTrim(asString(safePayload.get("customer_document"))),
+                safeTrim(asString(safePayload.get("x_customer_document"))),
                 safeTrim(documentHintRaw)
         );
-        String xEmail = firstNotBlank(
+        String xDocumento = normalizeDocumentoCandidate(rawDocument);
+        String rawEmail = firstNotBlank(
                 safeTrim(asString(safePayload.get("customer_email"))),
+                safeTrim(asString(safePayload.get("x_customer_email"))),
                 safeTrim(asString(safePayload.get("email"))),
                 safeTrim(emailHintRaw)
         );
+        String xEmail = sanitizeEmailCandidate(rawEmail);
 
         PaymentUserStatus status = resolvePaymentUserStatus(xResponse, xCodResponse, xReason);
         if (asBoolean(safePayload.get("paymentApproved"), false)) {
@@ -541,18 +582,26 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         out.put("message", status.message(xReason));
         out.put("nextStep", status.nextStep);
 
-        if (StringUtils.hasText(refPayco)) out.put("reference", refPayco);
+        if (StringUtils.hasText(refPayco)) {
+            out.put("reference", refPayco);
+        } else if (StringUtils.hasText(gatewayRefPayco)) {
+            out.put("reference", gatewayRefPayco);
+        }
+        if (StringUtils.hasText(gatewayRefPayco)) out.put("gatewayReference", gatewayRefPayco);
         if (StringUtils.hasText(xTransactionId)) out.put("transactionId", xTransactionId);
         if (StringUtils.hasText(xInvoice)) out.put("invoice", xInvoice);
         if (StringUtils.hasText(xAmount)) out.put("amount", xAmount);
         if (StringUtils.hasText(xCurrency)) out.put("currency", xCurrency);
         if (StringUtils.hasText(xDocumento)) out.put("document", xDocumento);
         if (StringUtils.hasText(xEmail)) out.put("email", xEmail);
+        if (!StringUtils.hasText(xDocumento) && StringUtils.hasText(rawDocument)) out.put("customerDocument", rawDocument);
+        if (!StringUtils.hasText(xEmail) && StringUtils.hasText(rawEmail)) out.put("customerEmail", rawEmail);
 
         Map<String, String> gateway = new LinkedHashMap<>();
         if (StringUtils.hasText(xCodResponse)) gateway.put("codResponse", xCodResponse);
         if (StringUtils.hasText(xResponse)) gateway.put("response", xResponse);
         if (StringUtils.hasText(xReason)) gateway.put("reason", xReason);
+        if (StringUtils.hasText(gatewayRefPayco)) gateway.put("xRefPayco", gatewayRefPayco);
         if (!gateway.isEmpty()) out.put("gateway", gateway);
 
         return out;
@@ -573,6 +622,18 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     private JsonNode resolveTransactionNode(JsonNode root) {
         if (root == null || root.isNull()) return null;
         JsonNode data = root.path("data");
+        if (data.isObject()) {
+            JsonNode nestedData = data.path("data");
+            if (nestedData.isArray() && nestedData.size() > 0) {
+                JsonNode firstNested = nestedData.get(0);
+                if (firstNested != null && firstNested.isObject()) {
+                    return firstNested;
+                }
+            }
+            if (nestedData.isObject()) {
+                return nestedData;
+            }
+        }
         if (data.isArray() && data.size() > 0) {
             JsonNode first = data.get(0);
             if (first != null && first.isObject()) {
@@ -590,6 +651,61 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         JsonNode value = node.path(fieldName);
         if (value.isMissingNode() || value.isNull()) return "";
         return safeTrim(value.asText(""));
+    }
+
+    private String readFirstField(JsonNode first, JsonNode second, String... fieldNames) {
+        if (fieldNames == null) return "";
+        for (String fieldName : fieldNames) {
+            String fromFirst = readField(first, fieldName);
+            if (StringUtils.hasText(fromFirst)) return fromFirst;
+            String fromSecond = readField(second, fieldName);
+            if (StringUtils.hasText(fromSecond)) return fromSecond;
+        }
+        return "";
+    }
+
+    private String resolveLookupRefPayco(String... candidates) {
+        String fallback = "";
+        if (candidates == null) return fallback;
+        for (String candidate : candidates) {
+            String value = safeTrim(candidate);
+            if (!StringUtils.hasText(value)) continue;
+            if (!StringUtils.hasText(fallback)) {
+                fallback = value;
+            }
+            if (!looksLikeGatewayReference(value)) {
+                return value;
+            }
+        }
+        return fallback;
+    }
+
+    private boolean looksLikeGatewayReference(String valueRaw) {
+        String value = safeTrim(valueRaw);
+        return StringUtils.hasText(value) && value.matches("^\\d{6,}$");
+    }
+
+    private String normalizeDocumentoCandidate(String raw) {
+        String value = safeTrim(raw);
+        if (!StringUtils.hasText(value) || value.contains("*")) {
+            return "";
+        }
+        String digits = value.replaceAll("\\D+", "");
+        if (digits.length() < 5) {
+            return "";
+        }
+        return digits;
+    }
+
+    private String sanitizeEmailCandidate(String raw) {
+        String value = safeTrim(raw).toLowerCase(Locale.ROOT);
+        if (!StringUtils.hasText(value) || value.contains("*")) {
+            return "";
+        }
+        if (!value.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+            return "";
+        }
+        return value;
     }
 
     private String firstNotBlank(String... values) {

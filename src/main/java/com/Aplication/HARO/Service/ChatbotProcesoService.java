@@ -15,6 +15,7 @@ import com.Aplication.HARO.Repository.VehiculoRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -298,6 +299,64 @@ private String paymentConfirmationUrl;
     @Transactional(readOnly = true)
     public Optional<ChatbotMatriculaProceso> findLatestProcesoByEmail(String email) {
         return procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(normalizeEmail(email));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<ChatbotMatriculaProceso> findLatestProcesoByMaskedHints(String maskedDocumentRaw, String maskedEmailRaw) {
+        MaskLookupParts docMask = MaskLookupParts.forDocument(maskedDocumentRaw);
+        MaskLookupParts emailMask = MaskLookupParts.forEmail(maskedEmailRaw);
+        if (!docMask.hasCriteria() && !emailMask.hasCriteria()) {
+            return Optional.empty();
+        }
+
+        List<ChatbotMatriculaProceso> candidates = procesoRepository.findCandidatesForMaskedLookup(
+                docMask.prefix(),
+                docMask.suffix(),
+                emailMask.prefix(),
+                emailMask.suffix(),
+                PageRequest.of(0, 15)
+        );
+        if (candidates.isEmpty()) {
+            return Optional.empty();
+        }
+
+        List<ChatbotMatriculaProceso> filtered = new ArrayList<>();
+        for (ChatbotMatriculaProceso candidate : candidates) {
+            String candidateDocument = trim(candidate.getNumeroDocumento()).replaceAll("\\D+", "");
+            String candidateEmail = trim(candidate.getEmail()).toLowerCase(Locale.ROOT);
+            if (!docMask.matches(candidateDocument)) {
+                continue;
+            }
+            if (!emailMask.matches(candidateEmail)) {
+                continue;
+            }
+            filtered.add(candidate);
+        }
+
+        List<ChatbotMatriculaProceso> resolvedPool = filtered.isEmpty() ? candidates : filtered;
+        if (resolvedPool.size() == 1) {
+            return Optional.of(resolvedPool.get(0));
+        }
+
+        String firstDocument = trim(resolvedPool.get(0).getNumeroDocumento());
+        if (!firstDocument.isBlank()) {
+            boolean sameDocument = true;
+            for (ChatbotMatriculaProceso candidate : resolvedPool) {
+                if (!firstDocument.equals(trim(candidate.getNumeroDocumento()))) {
+                    sameDocument = false;
+                    break;
+                }
+            }
+            if (sameDocument) {
+                return Optional.of(resolvedPool.get(0));
+            }
+        }
+
+        log.warn("No se pudo resolver proceso por mascaras. docMask={} emailMask={} candidatos={}",
+                maskMaskedValue(maskedDocumentRaw),
+                maskMaskedValue(maskedEmailRaw),
+                resolvedPool.size());
+        return Optional.empty();
     }
 
     @Transactional(readOnly = true)
@@ -994,6 +1053,88 @@ private String paymentConfirmationUrl;
 
     private String trim(String v) {
         return v == null ? "" : v.trim();
+    }
+
+    private String maskMaskedValue(String raw) {
+        String value = trim(raw);
+        if (value.isBlank()) {
+            return "";
+        }
+        if (value.length() <= 6) {
+            return "***";
+        }
+        return value.substring(0, 2) + "***" + value.substring(value.length() - 2);
+    }
+
+    private record MaskLookupParts(String prefix, String suffix) {
+        private static MaskLookupParts empty() {
+            return new MaskLookupParts("", "");
+        }
+
+        static MaskLookupParts forDocument(String raw) {
+            String value = raw == null ? "" : raw.trim().replaceAll("\\s+", "");
+            if (value.isBlank() || !value.contains("*")) {
+                return empty();
+            }
+            String normalized = value.replaceAll("[^0-9*]", "");
+            if (normalized.isBlank() || !normalized.contains("*")) {
+                return empty();
+            }
+            int firstMask = normalized.indexOf('*');
+            int lastMask = normalized.lastIndexOf('*');
+            String prefix = normalized.substring(0, firstMask).replaceAll("\\D+", "");
+            String suffix = normalized.substring(lastMask + 1).replaceAll("\\D+", "");
+            if (prefix.isBlank() && suffix.isBlank()) {
+                return empty();
+            }
+            return new MaskLookupParts(prefix, suffix);
+        }
+
+        static MaskLookupParts forEmail(String raw) {
+            String value = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+            if (value.isBlank() || !value.contains("*") || !value.contains("@")) {
+                return empty();
+            }
+            int at = value.indexOf('@');
+            if (at <= 0 || at >= value.length() - 1) {
+                return empty();
+            }
+            String local = value.substring(0, at);
+            String domain = value.substring(at + 1);
+            int firstMask = local.indexOf('*');
+            int lastMask = local.lastIndexOf('*');
+            if (firstMask < 0) {
+                return empty();
+            }
+            String prefix = local.substring(0, firstMask);
+            String suffixLocal = local.substring(lastMask + 1);
+            String suffix = suffixLocal + "@" + domain;
+            if (prefix.isBlank() && suffix.isBlank()) {
+                return empty();
+            }
+            return new MaskLookupParts(prefix, suffix);
+        }
+
+        boolean hasCriteria() {
+            return !prefix.isBlank() || !suffix.isBlank();
+        }
+
+        boolean matches(String valueRaw) {
+            if (!hasCriteria()) {
+                return true;
+            }
+            String value = valueRaw == null ? "" : valueRaw.trim().toLowerCase(Locale.ROOT);
+            if (value.isBlank()) {
+                return false;
+            }
+            if (!prefix.isBlank() && !value.startsWith(prefix.toLowerCase(Locale.ROOT))) {
+                return false;
+            }
+            if (!suffix.isBlank() && !value.endsWith(suffix.toLowerCase(Locale.ROOT))) {
+                return false;
+            }
+            return true;
+        }
     }
 
     private String buildStudentDisplayName(Estudiante estudiante) {

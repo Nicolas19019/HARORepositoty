@@ -282,17 +282,21 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(asString(safePayload.get("x_customer_document"))),
                 safeTrim(documentHint)
         ));
+        String customerDocRaw = firstNotBlank(
+                safeTrim(asString(summary.get("customerDocument"))),
+                safeTrim(asString(safePayload.get("customer_document"))),
+                safeTrim(asString(safePayload.get("x_customer_document")))
+        );
+        String customerEmailRaw = firstNotBlank(
+                safeTrim(asString(summary.get("customerEmail"))),
+                safeTrim(asString(safePayload.get("customer_email"))),
+                safeTrim(asString(safePayload.get("x_customer_email")))
+        );
 
         if (StringUtils.hasText(documento)) {
             try {
                 PaymentApprovalService.ApprovalResult approval = paymentApprovalService.handleApprovedPayment(documento, amount);
-                summary.put("paymentStatus", approval.paymentStatus());
-                summary.put("flowStatus", approval.flowStatus());
-                if (StringUtils.hasText(approval.contractLink())) {
-                    summary.put("contractLink", approval.contractLink());
-                }
-                summary.put("whatsappSent", approval.whatsappSent());
-                summary.put("duplicatePaymentProcessing", approval.duplicate());
+                applyApprovalResultToSummary(summary, approval, documento, "");
                 boolean synced = approval.whatsappSent() || approval.duplicate();
                 return new SyncDecision(synced, synced ? "processed_by_document" : "processed_by_document_without_whatsapp_confirmation", "document");
             } catch (Exception ex) {
@@ -310,16 +314,37 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(emailHint)
         ));
         if (!StringUtils.hasText(email)) {
-            String customerDocRaw = firstNotBlank(
-                    safeTrim(asString(summary.get("customerDocument"))),
-                    safeTrim(asString(safePayload.get("customer_document"))),
-                    safeTrim(asString(safePayload.get("x_customer_document")))
-            );
-            String customerEmailRaw = firstNotBlank(
-                    safeTrim(asString(summary.get("customerEmail"))),
-                    safeTrim(asString(safePayload.get("customer_email"))),
-                    safeTrim(asString(safePayload.get("x_customer_email")))
-            );
+            Optional<ChatbotMatriculaProceso> maskedProceso =
+                    chatbotProcesoService.findLatestProcesoByMaskedHints(customerDocRaw, customerEmailRaw);
+            if (maskedProceso.isPresent()) {
+                String fromMaskDoc = safeTrim(maskedProceso.get().getNumeroDocumento());
+                if (StringUtils.hasText(fromMaskDoc)) {
+                    try {
+                        PaymentApprovalService.ApprovalResult approval =
+                                paymentApprovalService.handleApprovedPayment(fromMaskDoc, amount);
+                        applyApprovalResultToSummary(
+                                summary,
+                                approval,
+                                fromMaskDoc,
+                                safeTrim(maskedProceso.get().getEmail())
+                        );
+                        boolean synced = approval.whatsappSent() || approval.duplicate();
+                        return new SyncDecision(
+                                synced,
+                                synced ? "processed_by_masked_identifiers" : "processed_by_masked_identifiers_without_whatsapp_confirmation",
+                                "masked_hints"
+                        );
+                    } catch (Exception ex) {
+                        log.error("No fue posible sincronizar pago aprobado por mascaras doc={} ref={}: {}",
+                                fromMaskDoc,
+                                safeTrim(asString(summary.get("reference"))),
+                                ex.getMessage(),
+                                ex);
+                        return new SyncDecision(false, "error_processing_by_masked_identifiers", "masked_hints");
+                    }
+                }
+            }
+
             log.warn("Sync pago aprobado sin identificadores resolubles. docRaw={} emailRaw={} reference={} gatewayRef={} invoice={}",
                     customerDocRaw,
                     customerEmailRaw,
@@ -343,20 +368,35 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
 
             PaymentApprovalService.ApprovalResult approval =
                     paymentApprovalService.handleApprovedPayment(fromEmailDoc, amount);
-            summary.put("document", fromEmailDoc);
-            summary.put("paymentStatus", approval.paymentStatus());
-            summary.put("flowStatus", approval.flowStatus());
-            if (StringUtils.hasText(approval.contractLink())) {
-                summary.put("contractLink", approval.contractLink());
-            }
-            summary.put("whatsappSent", approval.whatsappSent());
-            summary.put("duplicatePaymentProcessing", approval.duplicate());
+            applyApprovalResultToSummary(summary, approval, fromEmailDoc, email);
             boolean synced = approval.whatsappSent() || approval.duplicate();
             return new SyncDecision(synced, synced ? "processed_by_email" : "processed_by_email_without_whatsapp_confirmation", "email");
         } catch (Exception ex) {
             log.error("No fue posible sincronizar pago aprobado por email. email={}: {}", email, ex.getMessage(), ex);
             return new SyncDecision(false, "error_processing_by_email", "email");
         }
+    }
+
+    private void applyApprovalResultToSummary(Map<String, Object> summary,
+                                              PaymentApprovalService.ApprovalResult approval,
+                                              String document,
+                                              String email) {
+        if (summary == null || approval == null) {
+            return;
+        }
+        if (StringUtils.hasText(document)) {
+            summary.put("document", document);
+        }
+        if (StringUtils.hasText(email)) {
+            summary.put("email", email);
+        }
+        summary.put("paymentStatus", approval.paymentStatus());
+        summary.put("flowStatus", approval.flowStatus());
+        if (StringUtils.hasText(approval.contractLink())) {
+            summary.put("contractLink", approval.contractLink());
+        }
+        summary.put("whatsappSent", approval.whatsappSent());
+        summary.put("duplicatePaymentProcessing", approval.duplicate());
     }
 
     private ResponseEntity<?> userFacingPaymentStatus(String refPaycoRaw,

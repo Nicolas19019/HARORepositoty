@@ -272,19 +272,16 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             safeTrim(asString(summary.get("trx"))),
             transactionIdHint
     );
-    String summaryDocument = firstNotBlank(
+    String summaryDocument = firstResolvedDocument(
             safeTrim(asString(summary.get("document"))),
-            safeTrim(asString(summary.get("customerDocument"))),
             documentHint
     );
-    String summaryEmail = firstNotBlank(
+    String summaryEmail = firstResolvedEmail(
             safeTrim(asString(summary.get("email"))),
-            safeTrim(asString(summary.get("customerEmail"))),
             emailHint
     );
-    String summaryPhone = firstNotBlank(
+    String summaryPhone = firstResolvedPhone(
             safeTrim(asString(summary.get("phone"))),
-            safeTrim(asString(summary.get("customerPhone"))),
             phoneHint
     );
 
@@ -507,16 +504,6 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(asString(summary.get("document"))),
                 safeTrim(asString(summary.get("customerDocument")))
         );
-        String customerDocRaw = firstNotBlank(
-                safeTrim(asString(summary.get("customerDocument"))),
-                safeTrim(asString(safePayload.get("customer_document"))),
-                safeTrim(asString(safePayload.get("x_customer_document")))
-        );
-        String customerEmailRaw = firstNotBlank(
-                safeTrim(asString(summary.get("customerEmail"))),
-                safeTrim(asString(safePayload.get("customer_email"))),
-                safeTrim(asString(safePayload.get("x_customer_email")))
-        );
         String customerPhoneRaw = firstNotBlank(
                 safeTrim(asString(summary.get("phone"))),
                 safeTrim(asString(summary.get("customerPhone"))),
@@ -550,50 +537,16 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(emailHint)
         );
         if (!StringUtils.hasText(email)) {
-            Optional<ChatbotMatriculaProceso> maskedProceso =
-                    chatbotProcesoService.findLatestProcesoByMaskedHints(customerDocRaw, customerEmailRaw);
-            if (maskedProceso.isPresent()) {
-                String fromMaskDoc = safeTrim(maskedProceso.get().getNumeroDocumento());
-                if (StringUtils.hasText(fromMaskDoc)) {
-                    try {
-                        PaymentApprovalService.ApprovalResult approval =
-                                paymentApprovalService.handleApprovedPayment(fromMaskDoc, amount);
-                        applyApprovalResultToSummary(
-                                summary,
-                                approval,
-                                fromMaskDoc,
-                                safeTrim(maskedProceso.get().getEmail())
-                        );
-                        boolean synced = approval.whatsappSent() || approval.duplicate();
-                        return new SyncDecision(
-                                synced,
-                                synced ? "processed_by_masked_identifiers" : "processed_by_masked_identifiers_without_whatsapp_confirmation",
-                                "masked_hints"
-                        );
-                    } catch (Exception ex) {
-                        log.error("No fue posible sincronizar pago aprobado por mascaras doc={} ref={}: {}",
-                                fromMaskDoc,
-                                safeTrim(asString(summary.get("reference"))),
-                                ex.getMessage(),
-                                ex);
-                        return new SyncDecision(false, "error_processing_by_masked_identifiers", "masked_hints");
-                    }
-                }
-            }
-
             Optional<SyncDecision> byPhone = trySyncByPhone(summary, safePayload, amount, customerPhoneRaw);
             if (byPhone.isPresent()) {
                 return byPhone.get();
             }
 
-            log.warn("Sync pago aprobado sin identificadores resolubles. docRaw={} emailRaw={} reference={} gatewayRef={} invoice={}",
-                    customerDocRaw,
-                    customerEmailRaw,
+            log.warn("Sync pago aprobado sin identificadores resolubles del chat. reference={} gatewayRef={} invoice={}",
                     safeTrim(asString(summary.get("reference"))),
                     firstNotBlank(safeTrim(asString(summary.get("gatewayReference"))), safeTrim(asString(safePayload.get("x_ref_payco")))),
                     safeTrim(asString(summary.get("invoice"))));
-            boolean hasMaskedHints = customerDocRaw.contains("*") || customerEmailRaw.contains("*");
-            return new SyncDecision(false, hasMaskedHints ? "masked_identifiers_not_resolved" : "missing_unmasked_document_and_email", "");
+            return new SyncDecision(false, "missing_identifiers_from_chat_context", "");
         }
 
         try {
@@ -831,9 +784,6 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         if (StringUtils.hasText(localDocument)) out.put("document", localDocument);
         if (StringUtils.hasText(localEmail)) out.put("email", localEmail);
         if (StringUtils.hasText(xPhone)) out.put("phone", xPhone);
-        if (!StringUtils.hasText(localDocument) && StringUtils.hasText(customerDocumentRaw)) out.put("customerDocument", customerDocumentRaw);
-        if (!StringUtils.hasText(localEmail) && StringUtils.hasText(customerEmailRaw)) out.put("customerEmail", customerEmailRaw);
-        if (!StringUtils.hasText(xPhone) && StringUtils.hasText(customerPhoneRaw)) out.put("customerPhone", customerPhoneRaw);
 
         if (StringUtils.hasText(xTransactionId)) out.put("transactionId", xTransactionId);
         if (StringUtils.hasText(xInvoice)) out.put("invoice", xInvoice);
@@ -987,9 +937,6 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         if (StringUtils.hasText(xDocumento)) out.put("document", xDocumento);
         if (StringUtils.hasText(xEmail)) out.put("email", xEmail);
         if (StringUtils.hasText(xPhone)) out.put("phone", xPhone);
-        if (!StringUtils.hasText(xDocumento) && StringUtils.hasText(rawDocument)) out.put("customerDocument", rawDocument);
-        if (!StringUtils.hasText(xEmail) && StringUtils.hasText(rawEmail)) out.put("customerEmail", rawEmail);
-        if (!StringUtils.hasText(xPhone) && StringUtils.hasText(rawPhone)) out.put("customerPhone", rawPhone);
 
         Map<String, String> gateway = new LinkedHashMap<>();
         if (StringUtils.hasText(xCodResponse)) gateway.put("codResponse", xCodResponse);

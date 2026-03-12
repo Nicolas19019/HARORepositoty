@@ -309,53 +309,42 @@ private String paymentConfirmationUrl;
             return Optional.empty();
         }
 
-        List<ChatbotMatriculaProceso> candidates = procesoRepository.findCandidatesForMaskedLookup(
-                docMask.prefix(),
-                docMask.suffix(),
-                emailMask.prefix(),
-                emailMask.suffix(),
-                PageRequest.of(0, 15)
-        );
-        if (candidates.isEmpty()) {
-            return Optional.empty();
+        List<ChatbotMatriculaProceso> strictCandidates = findMaskedCandidates(docMask, emailMask);
+        Optional<ChatbotMatriculaProceso> strictResolved = resolveMaskedCandidates(strictCandidates, docMask, emailMask);
+        if (strictResolved.isPresent()) {
+            return strictResolved;
         }
 
-        List<ChatbotMatriculaProceso> filtered = new ArrayList<>();
-        for (ChatbotMatriculaProceso candidate : candidates) {
-            String candidateDocument = trim(candidate.getNumeroDocumento()).replaceAll("\\D+", "");
-            String candidateEmail = trim(candidate.getEmail()).toLowerCase(Locale.ROOT);
-            if (!docMask.matches(candidateDocument)) {
-                continue;
+        List<ChatbotMatriculaProceso> docOnlyCandidates = List.of();
+        if (docMask.hasCriteria()) {
+            docOnlyCandidates = findMaskedCandidates(docMask, MaskLookupParts.empty());
+            Optional<ChatbotMatriculaProceso> docOnlyResolved =
+                    resolveMaskedCandidates(docOnlyCandidates, docMask, MaskLookupParts.empty());
+            if (docOnlyResolved.isPresent()) {
+                return docOnlyResolved;
             }
-            if (!emailMask.matches(candidateEmail)) {
-                continue;
-            }
-            filtered.add(candidate);
         }
 
-        List<ChatbotMatriculaProceso> resolvedPool = filtered.isEmpty() ? candidates : filtered;
-        if (resolvedPool.size() == 1) {
-            return Optional.of(resolvedPool.get(0));
+        List<ChatbotMatriculaProceso> emailOnlyCandidates = List.of();
+        if (emailMask.hasCriteria()) {
+            emailOnlyCandidates = findMaskedCandidates(MaskLookupParts.empty(), emailMask);
+            Optional<ChatbotMatriculaProceso> emailOnlyResolved =
+                    resolveMaskedCandidates(emailOnlyCandidates, MaskLookupParts.empty(), emailMask);
+            if (emailOnlyResolved.isPresent()) {
+                return emailOnlyResolved;
+            }
         }
 
-        String firstDocument = trim(resolvedPool.get(0).getNumeroDocumento());
-        if (!firstDocument.isBlank()) {
-            boolean sameDocument = true;
-            for (ChatbotMatriculaProceso candidate : resolvedPool) {
-                if (!firstDocument.equals(trim(candidate.getNumeroDocumento()))) {
-                    sameDocument = false;
-                    break;
-                }
-            }
-            if (sameDocument) {
-                return Optional.of(resolvedPool.get(0));
-            }
+        Optional<ChatbotMatriculaProceso> intersectionResolved =
+                resolveByIntersection(docOnlyCandidates, emailOnlyCandidates);
+        if (intersectionResolved.isPresent()) {
+            return intersectionResolved;
         }
 
         log.warn("No se pudo resolver proceso por mascaras. docMask={} emailMask={} candidatos={}",
                 maskMaskedValue(maskedDocumentRaw),
                 maskMaskedValue(maskedEmailRaw),
-                resolvedPool.size());
+                Math.max(strictCandidates.size(), Math.max(docOnlyCandidates.size(), emailOnlyCandidates.size())));
         return Optional.empty();
     }
 
@@ -1064,6 +1053,64 @@ private String paymentConfirmationUrl;
             return "***";
         }
         return value.substring(0, 2) + "***" + value.substring(value.length() - 2);
+    }
+
+    private List<ChatbotMatriculaProceso> findMaskedCandidates(MaskLookupParts docMask, MaskLookupParts emailMask) {
+        return procesoRepository.findCandidatesForMaskedLookup(
+                docMask.prefix(),
+                docMask.suffix(),
+                emailMask.prefix(),
+                emailMask.suffix(),
+                PageRequest.of(0, 200)
+        );
+    }
+
+    private Optional<ChatbotMatriculaProceso> resolveMaskedCandidates(List<ChatbotMatriculaProceso> candidates,
+                                                                      MaskLookupParts docMask,
+                                                                      MaskLookupParts emailMask) {
+        if (candidates == null || candidates.isEmpty()) {
+            return Optional.empty();
+        }
+        List<ChatbotMatriculaProceso> filtered = new ArrayList<>();
+        for (ChatbotMatriculaProceso candidate : candidates) {
+            String candidateDocument = trim(candidate.getNumeroDocumento()).replaceAll("\\D+", "");
+            String candidateEmail = trim(candidate.getEmail()).toLowerCase(Locale.ROOT);
+            if (!docMask.matches(candidateDocument)) {
+                continue;
+            }
+            if (!emailMask.matches(candidateEmail)) {
+                continue;
+            }
+            filtered.add(candidate);
+        }
+        if (filtered.size() == 1) {
+            return Optional.of(filtered.get(0));
+        }
+        return Optional.empty();
+    }
+
+    private Optional<ChatbotMatriculaProceso> resolveByIntersection(List<ChatbotMatriculaProceso> docCandidates,
+                                                                    List<ChatbotMatriculaProceso> emailCandidates) {
+        if (docCandidates == null || docCandidates.isEmpty() || emailCandidates == null || emailCandidates.isEmpty()) {
+            return Optional.empty();
+        }
+        List<ChatbotMatriculaProceso> intersections = new ArrayList<>();
+        for (ChatbotMatriculaProceso docCandidate : docCandidates) {
+            String doc = trim(docCandidate.getNumeroDocumento());
+            if (doc.isBlank()) {
+                continue;
+            }
+            for (ChatbotMatriculaProceso emailCandidate : emailCandidates) {
+                if (doc.equals(trim(emailCandidate.getNumeroDocumento()))) {
+                    intersections.add(docCandidate);
+                    break;
+                }
+            }
+        }
+        if (intersections.size() == 1) {
+            return Optional.of(intersections.get(0));
+        }
+        return Optional.empty();
     }
 
     private record MaskLookupParts(String prefix, String suffix) {

@@ -222,9 +222,17 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(asString(safePayload.get("x_extra1"))),
                 safeTrim(documentHint)
         );
+        String finalDocumentNormalized = normalizeDocumentoCandidate(finalDocument);
+        String finalEmail = sanitizeEmailCandidate(firstNotBlank(
+                safeTrim(asString(out.get("email"))),
+                safeTrim(asString(summary.get("email"))),
+                safeTrim(asString(safePayload.get("email"))),
+                safeTrim(asString(safePayload.get("customer_email"))),
+                safeTrim(emailHint)
+        ));
 
-        if (StringUtils.hasText(finalDocument)) {
-            chatbotProcesoService.findProcesoByDocumento(finalDocument).ifPresent(p -> {
+        if (StringUtils.hasText(finalDocumentNormalized)) {
+            chatbotProcesoService.findProcesoByDocumento(finalDocumentNormalized).ifPresent(p -> {
                 out.put("flowStatus", safeTrim(p.getFlowStatus()));
                 out.put("paymentStatus", safeTrim(p.getPaymentStatus()));
                 out.put("document", safeTrim(p.getNumeroDocumento()));
@@ -232,12 +240,23 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 if (StringUtils.hasText(safeTrim(p.getContractLink()))) {
                     out.put("contractLink", safeTrim(p.getContractLink()));
                     out.put("nextStep",
-                            "Tu pago fue aprobado. Continúa con la contratación en este enlace: " + safeTrim(p.getContractLink()));
+                            "Tu pago fue aprobado. Contin\u00faa con la contrataci\u00f3n en este enlace: " + safeTrim(p.getContractLink()));
+                }
+            });
+        } else if (StringUtils.hasText(finalEmail)) {
+            chatbotProcesoService.findLatestProcesoByEmail(finalEmail).ifPresent(p -> {
+                out.put("flowStatus", safeTrim(p.getFlowStatus()));
+                out.put("paymentStatus", safeTrim(p.getPaymentStatus()));
+                out.put("document", firstNotBlank(safeTrim(p.getNumeroDocumento()), safeTrim(asString(out.get("document")))));
+                out.put("email", firstNotBlank(safeTrim(p.getEmail()), safeTrim(asString(out.get("email")))));
+                if (StringUtils.hasText(safeTrim(p.getContractLink()))) {
+                    out.put("contractLink", safeTrim(p.getContractLink()));
+                    out.put("nextStep",
+                            "Tu pago fue aprobado. Contin\u00faa con la contrataci\u00f3n en este enlace: " + safeTrim(p.getContractLink()));
                 }
             });
         }
     }
-
     out.put("status", status);
     if (StringUtils.hasText(refPayco)) {
         out.put("reference", refPayco);
@@ -351,7 +370,8 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                     safeTrim(asString(summary.get("reference"))),
                     firstNotBlank(safeTrim(asString(summary.get("gatewayReference"))), safeTrim(asString(safePayload.get("x_ref_payco")))),
                     safeTrim(asString(summary.get("invoice"))));
-            return new SyncDecision(false, "missing_unmasked_document_and_email", "");
+            boolean hasMaskedHints = customerDocRaw.contains("*") || customerEmailRaw.contains("*");
+            return new SyncDecision(false, hasMaskedHints ? "masked_identifiers_not_resolved" : "missing_unmasked_document_and_email", "");
         }
 
         try {

@@ -137,7 +137,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             safePayload.get("process_id"),
             safePayload.get("processId"),
             safePayload.get("matricula_id"),
-            safePayload.get("matriculaId")
+            safePayload.get("matriculaId"),
+            safePayload.get("x_extra2"),
+            safePayload.get("extra2")
     );
     String documentHint = firstResolvedDocument(
             safeTrim(asString(safePayload.get("x_extra1"))),
@@ -244,7 +246,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     if (flowIdHint == null) {
         flowIdHint = resolveFlowId(
                 summary.get("flow_id"),
-                summary.get("flowId")
+                summary.get("flowId"),
+                summary.get("x_extra2"),
+                summary.get("extra2")
         );
     }
     if (flowIdHint != null && procesoByFlowId.isEmpty()) {
@@ -337,6 +341,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     if (flowIdHint != null) {
         syncPayload.putIfAbsent("flow_id", flowIdHint);
         syncPayload.putIfAbsent("flowId", flowIdHint);
+        syncPayload.putIfAbsent("x_extra2", String.valueOf(flowIdHint));
     }
     if (!StringUtils.hasText(normalizeDocumentoCandidate(safeTrim(asString(syncPayload.get("document")))))
             && StringUtils.hasText(documentHint)) {
@@ -466,8 +471,10 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         Long flowId = resolveFlowId(
                 safePayload.get("flow_id"),
                 safePayload.get("flowId"),
+                safePayload.get("x_extra2"),
                 summary.get("flow_id"),
-                summary.get("flowId")
+                summary.get("flowId"),
+                summary.get("x_extra2")
         );
         if (flowId != null) {
             Optional<ChatbotMatriculaProceso> procesoById = chatbotProcesoService.findProcesoById(flowId);
@@ -716,7 +723,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         String xInvoice = readFirstField(tx, root, "x_id_invoice", "x_id_factura", "id_invoice", "invoice");
         String xRefPayco = readFirstField(tx, root, "x_ref_payco", "ref_payco", "refPayco");
         Long flowIdFromPayload = resolveFlowId(
-                readFirstField(tx, root, "flow_id", "flowId", "process_id", "processId", "matricula_id", "matriculaId")
+                readFirstField(tx, root, "flow_id", "flowId", "process_id", "processId", "matricula_id", "matriculaId", "x_extra2", "extra2")
         );
 
         String customerDocumentRaw = readFirstField(tx, root,
@@ -749,6 +756,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         if (procesoOpt.isEmpty() && StringUtils.hasText(xEmail)) {
             procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(xEmail);
         }
+        if (procesoOpt.isEmpty() && flowIdFromPayload != null) {
+            procesoOpt = chatbotProcesoService.findProcesoById(flowIdFromPayload);
+        }
 
         if (status == PaymentUserStatus.APPROVED && StringUtils.hasText(xDocumento)) {
             procesoOpt = chatbotProcesoService.findProcesoByDocumento(xDocumento);
@@ -778,6 +788,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             }
             if (!StringUtils.hasText(localEmail)) {
                 localEmail = safeTrim(proceso.getEmail());
+            }
+            if (!StringUtils.hasText(xPhone)) {
+                xPhone = firstResolvedPhone(safeTrim(proceso.getPhone()), safeTrim(proceso.getTelefono()));
             }
         }
 
@@ -833,7 +846,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safePayload.get("process_id"),
                 safePayload.get("processId"),
                 safePayload.get("matricula_id"),
-                safePayload.get("matriculaId")
+                safePayload.get("matriculaId"),
+                safePayload.get("x_extra2"),
+                safePayload.get("extra2")
         );
 
         String refPayco = resolveLookupRefPayco(
@@ -909,6 +924,16 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(asString(safePayload.get("telefono")))
         );
         String xPhone = firstResolvedPhone(rawPhone);
+
+        if (flowId != null && (!StringUtils.hasText(xDocumento) || !StringUtils.hasText(xEmail) || !StringUtils.hasText(xPhone))) {
+            Optional<ChatbotMatriculaProceso> procesoById = chatbotProcesoService.findProcesoById(flowId);
+            if (procesoById.isPresent()) {
+                ChatbotMatriculaProceso proceso = procesoById.get();
+                xDocumento = firstResolvedDocument(xDocumento, safeTrim(proceso.getNumeroDocumento()));
+                xEmail = firstResolvedEmail(xEmail, safeTrim(proceso.getEmail()));
+                xPhone = firstResolvedPhone(xPhone, safeTrim(proceso.getPhone()), safeTrim(proceso.getTelefono()));
+            }
+        }
 
         PaymentUserStatus status = resolvePaymentUserStatus(xResponse, xCodResponse, xReason);
         if (asBoolean(safePayload.get("paymentApproved"), false)) {
@@ -1347,7 +1372,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 form.getFirst("process_id"),
                 form.getFirst("processId"),
                 form.getFirst("matricula_id"),
-                form.getFirst("matriculaId")
+                form.getFirst("matriculaId"),
+                form.getFirst("x_extra2"),
+                form.getFirst("extra2")
         );
         String xDocumento = firstResolvedDocument(
                 form.getFirst("x_extra1"),

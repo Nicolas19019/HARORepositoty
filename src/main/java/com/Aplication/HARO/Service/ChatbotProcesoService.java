@@ -90,6 +90,9 @@ private String paymentConfirmationUrl;
     @Value("${chatbot.payment.param.email:customer_email}")
     private String paymentEmailParam;
 
+    @Value("${chatbot.payment.param.flow-id:x_extra2}")
+    private String paymentFlowIdParam;
+
     @Value("${chatbot.payment.param.amount:x_amount}")
     private String paymentAmountParam;
 
@@ -738,10 +741,12 @@ private String paymentConfirmationUrl;
         String confirmationParam = normalizeCallbackParam(paymentConfirmationParam, "confirmation");
         String responseParam = normalizeCallbackParam(paymentReturnParam, "response");
         String phoneForPayment = resolvePhoneForPayment(proceso);
+        String flowIdForPayment = proceso == null || proceso.getId() == null ? "" : String.valueOf(proceso.getId());
 
         String link = base;
         link = appendQueryParam(link, paymentDocumentParam, proceso == null ? null : proceso.getNumeroDocumento());
         link = appendQueryParam(link, paymentEmailParam, proceso == null ? null : proceso.getEmail());
+        link = appendQueryParam(link, paymentFlowIdParam, flowIdForPayment);
         link = appendQueryParam(link, "x_customer_phone", phoneForPayment);
         link = appendQueryParam(link, "x_customer_mobile", phoneForPayment);
 
@@ -759,6 +764,7 @@ private String paymentConfirmationUrl;
             String compactLink = base;
             compactLink = appendQueryParam(compactLink, paymentDocumentParam, proceso == null ? null : proceso.getNumeroDocumento());
             compactLink = appendQueryParam(compactLink, paymentEmailParam, proceso == null ? null : proceso.getEmail());
+            compactLink = appendQueryParam(compactLink, paymentFlowIdParam, flowIdForPayment);
             compactLink = appendQueryParam(compactLink, "x_customer_phone", phoneForPayment);
             compactLink = appendQueryParam(compactLink, "x_customer_mobile", phoneForPayment);
             if (!paycoHostedLink && expectedAmount.signum() > 0) {

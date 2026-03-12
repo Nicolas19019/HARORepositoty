@@ -202,7 +202,7 @@ private String paymentConfirmationUrl;
 
     ChatbotMatriculaProceso saved = procesoRepository.save(p);
 
-    log.info("💳 Pago pendiente doc={} link={}",
+    log.info("ðŸ’³ Pago pendiente doc={} link={}",
             saved.getNumeroDocumento(),
             saved.getPaymentLink());
 
@@ -233,7 +233,7 @@ private String paymentConfirmationUrl;
             p.setPaymentAmount(resolvePaidAmountForEstadoCuenta(p, resolveExpectedAmount(p)));
         }
         ChatbotMatriculaProceso saved = procesoRepository.save(p);
-        log.info("✅ Pago aprobado doc={} amount={}",
+        log.info("âœ… Pago aprobado doc={} amount={}",
                 saved.getNumeroDocumento(),
                 saved.getPaymentAmount());
         return saved;
@@ -250,7 +250,7 @@ private String paymentConfirmationUrl;
     public ChatbotMatriculaProceso markContractSignedByEmail(String email) {
         String mail = normalizeEmail(email);
         ChatbotMatriculaProceso proceso = procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail)
-                .orElseThrow(() -> new NoSuchElementException("No hay proceso de matrícula para " + mail));
+                .orElseThrow(() -> new NoSuchElementException("No hay proceso de matrÃ­cula para " + mail));
         proceso.setContractStatus("SIGNED");
         proceso.setFlowStatus("CONTRACT_SIGNED");
         proceso.setContractSignedAt(Instant.now());
@@ -406,7 +406,7 @@ private String paymentConfirmationUrl;
         nuevo.setEstado("Activo");
         nuevo.setVisible(true);
         nuevo.setUsuario(generateUniqueUsername(proceso.getEmail(), doc));
-        // Si no llega contraseña, EstudianteService asigna default seguro
+        // Si no llega contraseÃ±a, EstudianteService asigna default seguro
         nuevo.setContrasena(null);
 
         Estudiante created = estudianteService.createEstudiante(nuevo);
@@ -439,7 +439,7 @@ private String paymentConfirmationUrl;
 
         String email = trim(estudiante.getEmail()).toLowerCase(Locale.ROOT);
         if (email.isBlank()) {
-            throw new IllegalStateException("El estudiante no tiene correo registrado para verificación OTP");
+            throw new IllegalStateException("El estudiante no tiene correo registrado para verificaciÃ³n OTP");
         }
 
         String nombreCompleto = buildStudentDisplayName(estudiante);
@@ -506,10 +506,10 @@ private String paymentConfirmationUrl;
         }
 
         Profesor profesor = pickAvailableProfesor(fecha, horaInicio, horaFin)
-                .orElseThrow(() -> new IllegalStateException("Ese horario está ocupado. Elige otra hora."));
+                .orElseThrow(() -> new IllegalStateException("Ese horario estÃ¡ ocupado. Elige otra hora."));
 
         Vehiculo vehiculo = pickAvailableVehiculo(fecha, horaInicio, horaFin)
-                .orElseThrow(() -> new IllegalStateException("Ese horario está ocupado. Elige otra hora."));
+                .orElseThrow(() -> new IllegalStateException("Ese horario estÃ¡ ocupado. Elige otra hora."));
 
         Clase clase = new Clase();
         clase.setId_estudiante(id);
@@ -720,38 +720,58 @@ private String paymentConfirmationUrl;
     }
 
     private String buildPaymentLink(ChatbotMatriculaProceso proceso) {
-    String base = trim(resolvePaymentBaseLink(proceso));
-    if (base.isBlank()) {
-        return "";
+        String base = trim(resolvePaymentBaseLink(proceso));
+        if (base.isBlank()) {
+            return "";
+        }
+
+        boolean paycoHostedLink = isPaycoHostedLink(base);
+        BigDecimal expectedAmount = safeAmount(resolveExpectedAmount(proceso));
+        String confirmationParam = normalizeCallbackParam(paymentConfirmationParam, "confirmation");
+        String responseParam = normalizeCallbackParam(paymentReturnParam, "response");
+        String phoneForPayment = resolvePhoneForPayment(proceso);
+
+        String link = base;
+        link = appendQueryParam(link, paymentDocumentParam, proceso == null ? null : proceso.getNumeroDocumento());
+        link = appendQueryParam(link, paymentEmailParam, proceso == null ? null : proceso.getEmail());
+        link = appendQueryParam(link, "x_customer_phone", phoneForPayment);
+        link = appendQueryParam(link, "x_customer_mobile", phoneForPayment);
+
+        if (!paycoHostedLink && expectedAmount.signum() > 0) {
+            link = appendQueryParam(link, paymentAmountParam, expectedAmount.toPlainString());
+        }
+
+        String confirmationUrlWithContext = buildCallbackUrlWithContext(paymentConfirmationUrl, proceso);
+        String responseUrlWithContext = buildCallbackUrlWithContext(paymentReturnUrl, proceso);
+
+        link = appendQueryParam(link, confirmationParam, confirmationUrlWithContext);
+        link = appendQueryParam(link, responseParam, responseUrlWithContext);
+
+        if (link.length() > 580) {
+            String compactLink = base;
+            compactLink = appendQueryParam(compactLink, paymentDocumentParam, proceso == null ? null : proceso.getNumeroDocumento());
+            compactLink = appendQueryParam(compactLink, paymentEmailParam, proceso == null ? null : proceso.getEmail());
+            compactLink = appendQueryParam(compactLink, "x_customer_phone", phoneForPayment);
+            compactLink = appendQueryParam(compactLink, "x_customer_mobile", phoneForPayment);
+            if (!paycoHostedLink && expectedAmount.signum() > 0) {
+                compactLink = appendQueryParam(compactLink, paymentAmountParam, expectedAmount.toPlainString());
+            }
+            compactLink = appendQueryParam(compactLink, confirmationParam, trim(paymentConfirmationUrl));
+            compactLink = appendQueryParam(compactLink, responseParam, trim(paymentReturnUrl));
+            link = compactLink;
+            log.warn("LINK PAGO generado en modo compacto doc={} len={}",
+                    proceso != null ? proceso.getNumeroDocumento() : null,
+                    link.length());
+        }
+
+        log.info("LINK PAGO generado doc={} confirmation={} response={} link={}",
+                proceso != null ? proceso.getNumeroDocumento() : null,
+                paymentConfirmationUrl,
+                paymentReturnUrl,
+                link);
+
+        return link;
     }
-
-    boolean paycoHostedLink = isPaycoHostedLink(base);
-    BigDecimal expectedAmount = safeAmount(resolveExpectedAmount(proceso));
-    String confirmationParam = normalizeCallbackParam(paymentConfirmationParam, "confirmation");
-    String responseParam = normalizeCallbackParam(paymentReturnParam, "response");
-
-    String link = base;
-    link = appendQueryParam(link, paymentDocumentParam, proceso == null ? null : proceso.getNumeroDocumento());
-    link = appendQueryParam(link, paymentEmailParam, proceso == null ? null : proceso.getEmail());
-
-    if (!paycoHostedLink && expectedAmount.signum() > 0) {
-        link = appendQueryParam(link, paymentAmountParam, expectedAmount.toPlainString());
-    }
-
-    String confirmationUrlWithContext = buildCallbackUrlWithContext(paymentConfirmationUrl, proceso);
-    String responseUrlWithContext = buildCallbackUrlWithContext(paymentReturnUrl, proceso);
-
-    link = appendQueryParam(link, confirmationParam, confirmationUrlWithContext);
-    link = appendQueryParam(link, responseParam, responseUrlWithContext);
-
-    log.info("🔗 LINK PAGO generado doc={} confirmation={} response={} link={}",
-            proceso != null ? proceso.getNumeroDocumento() : null,
-            paymentConfirmationUrl,
-            paymentReturnUrl,
-            link);
-
-    return link;
-}
 
     private String buildCallbackUrlWithContext(String baseUrl, ChatbotMatriculaProceso proceso) {
         String out = trim(baseUrl);
@@ -761,21 +781,24 @@ private String paymentConfirmationUrl;
 
         String documento = trim(proceso.getNumeroDocumento());
         String email = trim(proceso.getEmail()).toLowerCase(Locale.ROOT);
+        String phone = resolvePhoneForPayment(proceso);
+
+        // Contexto minimo para evitar enlaces de pago gigantes.
+        out = appendQueryParam(out, "document", documento);
+        out = appendQueryParam(out, "email", email);
+        out = appendQueryParam(out, "phone", phone);
+        return out;
+    }
+
+    private String resolvePhoneForPayment(ChatbotMatriculaProceso proceso) {
+        if (proceso == null) {
+            return "";
+        }
         String phone = trim(proceso.getPhone());
         if (phone.isBlank()) {
             phone = trim(proceso.getTelefono());
         }
-
-        // Llaves redundantes para maximizar compatibilidad entre front/back.
-        out = appendQueryParam(out, "document", documento);
-        out = appendQueryParam(out, "x_extra1", documento);
-        out = appendQueryParam(out, "email", email);
-        out = appendQueryParam(out, "customer_email", email);
-        out = appendQueryParam(out, "phone", phone);
-        out = appendQueryParam(out, "customer_phone", phone);
-        out = appendQueryParam(out, "x_customer_phone", phone);
-        out = appendQueryParam(out, "x_customer_mobile", phone);
-        return out;
+        return phone;
     }
 
     private String resolvePaymentBaseLink(ChatbotMatriculaProceso proceso) {
@@ -905,12 +928,12 @@ private String paymentConfirmationUrl;
         ZonedDateTime inicio = ZonedDateTime.of(clase.getFecha(), clase.getHoraInicio(), zone);
         ZonedDateTime fin = ZonedDateTime.of(clase.getFecha(), clase.getHoraFin(), zone);
 
-        String titulo = "Clase práctica HARO - " + safe(estudiante.getNombre()) + " " + safe(estudiante.getApellido());
+        String titulo = "Clase prÃ¡ctica HARO - " + safe(estudiante.getNombre()) + " " + safe(estudiante.getApellido());
         String descripcion =
-                "Clase práctica agendada desde chatbot.\n" +
+                "Clase prÃ¡ctica agendada desde chatbot.\n" +
                         "Documento estudiante: " + safe(estudiante.getNumeroDocumento()) + "\n" +
                         "Profesor ID: " + profesor.getId() + "\n" +
-                        "Vehículo: " + safe(clase.getPlaca_vehiculo()) + "\n" +
+                        "VehÃ­culo: " + safe(clase.getPlaca_vehiculo()) + "\n" +
                         "Clase ID: " + clase.getId();
 
         List<String> asistentes = new ArrayList<>();
@@ -938,7 +961,7 @@ private String paymentConfirmationUrl;
     private ChatbotMatriculaProceso getByDocumentoOrThrow(String documento) {
         String doc = normalizeDoc(documento);
         return procesoRepository.findByNumeroDocumento(doc)
-                .orElseThrow(() -> new NoSuchElementException("No existe proceso de matrícula para documento " + doc));
+                .orElseThrow(() -> new NoSuchElementException("No existe proceso de matrÃ­cula para documento " + doc));
     }
 
     private String[] splitName(String fullName) {
@@ -1013,7 +1036,7 @@ private String paymentConfirmationUrl;
     private String normalizeDoc(String doc) {
         String out = trim(doc).replaceAll("\\D+", "");
         if (out.length() < 5) {
-            throw new IllegalArgumentException("Documento inválido");
+            throw new IllegalArgumentException("Documento invÃ¡lido");
         }
         return out;
     }
@@ -1021,7 +1044,7 @@ private String paymentConfirmationUrl;
     private String normalizeEmail(String email) {
         String out = trim(email).toLowerCase(Locale.ROOT);
         if (out.isBlank() || !out.contains("@")) {
-            throw new IllegalArgumentException("Email inválido");
+            throw new IllegalArgumentException("Email invÃ¡lido");
         }
         return out;
     }
@@ -1029,7 +1052,7 @@ private String paymentConfirmationUrl;
     private String normalizePhone(String phone) {
         String out = trim(phone).replaceAll("[^0-9+]", "");
         if (out.isBlank()) {
-            throw new IllegalArgumentException("Teléfono requerido");
+            throw new IllegalArgumentException("TelÃ©fono requerido");
         }
         return out;
     }
@@ -1225,4 +1248,5 @@ private String paymentConfirmationUrl;
         return studentId;
     }
 }
+
 

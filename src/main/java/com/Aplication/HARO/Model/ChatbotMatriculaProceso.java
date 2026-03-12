@@ -44,10 +44,10 @@ public class ChatbotMatriculaProceso {
     @Column(name = "telefono", nullable = false, length = 40)
     private String telefono;
 
-    @Column(name = "payment_link", length = 600)
+    @Column(name = "payment_link", columnDefinition = "TEXT")
     private String paymentLink;
 
-    @Column(name = "contract_link", length = 600)
+    @Column(name = "contract_link", columnDefinition = "TEXT")
     private String contractLink;
 
     @Column(name = "payment_status", nullable = false, length = 40)

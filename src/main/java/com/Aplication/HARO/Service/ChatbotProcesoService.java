@@ -800,6 +800,7 @@ private String paymentConfirmationUrl;
 
         // Contexto minimo para evitar enlaces de pago gigantes.
         out = appendQueryParam(out, "flow_id", flowId);
+        out = appendQueryParam(out, "x_extra2", flowId);
         out = appendQueryParam(out, "document", documento);
         out = appendQueryParam(out, "email", email);
         out = appendQueryParam(out, "phone", phone);
@@ -811,7 +812,10 @@ private String paymentConfirmationUrl;
         if (out.isBlank() || proceso == null || proceso.getId() == null) {
             return out;
         }
-        return appendQueryParam(out, "flow_id", String.valueOf(proceso.getId()));
+        String flowId = String.valueOf(proceso.getId());
+        out = appendQueryParam(out, "flow_id", flowId);
+        out = appendQueryParam(out, "x_extra2", flowId);
+        return out;
     }
 
     private String resolvePhoneForPayment(ChatbotMatriculaProceso proceso) {

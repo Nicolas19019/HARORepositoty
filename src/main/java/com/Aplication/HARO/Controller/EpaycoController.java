@@ -95,9 +95,22 @@ public class EpaycoController {
     public ResponseEntity<?> response(@RequestParam(name = "ref_payco", required = false) String refPayco,
                                       @RequestParam(name = "document", required = false) String documentHint,
                                       @RequestParam(name = "x_extra1", required = false) String xExtra1,
+                                      @RequestParam(name = "flow_id", required = false) String flowId,
+                                      @RequestParam(name = "flowId", required = false) String flowIdCamel,
+                                      @RequestParam(name = "process_id", required = false) String processId,
+                                      @RequestParam(name = "processId", required = false) String processIdCamel,
+                                      @RequestParam(name = "matricula_id", required = false) String matriculaId,
+                                      @RequestParam(name = "matriculaId", required = false) String matriculaIdCamel,
+                                      @RequestParam(name = "x_extra2", required = false) String xExtra2,
                                       @RequestParam(name = "format", required = false) String format,
                                       @RequestHeader(name = "Accept", required = false) String acceptHeader) {
-        return userFacingPaymentStatus(refPayco, format, acceptHeader, firstNotBlank(documentHint, xExtra1));
+        return userFacingPaymentStatus(
+                refPayco,
+                format,
+                acceptHeader,
+                firstNotBlank(documentHint, xExtra1),
+                firstNotBlank(flowId, flowIdCamel, processId, processIdCamel, matriculaId, matriculaIdCamel, xExtra2)
+        );
     }
 
     // Compatibilidad: si por configuracion el retorno llega a /confirmation por GET
@@ -105,9 +118,22 @@ public class EpaycoController {
     public ResponseEntity<?> confirmationView(@RequestParam(name = "ref_payco", required = false) String refPayco,
                                               @RequestParam(name = "document", required = false) String documentHint,
                                               @RequestParam(name = "x_extra1", required = false) String xExtra1,
+                                              @RequestParam(name = "flow_id", required = false) String flowId,
+                                              @RequestParam(name = "flowId", required = false) String flowIdCamel,
+                                              @RequestParam(name = "process_id", required = false) String processId,
+                                              @RequestParam(name = "processId", required = false) String processIdCamel,
+                                              @RequestParam(name = "matricula_id", required = false) String matriculaId,
+                                              @RequestParam(name = "matriculaId", required = false) String matriculaIdCamel,
+                                              @RequestParam(name = "x_extra2", required = false) String xExtra2,
                                               @RequestParam(name = "format", required = false) String format,
                                               @RequestHeader(name = "Accept", required = false) String acceptHeader) {
-        return userFacingPaymentStatus(refPayco, format, acceptHeader, firstNotBlank(documentHint, xExtra1));
+        return userFacingPaymentStatus(
+                refPayco,
+                format,
+                acceptHeader,
+                firstNotBlank(documentHint, xExtra1),
+                firstNotBlank(flowId, flowIdCamel, processId, processIdCamel, matriculaId, matriculaIdCamel, xExtra2)
+        );
     }
 
     /**
@@ -223,7 +249,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     if (StringUtils.hasText(refPayco)) {
         try {
             String rawData = epaycoService.fetchTransactionByRefPayco(refPayco);
-            summary = new LinkedHashMap<>(buildUserPaymentSummary(refPayco, rawData, documentHint));
+            summary = new LinkedHashMap<>(buildUserPaymentSummary(refPayco, rawData, documentHint, asString(flowIdHint)));
         } catch (Exception ex) {
             if (!approvedByPayload) {
                 log.error("responseSync no pudo consultar ePayco ref={}: {}", refPayco, ex.getMessage(), ex);
@@ -649,7 +675,8 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     private ResponseEntity<?> userFacingPaymentStatus(String refPaycoRaw,
                                                       String formatRaw,
                                                       String acceptHeaderRaw,
-                                                      String documentHintRaw) {
+                                                      String documentHintRaw,
+                                                      String flowIdHintRaw) {
         boolean wantsHtml = wantsHtml(formatRaw, acceptHeaderRaw);
         String refPayco = safeTrim(refPaycoRaw);
         String documentHint = safeTrim(documentHintRaw);
@@ -678,7 +705,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             return userFacingResponse(HttpStatus.INTERNAL_SERVER_ERROR, payload, wantsHtml);
         }
 
-        Map<String, Object> payload = buildUserPaymentSummary(refPayco, rawData, documentHint);
+        Map<String, Object> payload = buildUserPaymentSummary(refPayco, rawData, documentHint, flowIdHintRaw);
         return userFacingResponse(HttpStatus.OK, payload, wantsHtml);
     }
 
@@ -693,7 +720,10 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 .body(renderPaymentReceiptHtml(payload));
     }
 
-    private Map<String, Object> buildUserPaymentSummary(String refPayco, String rawData, String documentHintRaw) {
+    private Map<String, Object> buildUserPaymentSummary(String refPayco,
+                                                        String rawData,
+                                                        String documentHintRaw,
+                                                        String flowIdHintRaw) {
         JsonNode root;
         try {
             root = objectMapper.readTree(rawData == null ? "{}" : rawData);
@@ -723,6 +753,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         String xInvoice = readFirstField(tx, root, "x_id_invoice", "x_id_factura", "id_invoice", "invoice");
         String xRefPayco = readFirstField(tx, root, "x_ref_payco", "ref_payco", "refPayco");
         Long flowIdFromPayload = resolveFlowId(
+                flowIdHintRaw,
                 readFirstField(tx, root, "flow_id", "flowId", "process_id", "processId", "matricula_id", "matriculaId", "x_extra2", "extra2")
         );
 
@@ -742,6 +773,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         PaymentUserStatus status = resolvePaymentUserStatus(xResponse, xCodResponse, xReason);
 
         Optional<ChatbotMatriculaProceso> procesoOpt = Optional.empty();
+        if (flowIdFromPayload != null) {
+            procesoOpt = chatbotProcesoService.findProcesoById(flowIdFromPayload);
+        }
         if (StringUtils.hasText(xDocumento)) {
             procesoOpt = chatbotProcesoService.findProcesoByDocumento(xDocumento);
             if (status != PaymentUserStatus.APPROVED) {
@@ -755,9 +789,6 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
         if (procesoOpt.isEmpty() && StringUtils.hasText(xEmail)) {
             procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(xEmail);
-        }
-        if (procesoOpt.isEmpty() && flowIdFromPayload != null) {
-            procesoOpt = chatbotProcesoService.findProcesoById(flowIdFromPayload);
         }
 
         if (status == PaymentUserStatus.APPROVED && StringUtils.hasText(xDocumento)) {

@@ -229,7 +229,8 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             emailHint,
             phoneHint,
             payloadStatus,
-            "response_sync_payload"
+            "response_sync_payload",
+            flowIdHint
     );
 
     boolean approvedByPayload = asBoolean(safePayload.get("paymentApproved"), false)
@@ -314,6 +315,13 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             safeTrim(asString(summary.get("phone"))),
             phoneHint
     );
+    Long summaryFlowId = resolveFlowId(
+            summary.get("flow_id"),
+            summary.get("flowId"),
+            summary.get("x_extra2"),
+            summary.get("extra2"),
+            flowIdHint
+    );
 
     captureTemporaryContext(
             refPayco,
@@ -324,7 +332,8 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             summaryEmail,
             summaryPhone,
             safeTrim(asString(summary.get("status"))),
-            "response_sync_summary"
+            "response_sync_summary",
+            summaryFlowId
     );
 
     Optional<PaymentSyncContextService.ResolvedContext> stagedContext = paymentSyncContextService.resolve(
@@ -346,6 +355,11 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         if (!StringUtils.hasText(sanitizePhoneCandidate(safeTrim(asString(summary.get("phone")))))
                 && StringUtils.hasText(ctx.phone())) {
             summary.put("phone", ctx.phone());
+        }
+        if (flowIdHint == null && ctx.flowId() != null && ctx.flowId() > 0) {
+            flowIdHint = ctx.flowId();
+            summary.putIfAbsent("flowId", flowIdHint);
+            summary.putIfAbsent("flow_id", flowIdHint);
         }
         documentHint = firstResolvedDocument(documentHint, ctx.document());
         emailHint = firstResolvedEmail(emailHint, ctx.email());
@@ -1654,7 +1668,8 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                     xEmail,
                     xPhone,
                     estado,
-                    "confirmation_webhook"
+                    "confirmation_webhook",
+                    flowId
             );
 
             if (!StringUtils.hasText(normalizeDocumentoCandidate(xDocumento))) {
@@ -1665,9 +1680,22 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                         xTransactionId
                 );
                 if (staged.isPresent()) {
-                    xDocumento = firstResolvedDocument(xDocumento, staged.get().document());
-                    xEmail = firstResolvedEmail(xEmail, staged.get().email());
-                    xPhone = firstResolvedPhone(xPhone, staged.get().phone());
+                    PaymentSyncContextService.ResolvedContext ctx = staged.get();
+                    xDocumento = firstResolvedDocument(xDocumento, ctx.document());
+                    xEmail = firstResolvedEmail(xEmail, ctx.email());
+                    xPhone = firstResolvedPhone(xPhone, ctx.phone());
+                    if (flowId == null && ctx.flowId() != null && ctx.flowId() > 0) {
+                        flowId = ctx.flowId();
+                    }
+                }
+            }
+            if (!StringUtils.hasText(normalizeDocumentoCandidate(xDocumento)) && flowId != null) {
+                Optional<ChatbotMatriculaProceso> procesoFromFlow = chatbotProcesoService.findProcesoById(flowId);
+                if (procesoFromFlow.isPresent()) {
+                    ChatbotMatriculaProceso proceso = procesoFromFlow.get();
+                    xDocumento = firstResolvedDocument(xDocumento, safeTrim(proceso.getNumeroDocumento()));
+                    xEmail = firstResolvedEmail(xEmail, safeTrim(proceso.getEmail()));
+                    xPhone = firstResolvedPhone(xPhone, safeTrim(proceso.getPhone()), safeTrim(proceso.getTelefono()));
                 }
             }
 
@@ -1939,7 +1967,8 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                                          String emailRaw,
                                          String phoneRaw,
                                          String statusRaw,
-                                         String sourceRaw) {
+                                         String sourceRaw,
+                                         Long flowIdRaw) {
         String lookupReference = resolveLookupRefPayco(
                 safeTrim(lookupReferenceRaw),
                 safeTrim(gatewayReferenceRaw)
@@ -1952,6 +1981,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         String phone = sanitizePhoneCandidate(phoneRaw);
         String status = safeTrim(statusRaw);
         String source = safeTrim(sourceRaw);
+        Long flowId = flowIdRaw != null && flowIdRaw > 0 ? flowIdRaw : null;
 
         try {
             paymentSyncContextService.capture(
@@ -1963,7 +1993,8 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                     email,
                     phone,
                     status,
-                    source
+                    source,
+                    flowId
             );
         } catch (Exception ex) {
             log.warn("No se pudo guardar contexto temporal de sync. ref={} gatewayRef={} invoice={} trx={}: {}",

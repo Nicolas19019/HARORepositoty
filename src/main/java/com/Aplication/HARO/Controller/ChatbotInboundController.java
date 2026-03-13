@@ -767,6 +767,17 @@ public class ChatbotInboundController {
         if (invoice.isBlank() && !flowId.isBlank()) {
             invoice = "flow:" + flowId;
         }
+        Long flowIdLong = null;
+        if (!flowId.isBlank() && flowId.matches("^\\d{1,18}$")) {
+            try {
+                long parsed = Long.parseLong(flowId);
+                if (parsed > 0) {
+                    flowIdLong = parsed;
+                }
+            } catch (NumberFormatException ignored) {
+                // Ignora flow_id invalido
+            }
+        }
 
         try {
             paymentSyncContextService.capture(
@@ -778,7 +789,8 @@ public class ChatbotInboundController {
                     email,
                     telefono,
                     "PENDING",
-                    source
+                    source,
+                    flowIdLong
             );
         } catch (Exception ex) {
             log.warn("No se pudo guardar contexto de pago desde chatbot. doc={} email={} source={} err={}",

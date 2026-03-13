@@ -31,6 +31,9 @@ public class PaymentSyncContext {
     @Column(name = "transaction_id", length = 180)
     private String transactionId;
 
+    @Column(name = "flow_id")
+    private Long flowId;
+
     @Column(name = "document", length = 40)
     private String document;
 
@@ -106,6 +109,14 @@ public class PaymentSyncContext {
 
     public void setTransactionId(String transactionId) {
         this.transactionId = transactionId;
+    }
+
+    public Long getFlowId() {
+        return flowId;
+    }
+
+    public void setFlowId(Long flowId) {
+        this.flowId = flowId;
     }
 
     public String getDocument() {

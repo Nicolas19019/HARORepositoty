@@ -20,7 +20,7 @@ public class PaymentSyncContextService {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentSyncContextService.class);
 
-    public record ResolvedContext(String document, String email, String phone) {}
+    public record ResolvedContext(String document, String email, String phone, Long flowId) {}
 
     private final PaymentSyncContextRepository repository;
 
@@ -40,7 +40,8 @@ public class PaymentSyncContextService {
                         String emailRaw,
                         String phoneRaw,
                         String statusRaw,
-                        String sourceRaw) {
+                        String sourceRaw,
+                        Long flowIdRaw) {
         String lookupReference = trim(lookupReferenceRaw);
         String gatewayReference = trim(gatewayReferenceRaw);
         String invoice = trim(invoiceRaw);
@@ -50,6 +51,7 @@ public class PaymentSyncContextService {
         String phone = normalizePhone(phoneRaw);
         String status = trim(statusRaw).toUpperCase(Locale.ROOT);
         String source = trim(sourceRaw);
+        Long flowId = (flowIdRaw != null && flowIdRaw > 0) ? flowIdRaw : null;
 
         boolean hasReference = StringUtils.hasText(lookupReference)
                 || StringUtils.hasText(gatewayReference)
@@ -58,7 +60,7 @@ public class PaymentSyncContextService {
         boolean hasIdentity = StringUtils.hasText(document)
                 || StringUtils.hasText(email)
                 || StringUtils.hasText(phone);
-        if (!hasReference || !hasIdentity) {
+        if (!hasReference || (!hasIdentity && flowId == null)) {
             return;
         }
 
@@ -69,6 +71,7 @@ public class PaymentSyncContextService {
         ctx.setGatewayReference(gatewayReference);
         ctx.setInvoice(invoice);
         ctx.setTransactionId(transactionId);
+        ctx.setFlowId(flowId);
         ctx.setDocument(document);
         ctx.setEmail(email);
         ctx.setPhone(phone);
@@ -110,19 +113,23 @@ public class PaymentSyncContextService {
         String document = "";
         String email = "";
         String phone = "";
+        Long flowId = null;
         for (PaymentSyncContext candidate : candidates) {
             if (!StringUtils.hasText(document)) document = trim(candidate.getDocument());
             if (!StringUtils.hasText(email)) email = trim(candidate.getEmail());
             if (!StringUtils.hasText(phone)) phone = trim(candidate.getPhone());
-            if (StringUtils.hasText(document) && StringUtils.hasText(email) && StringUtils.hasText(phone)) {
+            if (flowId == null && candidate.getFlowId() != null && candidate.getFlowId() > 0) {
+                flowId = candidate.getFlowId();
+            }
+            if (StringUtils.hasText(document) && StringUtils.hasText(email) && StringUtils.hasText(phone) && flowId != null) {
                 break;
             }
         }
 
-        if (!StringUtils.hasText(document) && !StringUtils.hasText(email) && !StringUtils.hasText(phone)) {
+        if (!StringUtils.hasText(document) && !StringUtils.hasText(email) && !StringUtils.hasText(phone) && flowId == null) {
             return Optional.empty();
         }
-        return Optional.of(new ResolvedContext(document, email, phone));
+        return Optional.of(new ResolvedContext(document, email, phone, flowId));
     }
 
     @Transactional

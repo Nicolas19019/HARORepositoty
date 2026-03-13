@@ -93,6 +93,9 @@ private String paymentConfirmationUrl;
     @Value("${chatbot.payment.param.flow-id:x_extra2}")
     private String paymentFlowIdParam;
 
+    @Value("${chatbot.payment.param.invoice:x_id_invoice}")
+    private String paymentInvoiceParam;
+
     @Value("${chatbot.payment.param.amount:x_amount}")
     private String paymentAmountParam;
 
@@ -760,11 +763,13 @@ private String paymentConfirmationUrl;
         String responseParam = normalizeCallbackParam(paymentReturnParam, "response");
         String phoneForPayment = resolvePhoneForPayment(proceso);
         String flowIdForPayment = proceso == null || proceso.getId() == null ? "" : String.valueOf(proceso.getId());
+        String invoiceHintForPayment = flowIdForPayment.isBlank() ? "" : "FLOW-" + flowIdForPayment;
 
         String link = base;
         link = appendQueryParam(link, paymentDocumentParam, proceso == null ? null : proceso.getNumeroDocumento());
         link = appendQueryParam(link, paymentEmailParam, proceso == null ? null : proceso.getEmail());
         link = appendQueryParam(link, paymentFlowIdParam, flowIdForPayment);
+        link = appendQueryParam(link, paymentInvoiceParam, invoiceHintForPayment);
         link = appendQueryParam(link, "x_customer_phone", phoneForPayment);
         link = appendQueryParam(link, "x_customer_mobile", phoneForPayment);
 
@@ -783,6 +788,7 @@ private String paymentConfirmationUrl;
             compactLink = appendQueryParam(compactLink, paymentDocumentParam, proceso == null ? null : proceso.getNumeroDocumento());
             compactLink = appendQueryParam(compactLink, paymentEmailParam, proceso == null ? null : proceso.getEmail());
             compactLink = appendQueryParam(compactLink, paymentFlowIdParam, flowIdForPayment);
+            compactLink = appendQueryParam(compactLink, paymentInvoiceParam, invoiceHintForPayment);
             compactLink = appendQueryParam(compactLink, "x_customer_phone", phoneForPayment);
             compactLink = appendQueryParam(compactLink, "x_customer_mobile", phoneForPayment);
             if (!paycoHostedLink && expectedAmount.signum() > 0) {

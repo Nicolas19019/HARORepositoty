@@ -577,13 +577,13 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             if (byPhone.isPresent()) {
                 return byPhone.get();
             }
-            Optional<SyncDecision> byInvoice = trySyncByInvoice(summary, safePayload, amount);
-            if (byInvoice.isPresent()) {
-                return byInvoice.get();
-            }
             Optional<SyncDecision> byMasked = trySyncByMaskedHints(summary, safePayload, amount);
             if (byMasked.isPresent()) {
                 return byMasked.get();
+            }
+            Optional<SyncDecision> byInvoice = trySyncByInvoice(summary, safePayload, amount);
+            if (byInvoice.isPresent()) {
+                return byInvoice.get();
             }
 
             log.warn("Sync pago aprobado sin identificadores resolubles del chat. reference={} gatewayRef={} invoice={}",
@@ -600,13 +600,13 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 if (byPhone.isPresent()) {
                     return byPhone.get();
                 }
-                Optional<SyncDecision> byInvoice = trySyncByInvoice(summary, safePayload, amount);
-                if (byInvoice.isPresent()) {
-                    return byInvoice.get();
-                }
                 Optional<SyncDecision> byMasked = trySyncByMaskedHints(summary, safePayload, amount);
                 if (byMasked.isPresent()) {
                     return byMasked.get();
+                }
+                Optional<SyncDecision> byInvoice = trySyncByInvoice(summary, safePayload, amount);
+                if (byInvoice.isPresent()) {
+                    return byInvoice.get();
                 }
                 log.info("No se pudo resolver proceso por email para sync de pago. email={}", email);
                 return new SyncDecision(false, "process_not_found_by_email", "email");
@@ -624,13 +624,13 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             return new SyncDecision(synced, synced ? "processed_by_email" : "processed_by_email_without_whatsapp_confirmation", "email");
         } catch (Exception ex) {
             log.error("No fue posible sincronizar pago aprobado por email. email={}: {}", email, ex.getMessage(), ex);
-            Optional<SyncDecision> byInvoice = trySyncByInvoice(summary, safePayload, amount);
-            if (byInvoice.isPresent()) {
-                return byInvoice.get();
-            }
             Optional<SyncDecision> byMasked = trySyncByMaskedHints(summary, safePayload, amount);
             if (byMasked.isPresent()) {
                 return byMasked.get();
+            }
+            Optional<SyncDecision> byInvoice = trySyncByInvoice(summary, safePayload, amount);
+            if (byInvoice.isPresent()) {
+                return byInvoice.get();
             }
             return new SyncDecision(false, "error_processing_by_email", "email");
         }
@@ -650,6 +650,30 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
 
         try {
+            Long flowIdFromInvoice = parseFlowIdFromInvoiceHint(invoice);
+            if (flowIdFromInvoice != null) {
+                Optional<ChatbotMatriculaProceso> procesoByFlow = chatbotProcesoService.findProcesoById(flowIdFromInvoice);
+                if (procesoByFlow.isPresent()) {
+                    ChatbotMatriculaProceso resolved = procesoByFlow.get();
+                    String document = safeTrim(resolved.getNumeroDocumento());
+                    if (!StringUtils.hasText(document)) {
+                        return Optional.of(new SyncDecision(false, "process_without_document_by_invoice_flow", "invoice_flow"));
+                    }
+                    PaymentApprovalService.ApprovalResult approval =
+                            paymentApprovalService.handleApprovedPayment(document, amount);
+                    applyApprovalResultToSummary(summary, approval, document, safeTrim(resolved.getEmail()));
+                    summary.put("phone", firstResolvedPhone(safeTrim(resolved.getPhone()), safeTrim(resolved.getTelefono())));
+                    summary.put("flowId", flowIdFromInvoice);
+                    summary.put("flow_id", flowIdFromInvoice);
+                    boolean synced = approval.whatsappSent() || approval.duplicate();
+                    return Optional.of(new SyncDecision(
+                            synced,
+                            synced ? "processed_by_invoice_flow_id" : "processed_by_invoice_flow_id_without_whatsapp_confirmation",
+                            "invoice_flow"
+                    ));
+                }
+            }
+
             Optional<ChatbotMatriculaProceso> proceso = chatbotProcesoService.findLatestProcesoByInvoiceHint(invoice);
             if (proceso.isEmpty()) {
                 log.info("No se pudo resolver proceso por invoice para sync de pago. invoice={}", invoice);
@@ -1986,6 +2010,24 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         } catch (NumberFormatException ex) {
             return null;
         }
+    }
+
+    private Long parseFlowIdFromInvoiceHint(String invoiceRaw) {
+        String invoice = safeTrim(invoiceRaw).toLowerCase(Locale.ROOT);
+        if (!StringUtils.hasText(invoice)) {
+            return null;
+        }
+        String value = invoice;
+        if (value.startsWith("flow-")) {
+            value = value.substring("flow-".length());
+        } else if (value.startsWith("flow_")) {
+            value = value.substring("flow_".length());
+        } else if (value.startsWith("flow:")) {
+            value = value.substring("flow:".length());
+        } else {
+            return null;
+        }
+        return parseFlowIdCandidate(value);
     }
 
     private boolean asBoolean(Object value, boolean defaultValue) {

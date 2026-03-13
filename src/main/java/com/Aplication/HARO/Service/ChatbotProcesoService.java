@@ -314,14 +314,22 @@ private String paymentConfirmationUrl;
 
     @Transactional(readOnly = true)
     public Optional<ChatbotMatriculaProceso> findLatestProcesoByMaskedHints(String maskedDocumentRaw, String maskedEmailRaw) {
+        return findLatestProcesoByMaskedHints(maskedDocumentRaw, maskedEmailRaw, "");
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<ChatbotMatriculaProceso> findLatestProcesoByMaskedHints(String maskedDocumentRaw,
+                                                                            String maskedEmailRaw,
+                                                                            String maskedPhoneRaw) {
         MaskLookupParts docMask = MaskLookupParts.forDocument(maskedDocumentRaw);
         MaskLookupParts emailMask = MaskLookupParts.forEmail(maskedEmailRaw);
-        if (!docMask.hasCriteria() && !emailMask.hasCriteria()) {
+        MaskLookupParts phoneMask = MaskLookupParts.forDocument(maskedPhoneRaw);
+        if (!docMask.hasCriteria() && !emailMask.hasCriteria() && !phoneMask.hasCriteria()) {
             return Optional.empty();
         }
 
         List<ChatbotMatriculaProceso> strictCandidates = findMaskedCandidates(docMask, emailMask);
-        Optional<ChatbotMatriculaProceso> strictResolved = resolveMaskedCandidates(strictCandidates, docMask, emailMask);
+        Optional<ChatbotMatriculaProceso> strictResolved = resolveMaskedCandidates(strictCandidates, docMask, emailMask, phoneMask);
         if (strictResolved.isPresent()) {
             return strictResolved;
         }
@@ -330,7 +338,7 @@ private String paymentConfirmationUrl;
         if (docMask.hasCriteria()) {
             docOnlyCandidates = findMaskedCandidates(docMask, MaskLookupParts.empty());
             Optional<ChatbotMatriculaProceso> docOnlyResolved =
-                    resolveMaskedCandidates(docOnlyCandidates, docMask, MaskLookupParts.empty());
+                    resolveMaskedCandidates(docOnlyCandidates, docMask, MaskLookupParts.empty(), phoneMask);
             if (docOnlyResolved.isPresent()) {
                 return docOnlyResolved;
             }
@@ -340,21 +348,22 @@ private String paymentConfirmationUrl;
         if (emailMask.hasCriteria()) {
             emailOnlyCandidates = findMaskedCandidates(MaskLookupParts.empty(), emailMask);
             Optional<ChatbotMatriculaProceso> emailOnlyResolved =
-                    resolveMaskedCandidates(emailOnlyCandidates, MaskLookupParts.empty(), emailMask);
+                    resolveMaskedCandidates(emailOnlyCandidates, MaskLookupParts.empty(), emailMask, phoneMask);
             if (emailOnlyResolved.isPresent()) {
                 return emailOnlyResolved;
             }
         }
 
         Optional<ChatbotMatriculaProceso> intersectionResolved =
-                resolveByIntersection(docOnlyCandidates, emailOnlyCandidates);
+                resolveByIntersection(docOnlyCandidates, emailOnlyCandidates, phoneMask);
         if (intersectionResolved.isPresent()) {
             return intersectionResolved;
         }
 
-        log.warn("No se pudo resolver proceso por mascaras. docMask={} emailMask={} candidatos={}",
+        log.warn("No se pudo resolver proceso por mascaras. docMask={} emailMask={} phoneMask={} candidatos={}",
                 maskMaskedValue(maskedDocumentRaw),
                 maskMaskedValue(maskedEmailRaw),
+                maskMaskedValue(maskedPhoneRaw),
                 Math.max(strictCandidates.size(), Math.max(docOnlyCandidates.size(), emailOnlyCandidates.size())));
         return Optional.empty();
     }
@@ -376,6 +385,15 @@ private String paymentConfirmationUrl;
             return procesoRepository.findTopByPhoneOrderByUpdatedAtDesc(normalized.substring(1));
         }
         return procesoRepository.findTopByPhoneOrderByUpdatedAtDesc("+" + normalized);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<ChatbotMatriculaProceso> findLatestProcesoByInvoiceHint(String invoiceRaw) {
+        String invoice = trim(invoiceRaw);
+        if (invoice.isBlank()) {
+            return Optional.empty();
+        }
+        return procesoRepository.findTopByPaymentLinkContainingOrderByUpdatedAtDesc(invoice);
     }
 
     public Long createStudentFromSignedContract(String documento) {
@@ -1126,7 +1144,8 @@ private String paymentConfirmationUrl;
 
     private Optional<ChatbotMatriculaProceso> resolveMaskedCandidates(List<ChatbotMatriculaProceso> candidates,
                                                                       MaskLookupParts docMask,
-                                                                      MaskLookupParts emailMask) {
+                                                                      MaskLookupParts emailMask,
+                                                                      MaskLookupParts phoneMask) {
         if (candidates == null || candidates.isEmpty()) {
             return Optional.empty();
         }
@@ -1134,10 +1153,18 @@ private String paymentConfirmationUrl;
         for (ChatbotMatriculaProceso candidate : candidates) {
             String candidateDocument = trim(candidate.getNumeroDocumento()).replaceAll("\\D+", "");
             String candidateEmail = trim(candidate.getEmail()).toLowerCase(Locale.ROOT);
+            String candidatePhone = trim(candidate.getPhone());
+            if (candidatePhone.isBlank()) {
+                candidatePhone = trim(candidate.getTelefono());
+            }
+            candidatePhone = candidatePhone.replaceAll("\\D+", "");
             if (!docMask.matches(candidateDocument)) {
                 continue;
             }
             if (!emailMask.matches(candidateEmail)) {
+                continue;
+            }
+            if (!phoneMask.matches(candidatePhone)) {
                 continue;
             }
             filtered.add(candidate);
@@ -1149,7 +1176,8 @@ private String paymentConfirmationUrl;
     }
 
     private Optional<ChatbotMatriculaProceso> resolveByIntersection(List<ChatbotMatriculaProceso> docCandidates,
-                                                                    List<ChatbotMatriculaProceso> emailCandidates) {
+                                                                    List<ChatbotMatriculaProceso> emailCandidates,
+                                                                    MaskLookupParts phoneMask) {
         if (docCandidates == null || docCandidates.isEmpty() || emailCandidates == null || emailCandidates.isEmpty()) {
             return Optional.empty();
         }
@@ -1165,6 +1193,20 @@ private String paymentConfirmationUrl;
                     break;
                 }
             }
+        }
+        if (phoneMask.hasCriteria()) {
+            List<ChatbotMatriculaProceso> byPhone = new ArrayList<>();
+            for (ChatbotMatriculaProceso candidate : intersections) {
+                String candidatePhone = trim(candidate.getPhone());
+                if (candidatePhone.isBlank()) {
+                    candidatePhone = trim(candidate.getTelefono());
+                }
+                candidatePhone = candidatePhone.replaceAll("\\D+", "");
+                if (phoneMask.matches(candidatePhone)) {
+                    byPhone.add(candidate);
+                }
+            }
+            intersections = byPhone;
         }
         if (intersections.size() == 1) {
             return Optional.of(intersections.get(0));

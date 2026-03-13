@@ -3,6 +3,7 @@ package com.Aplication.HARO.Controller;
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Model.Clase;
 import com.Aplication.HARO.Service.ChatbotProcesoService;
+import com.Aplication.HARO.Service.PaymentSyncContextService;
 import com.Aplication.HARO.Service.VerificationService;
 import com.Aplication.HARO.Service.WhatsAppTemplateService;
 import org.slf4j.Logger;
@@ -24,6 +25,8 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -83,6 +86,7 @@ public class ChatbotInboundController {
     private static final Pattern DOCUMENT_PATTERN = Pattern.compile("^\\d{5,20}$");
 
     private final ChatbotProcesoService procesoService;
+    private final PaymentSyncContextService paymentSyncContextService;
     private final VerificationService verificationService;
     private final WhatsAppTemplateService waService;
 
@@ -101,9 +105,11 @@ public class ChatbotInboundController {
     private boolean includeImageActionInInbound;
 
     public ChatbotInboundController(ChatbotProcesoService procesoService,
+                                    PaymentSyncContextService paymentSyncContextService,
                                     VerificationService verificationService,
                                     WhatsAppTemplateService waService) {
         this.procesoService = procesoService;
+        this.paymentSyncContextService = paymentSyncContextService;
         this.verificationService = verificationService;
         this.waService = waService;
     }
@@ -603,6 +609,7 @@ public class ChatbotInboundController {
                 try {
                     procesoService.markPaymentPending(session.documento);
                     String link = procesoService.getPaymentLink(session.documento);
+                    capturePaymentContextFromChat(link, session, "chatbot_inbound_confirm");
                     session.state = ChatState.PAYMENT_WAIT;
 
                     actions.add(textMsg(
@@ -683,6 +690,7 @@ public class ChatbotInboundController {
         case "link", "pagar" -> {
             try {
                 String link = procesoService.getPaymentLink(session.documento);
+                capturePaymentContextFromChat(link, session, "chatbot_inbound_relink");
 
                 actions.add(textMsg(
                         "💳 *Enlace de pago*\n\n" +
@@ -724,6 +732,92 @@ public class ChatbotInboundController {
             out.append("- Retorno: ").append(response).append("\n");
         }
         return out.toString().trim();
+    }
+
+    private void capturePaymentContextFromChat(String paymentLink, SessionData session, String source) {
+        if (session == null) {
+            return;
+        }
+
+        String documento = trim(session.documento);
+        String email = trim(session.email).toLowerCase(Locale.ROOT);
+        String telefono = trim(session.telefono);
+        if (documento.isBlank() && email.isBlank() && telefono.isBlank()) {
+            return;
+        }
+
+        String invoice = firstNotBlank(
+                queryParam(paymentLink, "x_id_invoice"),
+                queryParam(paymentLink, "x_id_factura"),
+                queryParam(paymentLink, "invoice"),
+                queryParam(paymentLink, "p_id_invoice"),
+                queryParam(paymentLink, "id_invoice")
+        );
+
+        String flowId = firstNotBlank(
+                queryParam(paymentLink, "x_extra2"),
+                queryParam(paymentLink, "flow_id"),
+                queryParam(paymentLink, "flowId"),
+                queryParam(paymentLink, "process_id"),
+                queryParam(paymentLink, "processId"),
+                queryParam(paymentLink, "matricula_id"),
+                queryParam(paymentLink, "matriculaId")
+        );
+
+        if (invoice.isBlank() && !flowId.isBlank()) {
+            invoice = "flow:" + flowId;
+        }
+
+        try {
+            paymentSyncContextService.capture(
+                    "",
+                    "",
+                    invoice,
+                    "",
+                    documento,
+                    email,
+                    telefono,
+                    "PENDING",
+                    source
+            );
+        } catch (Exception ex) {
+            log.warn("No se pudo guardar contexto de pago desde chatbot. doc={} email={} source={} err={}",
+                    safe(documento),
+                    maskEmail(email),
+                    source,
+                    ex.getMessage());
+        }
+    }
+
+    private String queryParam(String rawUrl, String key) {
+        String url = trim(rawUrl);
+        String searchKey = trim(key);
+        if (url.isBlank() || searchKey.isBlank()) {
+            return "";
+        }
+
+        try {
+            URI uri = URI.create(url);
+            String query = uri.getRawQuery();
+            if (query == null || query.isBlank()) {
+                return "";
+            }
+            for (String chunk : query.split("&")) {
+                if (chunk == null || chunk.isBlank()) {
+                    continue;
+                }
+                String[] parts = chunk.split("=", 2);
+                String parsedKey = URLDecoder.decode(parts[0], StandardCharsets.UTF_8);
+                if (!searchKey.equalsIgnoreCase(parsedKey)) {
+                    continue;
+                }
+                String parsedValue = parts.length > 1 ? URLDecoder.decode(parts[1], StandardCharsets.UTF_8) : "";
+                return trim(parsedValue);
+            }
+            return "";
+        } catch (Exception ex) {
+            return "";
+        }
     }
 
     private boolean shouldSyncEnrollmentFlow(ChatState state, String text) {
@@ -1683,6 +1777,19 @@ public class ChatbotInboundController {
 
     private String collapseSpaces(String value) {
         return trim(value).replaceAll("\\s+", " ");
+    }
+
+    private String firstNotBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            String v = trim(value);
+            if (!v.isBlank()) {
+                return v;
+            }
+        }
+        return "";
     }
 
     private String trim(String value) {

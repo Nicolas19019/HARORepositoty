@@ -465,6 +465,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     out.putIfAbsent("paymentStatus", safeTrim(asString(out.get("paymentStatus"))));
     out.putIfAbsent("flowStatus", safeTrim(asString(out.get("flowStatus"))));
     out.putIfAbsent("contractLink", safeTrim(asString(out.get("contractLink"))));
+    out.remove("_maskedDocumentRaw");
+    out.remove("_maskedEmailRaw");
+    out.remove("_maskedPhoneRaw");
 
     String contextRef = firstNotBlank(refPayco, safeTrim(asString(out.get("reference"))));
     String contextGatewayRef = firstNotBlank(summaryGatewayReference, safeTrim(asString(out.get("gatewayReference"))), gatewayRefPayco);
@@ -574,6 +577,14 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             if (byPhone.isPresent()) {
                 return byPhone.get();
             }
+            Optional<SyncDecision> byInvoice = trySyncByInvoice(summary, safePayload, amount);
+            if (byInvoice.isPresent()) {
+                return byInvoice.get();
+            }
+            Optional<SyncDecision> byMasked = trySyncByMaskedHints(summary, safePayload, amount);
+            if (byMasked.isPresent()) {
+                return byMasked.get();
+            }
 
             log.warn("Sync pago aprobado sin identificadores resolubles del chat. reference={} gatewayRef={} invoice={}",
                     safeTrim(asString(summary.get("reference"))),
@@ -588,6 +599,14 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 Optional<SyncDecision> byPhone = trySyncByPhone(summary, safePayload, amount, customerPhoneRaw);
                 if (byPhone.isPresent()) {
                     return byPhone.get();
+                }
+                Optional<SyncDecision> byInvoice = trySyncByInvoice(summary, safePayload, amount);
+                if (byInvoice.isPresent()) {
+                    return byInvoice.get();
+                }
+                Optional<SyncDecision> byMasked = trySyncByMaskedHints(summary, safePayload, amount);
+                if (byMasked.isPresent()) {
+                    return byMasked.get();
                 }
                 log.info("No se pudo resolver proceso por email para sync de pago. email={}", email);
                 return new SyncDecision(false, "process_not_found_by_email", "email");
@@ -605,7 +624,128 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             return new SyncDecision(synced, synced ? "processed_by_email" : "processed_by_email_without_whatsapp_confirmation", "email");
         } catch (Exception ex) {
             log.error("No fue posible sincronizar pago aprobado por email. email={}: {}", email, ex.getMessage(), ex);
+            Optional<SyncDecision> byInvoice = trySyncByInvoice(summary, safePayload, amount);
+            if (byInvoice.isPresent()) {
+                return byInvoice.get();
+            }
+            Optional<SyncDecision> byMasked = trySyncByMaskedHints(summary, safePayload, amount);
+            if (byMasked.isPresent()) {
+                return byMasked.get();
+            }
             return new SyncDecision(false, "error_processing_by_email", "email");
+        }
+    }
+
+    private Optional<SyncDecision> trySyncByInvoice(Map<String, Object> summary,
+                                                    Map<String, Object> safePayload,
+                                                    BigDecimal amount) {
+        String invoice = firstNotBlank(
+                safeTrim(asString(summary.get("invoice"))),
+                safeTrim(asString(safePayload.get("x_id_invoice"))),
+                safeTrim(asString(safePayload.get("x_id_factura"))),
+                safeTrim(asString(safePayload.get("invoice")))
+        );
+        if (!StringUtils.hasText(invoice)) {
+            return Optional.empty();
+        }
+
+        try {
+            Optional<ChatbotMatriculaProceso> proceso = chatbotProcesoService.findLatestProcesoByInvoiceHint(invoice);
+            if (proceso.isEmpty()) {
+                log.info("No se pudo resolver proceso por invoice para sync de pago. invoice={}", invoice);
+                return Optional.of(new SyncDecision(false, "process_not_found_by_invoice", "invoice"));
+            }
+
+            ChatbotMatriculaProceso resolved = proceso.get();
+            String document = safeTrim(resolved.getNumeroDocumento());
+            if (!StringUtils.hasText(document)) {
+                return Optional.of(new SyncDecision(false, "process_without_document_by_invoice", "invoice"));
+            }
+
+            PaymentApprovalService.ApprovalResult approval =
+                    paymentApprovalService.handleApprovedPayment(document, amount);
+            applyApprovalResultToSummary(summary, approval, document, safeTrim(resolved.getEmail()));
+            summary.put("phone", firstResolvedPhone(safeTrim(resolved.getPhone()), safeTrim(resolved.getTelefono())));
+            if (resolved.getId() != null) {
+                summary.put("flowId", resolved.getId());
+                summary.put("flow_id", resolved.getId());
+            }
+            boolean synced = approval.whatsappSent() || approval.duplicate();
+            return Optional.of(new SyncDecision(
+                    synced,
+                    synced ? "processed_by_invoice" : "processed_by_invoice_without_whatsapp_confirmation",
+                    "invoice"
+            ));
+        } catch (Exception ex) {
+            log.error("No fue posible sincronizar pago por invoice={} : {}", invoice, ex.getMessage(), ex);
+            return Optional.of(new SyncDecision(false, "error_processing_by_invoice", "invoice"));
+        }
+    }
+
+    private Optional<SyncDecision> trySyncByMaskedHints(Map<String, Object> summary,
+                                                        Map<String, Object> safePayload,
+                                                        BigDecimal amount) {
+        String maskedDocument = firstMaskedValue(
+                safeTrim(asString(summary.get("_maskedDocumentRaw"))),
+                safeTrim(asString(safePayload.get("masked_document"))),
+                safeTrim(asString(safePayload.get("customer_document"))),
+                safeTrim(asString(safePayload.get("x_customer_document"))),
+                safeTrim(asString(safePayload.get("document"))),
+                safeTrim(asString(safePayload.get("x_extra1")))
+        );
+        String maskedEmail = firstMaskedValue(
+                safeTrim(asString(summary.get("_maskedEmailRaw"))),
+                safeTrim(asString(safePayload.get("masked_email"))),
+                safeTrim(asString(safePayload.get("customer_email"))),
+                safeTrim(asString(safePayload.get("x_customer_email"))),
+                safeTrim(asString(safePayload.get("email")))
+        );
+        String maskedPhone = firstMaskedValue(
+                safeTrim(asString(summary.get("_maskedPhoneRaw"))),
+                safeTrim(asString(safePayload.get("masked_phone"))),
+                safeTrim(asString(safePayload.get("customer_phone"))),
+                safeTrim(asString(safePayload.get("x_customer_phone"))),
+                safeTrim(asString(safePayload.get("x_customer_mobile"))),
+                safeTrim(asString(safePayload.get("phone")))
+        );
+
+        if (!StringUtils.hasText(maskedDocument) && !StringUtils.hasText(maskedEmail) && !StringUtils.hasText(maskedPhone)) {
+            return Optional.empty();
+        }
+
+        Optional<ChatbotMatriculaProceso> proceso = chatbotProcesoService.findLatestProcesoByMaskedHints(
+                maskedDocument,
+                maskedEmail,
+                maskedPhone
+        );
+        if (proceso.isEmpty()) {
+            return Optional.of(new SyncDecision(false, "masked_identifiers_not_resolved", "masked"));
+        }
+
+        ChatbotMatriculaProceso resolved = proceso.get();
+        String document = safeTrim(resolved.getNumeroDocumento());
+        if (!StringUtils.hasText(document)) {
+            return Optional.of(new SyncDecision(false, "masked_process_without_document", "masked"));
+        }
+
+        try {
+            PaymentApprovalService.ApprovalResult approval = paymentApprovalService.handleApprovedPayment(document, amount);
+            applyApprovalResultToSummary(summary, approval, document, safeTrim(resolved.getEmail()));
+            summary.put("phone", firstResolvedPhone(safeTrim(resolved.getPhone()), safeTrim(resolved.getTelefono())));
+            if (resolved.getId() != null) {
+                summary.put("flowId", resolved.getId());
+                summary.put("flow_id", resolved.getId());
+            }
+            boolean synced = approval.whatsappSent() || approval.duplicate();
+            return Optional.of(new SyncDecision(
+                    synced,
+                    synced ? "processed_by_masked_hints" : "processed_by_masked_hints_without_whatsapp_confirmation",
+                    "masked"
+            ));
+        } catch (Exception ex) {
+            log.error("No fue posible sincronizar pago por mascaras docMask={} emailMask={} phoneMask={}: {}",
+                    maskedDocument, maskedEmail, maskedPhone, ex.getMessage(), ex);
+            return Optional.of(new SyncDecision(false, "error_processing_by_masked_hints", "masked"));
         }
     }
 
@@ -760,13 +900,22 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         String customerDocumentRaw = readFirstField(tx, root,
                 "x_extra1", "document", "x_customer_document", "customer_document", "x_customer_docnumber", "x_doc_number");
         String xDocumento = firstResolvedDocument(customerDocumentRaw, documentHintRaw);
+        String maskedDocumentRaw = customerDocumentRaw != null && customerDocumentRaw.contains("*")
+                ? safeTrim(customerDocumentRaw)
+                : "";
 
         String customerEmailRaw = readFirstField(tx, root,
                 "x_customer_email", "customer_email", "x_email", "email");
         String xEmail = firstResolvedEmail(customerEmailRaw);
+        String maskedEmailRaw = customerEmailRaw != null && customerEmailRaw.contains("*")
+                ? safeTrim(customerEmailRaw)
+                : "";
         String customerPhoneRaw = readFirstField(tx, root,
                 "x_customer_phone", "x_customer_mobile", "x_customer_movil", "customer_phone", "customer_mobile", "phone", "telefono", "x_phone");
         String xPhone = firstResolvedPhone(customerPhoneRaw);
+        String maskedPhoneRaw = customerPhoneRaw != null && customerPhoneRaw.contains("*")
+                ? safeTrim(customerPhoneRaw)
+                : "";
 
         String lookupRefPayco = resolveLookupRefPayco(refPayco, readFirstField(root, tx, "ref_payco", "reference"));
 
@@ -828,6 +977,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         if (StringUtils.hasText(localDocument)) out.put("document", localDocument);
         if (StringUtils.hasText(localEmail)) out.put("email", localEmail);
         if (StringUtils.hasText(xPhone)) out.put("phone", xPhone);
+        if (StringUtils.hasText(maskedDocumentRaw)) out.put("_maskedDocumentRaw", maskedDocumentRaw);
+        if (StringUtils.hasText(maskedEmailRaw)) out.put("_maskedEmailRaw", maskedEmailRaw);
+        if (StringUtils.hasText(maskedPhoneRaw)) out.put("_maskedPhoneRaw", maskedPhoneRaw);
 
         if (StringUtils.hasText(xTransactionId)) out.put("transactionId", xTransactionId);
         if (StringUtils.hasText(xInvoice)) out.put("invoice", xInvoice);
@@ -937,6 +1089,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(documentHintRaw)
         );
         String xDocumento = firstResolvedDocument(rawDocument);
+        String maskedDocumentRaw = rawDocument != null && rawDocument.contains("*") ? safeTrim(rawDocument) : "";
         String rawEmail = firstNotBlank(
                 safeTrim(asString(safePayload.get("customer_email"))),
                 safeTrim(asString(safePayload.get("x_customer_email"))),
@@ -944,6 +1097,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(emailHintRaw)
         );
         String xEmail = firstResolvedEmail(rawEmail);
+        String maskedEmailRaw = rawEmail != null && rawEmail.contains("*") ? safeTrim(rawEmail) : "";
         String rawPhone = firstNotBlank(
                 safeTrim(asString(safePayload.get("phone"))),
                 safeTrim(asString(safePayload.get("customer_phone"))),
@@ -955,6 +1109,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 safeTrim(asString(safePayload.get("telefono")))
         );
         String xPhone = firstResolvedPhone(rawPhone);
+        String maskedPhoneRaw = rawPhone != null && rawPhone.contains("*") ? safeTrim(rawPhone) : "";
 
         if (flowId != null && (!StringUtils.hasText(xDocumento) || !StringUtils.hasText(xEmail) || !StringUtils.hasText(xPhone))) {
             Optional<ChatbotMatriculaProceso> procesoById = chatbotProcesoService.findProcesoById(flowId);
@@ -993,6 +1148,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         if (StringUtils.hasText(xDocumento)) out.put("document", xDocumento);
         if (StringUtils.hasText(xEmail)) out.put("email", xEmail);
         if (StringUtils.hasText(xPhone)) out.put("phone", xPhone);
+        if (StringUtils.hasText(maskedDocumentRaw)) out.put("_maskedDocumentRaw", maskedDocumentRaw);
+        if (StringUtils.hasText(maskedEmailRaw)) out.put("_maskedEmailRaw", maskedEmailRaw);
+        if (StringUtils.hasText(maskedPhoneRaw)) out.put("_maskedPhoneRaw", maskedPhoneRaw);
 
         Map<String, String> gateway = new LinkedHashMap<>();
         if (StringUtils.hasText(xCodResponse)) gateway.put("codResponse", xCodResponse);
@@ -1165,6 +1323,17 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         for (String value : values) {
             if (StringUtils.hasText(value)) {
                 return safeTrim(value);
+            }
+        }
+        return "";
+    }
+
+    private String firstMaskedValue(String... values) {
+        if (values == null) return "";
+        for (String value : values) {
+            String out = safeTrim(value);
+            if (StringUtils.hasText(out) && out.contains("*")) {
+                return out;
             }
         }
         return "";

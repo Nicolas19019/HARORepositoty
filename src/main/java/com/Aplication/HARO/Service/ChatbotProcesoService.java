@@ -769,6 +769,11 @@ private String paymentConfirmationUrl;
         link = appendQueryParam(link, paymentDocumentParam, proceso == null ? null : proceso.getNumeroDocumento());
         link = appendQueryParam(link, paymentEmailParam, proceso == null ? null : proceso.getEmail());
         link = appendQueryParam(link, paymentFlowIdParam, flowIdForPayment);
+        link = appendQueryParam(link, "flow_id", flowIdForPayment);
+        link = appendQueryParam(link, "extra2", flowIdForPayment);
+        link = appendQueryParam(link, "document", proceso == null ? null : proceso.getNumeroDocumento());
+        link = appendQueryParam(link, "email", proceso == null ? null : proceso.getEmail());
+        link = appendQueryParam(link, "phone", phoneForPayment);
         link = appendQueryParam(link, paymentInvoiceParam, invoiceHintForPayment);
         link = appendQueryParam(link, "x_customer_phone", phoneForPayment);
         link = appendQueryParam(link, "x_customer_mobile", phoneForPayment);
@@ -788,14 +793,19 @@ private String paymentConfirmationUrl;
             compactLink = appendQueryParam(compactLink, paymentDocumentParam, proceso == null ? null : proceso.getNumeroDocumento());
             compactLink = appendQueryParam(compactLink, paymentEmailParam, proceso == null ? null : proceso.getEmail());
             compactLink = appendQueryParam(compactLink, paymentFlowIdParam, flowIdForPayment);
+            compactLink = appendQueryParam(compactLink, "flow_id", flowIdForPayment);
+            compactLink = appendQueryParam(compactLink, "extra2", flowIdForPayment);
+            compactLink = appendQueryParam(compactLink, "document", proceso == null ? null : proceso.getNumeroDocumento());
+            compactLink = appendQueryParam(compactLink, "email", proceso == null ? null : proceso.getEmail());
+            compactLink = appendQueryParam(compactLink, "phone", phoneForPayment);
             compactLink = appendQueryParam(compactLink, paymentInvoiceParam, invoiceHintForPayment);
             compactLink = appendQueryParam(compactLink, "x_customer_phone", phoneForPayment);
             compactLink = appendQueryParam(compactLink, "x_customer_mobile", phoneForPayment);
             if (!paycoHostedLink && expectedAmount.signum() > 0) {
                 compactLink = appendQueryParam(compactLink, paymentAmountParam, expectedAmount.toPlainString());
             }
-            compactLink = appendQueryParam(compactLink, confirmationParam, buildCallbackUrlWithFlowId(paymentConfirmationUrl, proceso));
-            compactLink = appendQueryParam(compactLink, responseParam, buildCallbackUrlWithFlowId(paymentReturnUrl, proceso));
+            compactLink = appendQueryParam(compactLink, confirmationParam, buildCallbackUrlWithCompactContext(paymentConfirmationUrl, proceso));
+            compactLink = appendQueryParam(compactLink, responseParam, buildCallbackUrlWithCompactContext(paymentReturnUrl, proceso));
             link = compactLink;
             log.warn("LINK PAGO generado en modo compacto doc={} len={}",
                     proceso != null ? proceso.getNumeroDocumento() : null,
@@ -822,9 +832,20 @@ private String paymentConfirmationUrl;
         String phone = resolvePhoneForPayment(proceso);
         String flowId = proceso.getId() == null ? "" : String.valueOf(proceso.getId());
 
-        // Contexto minimo para evitar enlaces de pago gigantes.
+        // Contexto redundante: el frontend prioriza x_extra1/customer_email/x_customer_phone.
+        // Si ePayco agrega versiones enmascaradas al final, URLSearchParams.get(...) tomara
+        // el primer valor (este), conservando los datos reales para sync automatico.
         out = appendQueryParam(out, "flow_id", flowId);
         out = appendQueryParam(out, "x_extra2", flowId);
+        out = appendQueryParam(out, "extra2", flowId);
+        out = appendQueryParam(out, "x_extra1", documento);
+        out = appendQueryParam(out, "doc", documento);
+        out = appendQueryParam(out, "customer_email", email);
+        out = appendQueryParam(out, "x_customer_email", email);
+        out = appendQueryParam(out, "customer_phone", phone);
+        out = appendQueryParam(out, "x_customer_phone", phone);
+        out = appendQueryParam(out, "x_customer_mobile", phone);
+        out = appendQueryParam(out, "x_customer_movil", phone);
         out = appendQueryParam(out, "document", documento);
         out = appendQueryParam(out, "email", email);
         out = appendQueryParam(out, "phone", phone);
@@ -839,6 +860,25 @@ private String paymentConfirmationUrl;
         String flowId = String.valueOf(proceso.getId());
         out = appendQueryParam(out, "flow_id", flowId);
         out = appendQueryParam(out, "x_extra2", flowId);
+        out = appendQueryParam(out, "extra2", flowId);
+        return out;
+    }
+
+    private String buildCallbackUrlWithCompactContext(String baseUrl, ChatbotMatriculaProceso proceso) {
+        String out = buildCallbackUrlWithFlowId(baseUrl, proceso);
+        if (out.isBlank() || proceso == null) {
+            return out;
+        }
+
+        String documento = trim(proceso.getNumeroDocumento());
+        String email = trim(proceso.getEmail()).toLowerCase(Locale.ROOT);
+        String phone = resolvePhoneForPayment(proceso);
+
+        // Contexto minimo pero util: mantiene identificadores reales aun si ePayco enmascara otros campos.
+        out = appendQueryParam(out, "x_extra1", documento);
+        out = appendQueryParam(out, "customer_email", email);
+        out = appendQueryParam(out, "x_customer_phone", phone);
+        out = appendQueryParam(out, "x_customer_mobile", phone);
         return out;
     }
 

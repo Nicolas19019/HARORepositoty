@@ -31,6 +31,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
+import com.Aplication.HARO.Service.EpaycoCheckoutContextService;
 import com.Aplication.HARO.Service.ChatbotProcesoService;
 import com.Aplication.HARO.Service.EpaycoService;
 import com.Aplication.HARO.Service.PaymentApprovalService;
@@ -52,6 +53,7 @@ public class EpaycoController {
     private record SyncDecision(boolean synced, String reason, String resolvedBy) {}
 
     private final EpaycoService epaycoService;
+    private final EpaycoCheckoutContextService checkoutContextService;
     private final ChatbotProcesoService chatbotProcesoService;
     private final PaymentApprovalService paymentApprovalService;
     private final PaymentSyncContextService paymentSyncContextService;
@@ -69,6 +71,7 @@ public class EpaycoController {
     private boolean autoSendContractOnPayment;
 
     public EpaycoController(EpaycoService epaycoService,
+                            EpaycoCheckoutContextService checkoutContextService,
                             ChatbotProcesoService chatbotProcesoService,
                             PaymentApprovalService paymentApprovalService,
                             PaymentSyncContextService paymentSyncContextService,
@@ -76,6 +79,7 @@ public class EpaycoController {
                             WhatsAppTemplateService waService,
                             ObjectMapper objectMapper) {
         this.epaycoService = epaycoService;
+        this.checkoutContextService = checkoutContextService;
         this.chatbotProcesoService = chatbotProcesoService;
         this.paymentApprovalService = paymentApprovalService;
         this.paymentSyncContextService = paymentSyncContextService;
@@ -1587,11 +1591,65 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     @CrossOrigin(origins = {"http://127.0.0.1:8081", "http://localhost:8081"})
     @PostMapping(value = {"/session", "/epayco/session"}, consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> createSession(@RequestBody java.util.Map<String, Object> payload) {
-        Object items = payload.get("items");
-        if (items == null) {
-            return ResponseEntity.badRequest().body(java.util.Map.of("error", "items vacio"));
+        Map<String, Object> safePayload = payload == null ? Map.of() : payload;
+        Long flowId = resolveFlowId(
+                safePayload.get("flow_id"),
+                safePayload.get("flowId"),
+                safePayload.get("process_id"),
+                safePayload.get("processId"),
+                safePayload.get("matricula_id"),
+                safePayload.get("matriculaId"),
+                safePayload.get("x_extra2"),
+                safePayload.get("extra2")
+        );
+        if (flowId == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "FLOW_ID_REQUIRED",
+                    "message", "Debes enviar flowId, flow_id o x_extra2 para crear la sesion de pago."
+            ));
         }
-        return ResponseEntity.ok(java.util.Map.of("sessionId", "DUMMY_SESSION_ID"));
+        try {
+            EpaycoCheckoutContextService.CheckoutContext ctx = checkoutContextService.resolveFromFlowId(flowId);
+            return ResponseEntity.ok(buildSessionResponse(ctx));
+        } catch (EpaycoCheckoutContextService.IncompleteProcessException ex) {
+            return ResponseEntity.unprocessableEntity().body(Map.of(
+                    "error", "PROCESS_INCOMPLETE",
+                    "message", ex.getMessage(),
+                    "flowId", ex.getFlowId(),
+                    "missingFields", ex.getMissingFields()
+            ));
+        } catch (NoSuchElementException ex) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "error", "PROCESS_NOT_FOUND",
+                    "message", ex.getMessage(),
+                    "flowId", flowId
+            ));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "INVALID_FLOW_ID",
+                    "message", ex.getMessage()
+            ));
+        }
+    }
+
+    private Map<String, Object> buildSessionResponse(EpaycoCheckoutContextService.CheckoutContext ctx) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("message", "Sesion de pago preparada desde el proceso del chatbot.");
+        out.put("source", "chatbot_process");
+        out.put("sessionId", "DUMMY_SESSION_ID");
+        out.put("flowId", ctx.flowId());
+        out.put("processId", ctx.flowId());
+        out.put("buyerName", ctx.buyerName());
+        out.put("buyerEmail", ctx.email());
+        out.put("document", ctx.document());
+        out.put("phone", ctx.phone());
+        out.put("category", ctx.category());
+        out.put("amount", ctx.amount() == null ? "0" : ctx.amount().toPlainString());
+        out.put("currency", "COP");
+        out.put("invoice", ctx.invoice());
+        out.put("paymentLink", ctx.paymentLink());
+        return out;
     }
 
     // URL de confirmacion (Webhook ePayco)

@@ -1,4 +1,4 @@
-package com.Aplication.HARO.Controller;
+﻿package com.Aplication.HARO.Controller;
 
 import java.math.BigDecimal;
 import java.net.URLEncoder;
@@ -171,15 +171,33 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             safePayload.get("x_extra2"),
             safePayload.get("extra2")
     );
-    String documentHint = firstResolvedDocument(
+    String rawDocumentHint = firstNotBlank(
             safeTrim(asString(safePayload.get("x_extra1"))),
             safeTrim(asString(safePayload.get("document"))),
             safeTrim(asString(safePayload.get("customer_document"))),
             safeTrim(asString(safePayload.get("x_customer_document")))
     );
-    String emailHint = firstResolvedEmail(
+    String rawEmailHint = firstNotBlank(
             safeTrim(asString(safePayload.get("email"))),
-            safeTrim(asString(safePayload.get("customer_email")))
+            safeTrim(asString(safePayload.get("customer_email"))),
+            safeTrim(asString(safePayload.get("x_customer_email")))
+    );
+    String rawPhoneHint = firstNotBlank(
+            safeTrim(asString(safePayload.get("phone"))),
+            safeTrim(asString(safePayload.get("customer_phone"))),
+            safeTrim(asString(safePayload.get("x_customer_phone"))),
+            safeTrim(asString(safePayload.get("x_customer_mobile"))),
+            safeTrim(asString(safePayload.get("x_customer_movil")))
+    );
+    Optional<ChatbotMatriculaProceso> procesoOpt = resolveProcesoFromHints(flowIdHint, rawDocumentHint, rawEmailHint);
+
+    String documentHint = firstResolvedDocument(
+            rawDocumentHint,
+            procesoDocumento(procesoOpt)
+    );
+    String emailHint = firstResolvedEmail(
+            rawEmailHint,
+            procesoEmail(procesoOpt)
     );
     String invoiceHint = firstNotBlank(
             safeTrim(asString(safePayload.get("x_id_invoice"))),
@@ -192,21 +210,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             safeTrim(asString(safePayload.get("transaction_id")))
     );
     String phoneHint = firstResolvedPhone(
-            safeTrim(asString(safePayload.get("phone"))),
-            safeTrim(asString(safePayload.get("customer_phone"))),
-            safeTrim(asString(safePayload.get("x_customer_phone"))),
-            safeTrim(asString(safePayload.get("x_customer_mobile"))),
-            safeTrim(asString(safePayload.get("x_customer_movil")))
+            rawPhoneHint,
+            procesoTelefono(procesoOpt)
     );
-    Optional<ChatbotMatriculaProceso> procesoByFlowId = flowIdHint == null
-            ? Optional.empty()
-            : chatbotProcesoService.findProcesoById(flowIdHint);
-    if (procesoByFlowId.isPresent()) {
-        ChatbotMatriculaProceso proceso = procesoByFlowId.get();
-        documentHint = firstResolvedDocument(documentHint, safeTrim(proceso.getNumeroDocumento()));
-        emailHint = firstResolvedEmail(emailHint, safeTrim(proceso.getEmail()));
-        phoneHint = firstResolvedPhone(phoneHint, safeTrim(proceso.getPhone()), safeTrim(proceso.getTelefono()));
-    }
 
     String payloadStatus = firstNotBlank(
             safeTrim(asString(safePayload.get("status"))),
@@ -282,14 +288,18 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 summary.get("extra2")
         );
     }
-    if (flowIdHint != null && procesoByFlowId.isEmpty()) {
-        procesoByFlowId = chatbotProcesoService.findProcesoById(flowIdHint);
+    if (procesoOpt.isEmpty()) {
+        procesoOpt = resolveProcesoFromHints(
+                flowIdHint,
+                firstNotBlank(safeTrim(asString(summary.get("document"))), documentHint),
+                firstNotBlank(safeTrim(asString(summary.get("email"))), emailHint)
+        );
     }
-    if (procesoByFlowId.isPresent()) {
-        ChatbotMatriculaProceso proceso = procesoByFlowId.get();
-        documentHint = firstResolvedDocument(documentHint, safeTrim(proceso.getNumeroDocumento()));
-        emailHint = firstResolvedEmail(emailHint, safeTrim(proceso.getEmail()));
-        phoneHint = firstResolvedPhone(phoneHint, safeTrim(proceso.getPhone()), safeTrim(proceso.getTelefono()));
+    if (procesoOpt.isPresent()) {
+        ChatbotMatriculaProceso proceso = procesoOpt.get();
+        documentHint = firstResolvedDocument(documentHint, procesoDocumento(procesoOpt));
+        emailHint = firstResolvedEmail(emailHint, procesoEmail(procesoOpt));
+        phoneHint = firstResolvedPhone(phoneHint, procesoTelefono(procesoOpt));
         summary.putIfAbsent("flowId", proceso.getId());
         summary.putIfAbsent("flow_id", proceso.getId());
     }
@@ -1358,6 +1368,55 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             }
         }
         return "";
+    }
+
+    private Optional<ChatbotMatriculaProceso> resolveProcesoFromHints(Long flowIdHint,
+                                                                      String documentHintRaw,
+                                                                      String emailHintRaw) {
+        if (flowIdHint != null) {
+            Optional<ChatbotMatriculaProceso> procesoById = chatbotProcesoService.findProcesoById(flowIdHint);
+            if (procesoById.isPresent()) {
+                return procesoById;
+            }
+        }
+
+        String documentHint = normalizeDocumentoCandidate(documentHintRaw);
+        if (StringUtils.hasText(documentHint)) {
+            Optional<ChatbotMatriculaProceso> procesoByDocumento =
+                    chatbotProcesoService.findProcesoByDocumento(documentHint);
+            if (procesoByDocumento.isPresent()) {
+                return procesoByDocumento;
+            }
+        }
+
+        String emailHint = sanitizeEmailCandidate(emailHintRaw);
+        if (StringUtils.hasText(emailHint)) {
+            return chatbotProcesoService.findLatestProcesoByEmail(emailHint);
+        }
+
+        return Optional.empty();
+    }
+
+    private String procesoDocumento(Optional<ChatbotMatriculaProceso> procesoOpt) {
+        return procesoOpt
+                .map(ChatbotMatriculaProceso::getNumeroDocumento)
+                .map(this::safeTrim)
+                .orElse("");
+    }
+
+    private String procesoEmail(Optional<ChatbotMatriculaProceso> procesoOpt) {
+        return procesoOpt
+                .map(ChatbotMatriculaProceso::getEmail)
+                .map(this::safeTrim)
+                .orElse("");
+    }
+
+    private String procesoTelefono(Optional<ChatbotMatriculaProceso> procesoOpt) {
+        if (procesoOpt.isEmpty()) {
+            return "";
+        }
+        ChatbotMatriculaProceso proceso = procesoOpt.get();
+        return firstResolvedPhone(safeTrim(proceso.getPhone()), safeTrim(proceso.getTelefono()));
     }
 
     private String firstNotBlank(String... values) {

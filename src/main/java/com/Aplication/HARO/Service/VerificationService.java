@@ -355,9 +355,13 @@ public class VerificationService {
         final String code = trim(rawCode);
         final Instant now = Instant.now();
         final String purpose = "CONTRACT_SIGN";
+        final String codeHash = OtpHasher.sha256(code);
 
-        Optional<OtpToken> lastOpt =
-                repo.findTopByEmailAndPurposeAndConsumedAtIsNullOrderByIdDesc(email, purpose);
+        Optional<OtpToken> matchingOpt =
+                repo.findTopByEmailAndPurposeAndOtpHashAndConsumedAtIsNullOrderByIdDesc(email, purpose, codeHash);
+        Optional<OtpToken> lastOpt = matchingOpt.isPresent()
+                ? matchingOpt
+                : repo.findTopByEmailAndPurposeAndConsumedAtIsNullOrderByIdDesc(email, purpose);
         if (lastOpt.isEmpty()) return false;
 
         OtpToken token = lastOpt.get();
@@ -378,7 +382,7 @@ public class VerificationService {
         }
 
         token.setAttempts(attempts + 1);
-        boolean ok = OtpHasher.sha256(code).equals(token.getOtpHash());
+        boolean ok = codeHash.equals(token.getOtpHash());
         if (ok || (attempts + 1) >= maxAttempts) {
             token.setConsumedAt(now); // one-time use
         }
@@ -405,8 +409,12 @@ public class VerificationService {
             return new ContractAccessResult(false, "Codigo requerido", null);
         }
 
-        Optional<OtpToken> lastOpt =
-                repo.findTopByEmailAndPurposeAndConsumedAtIsNullOrderByIdDesc(email, purpose);
+        final String codeHash = OtpHasher.sha256(code);
+        Optional<OtpToken> matchingOpt =
+                repo.findTopByEmailAndPurposeAndOtpHashAndConsumedAtIsNullOrderByIdDesc(email, purpose, codeHash);
+        Optional<OtpToken> lastOpt = matchingOpt.isPresent()
+                ? matchingOpt
+                : repo.findTopByEmailAndPurposeAndConsumedAtIsNullOrderByIdDesc(email, purpose);
         if (lastOpt.isEmpty()) {
             return new ContractAccessResult(false, "Codigo invalido o vencido", null);
         }
@@ -427,7 +435,7 @@ public class VerificationService {
             return new ContractAccessResult(false, "Codigo invalido por maximo de intentos", null);
         }
 
-        boolean ok = OtpHasher.sha256(code).equals(token.getOtpHash());
+        boolean ok = codeHash.equals(token.getOtpHash());
         if (!ok) {
             token.setAttempts(attempts + 1);
             if ((attempts + 1) >= maxAttempts) {

@@ -247,9 +247,19 @@ private String paymentConfirmationUrl;
 
     public ChatbotMatriculaProceso markContractLinkSent(String documento, String contractLink) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
-        p.setContractLink(trim(contractLink));
+        p.setContractLink(normalizeContractLink(contractLink));
         p.setContractStatus("LINK_SENT");
         p.setFlowStatus("CONTRACT_LINK_SENT");
+        return procesoRepository.save(p);
+    }
+
+    public ChatbotMatriculaProceso updateContractLink(String documento, String contractLink) {
+        ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
+        String normalized = normalizeContractLink(contractLink);
+        if (Objects.equals(trim(p.getContractLink()), normalized)) {
+            return p;
+        }
+        p.setContractLink(normalized);
         return procesoRepository.save(p);
     }
 
@@ -1165,6 +1175,14 @@ private String paymentConfirmationUrl;
 
     private String trim(String v) {
         return v == null ? "" : v.trim();
+    }
+
+    private String normalizeContractLink(String raw) {
+        String link = trim(raw);
+        if (link.isBlank()) {
+            return link;
+        }
+        return link.replaceFirst("(?i)/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
     }
 
     private String maskMaskedValue(String raw) {

@@ -898,7 +898,14 @@ public class ChatbotInboundController {
             return true;
         }
 
-        String contractLink = trim(proceso.getContractLink());
+        String contractLink = normalizeStoredContractLink(proceso.getContractLink());
+        if (!contractLink.equals(trim(proceso.getContractLink()))) {
+            try {
+                procesoService.updateContractLink(documento, contractLink);
+            } catch (Exception ex) {
+                log.warn("No se pudo normalizar contractLink almacenado doc={}: {}", documento, ex.getMessage());
+            }
+        }
 
         if (shouldRefreshContractLink(contractLink)) {
             try {
@@ -1380,7 +1387,7 @@ public class ChatbotInboundController {
     }
 
     private boolean shouldRefreshContractLink(String contractLinkRaw) {
-        String contractLink = trim(contractLinkRaw);
+        String contractLink = normalizeStoredContractLink(contractLinkRaw);
         if (contractLink.isBlank()) {
             return true;
         }
@@ -1397,6 +1404,10 @@ public class ChatbotInboundController {
             return ui;
         }
         return ui.replaceFirst("(?i)/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
+    }
+
+    private String normalizeStoredContractLink(String rawContractLink) {
+        return normalizeContractUiUrl(trim(rawContractLink));
     }
 
     private String appendQueryParam(String baseUrl, String key, String value) {

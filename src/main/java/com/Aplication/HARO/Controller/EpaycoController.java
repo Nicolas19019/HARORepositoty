@@ -2091,13 +2091,21 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             return "";
         }
 
-        String currentLink = safeTrim(proceso.getContractLink());
+        String currentLink = normalizeStoredContractLink(proceso.getContractLink());
+        String document = normalizeDocumentoCandidate(proceso.getNumeroDocumento());
+        if (StringUtils.hasText(document)
+                && !currentLink.equals(safeTrim(proceso.getContractLink()))) {
+            try {
+                chatbotProcesoService.updateContractLink(document, currentLink);
+            } catch (Exception ex) {
+                log.warn("No se pudo normalizar contractLink almacenado doc={}: {}", document, ex.getMessage());
+            }
+        }
         if (!shouldRefreshContractLink(currentLink)) {
             return currentLink;
         }
 
         String email = safeTrim(proceso.getEmail());
-        String document = normalizeDocumentoCandidate(proceso.getNumeroDocumento());
         if (!StringUtils.hasText(email) || !StringUtils.hasText(document)) {
             return currentLink;
         }
@@ -2115,6 +2123,10 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
 
         return currentLink;
+    }
+
+    private String normalizeStoredContractLink(String rawContractLink) {
+        return normalizeContractUiUrl(safeTrim(rawContractLink));
     }
 
     private String appendQueryParam(String baseUrl, String key, String value) {

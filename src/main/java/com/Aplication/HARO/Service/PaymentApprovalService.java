@@ -90,7 +90,10 @@ public class PaymentApprovalService {
             proceso.setPaymentAmount(amount);
         }
 
-        String contractLink = trim(proceso.getContractLink());
+        String contractLink = normalizeStoredContractLink(proceso.getContractLink());
+        if (!Objects.equals(trim(proceso.getContractLink()), contractLink)) {
+            proceso.setContractLink(contractLink);
+        }
 
         if (shouldRefreshContractLink(contractLink)) {
 
@@ -132,13 +135,16 @@ public class PaymentApprovalService {
 
     public boolean sendPaymentApprovedMessage(String phoneRaw, String contractLinkRaw) {
         String phone = normalizePhone(phoneRaw);
-        String contractLink = trim(contractLinkRaw);
+        String contractLink = normalizeStoredContractLink(contractLinkRaw);
         if (!StringUtils.hasText(phone) || !StringUtils.hasText(contractLink)) {
             return false;
         }
 
         String message = "\u2705 Tu pago fue aprobado.\n\n\uD83D\uDCC4 Continua con tu contrato aqui:\n" + contractLink;
-        log.info("\uD83D\uDCF2 Preparando envio por WhatsApp a {}", maskPhone(phone));
+        log.info("\uD83D\uDCF2 Preparando envio por WhatsApp a {} con contractUiUrl={} contractLink={}",
+                maskPhone(phone),
+                normalizeContractUiUrl(contractUiUrl),
+                contractLink);
 
         try {
             if (StringUtils.hasText(internalApiBaseUrl)) {
@@ -212,7 +218,7 @@ public class PaymentApprovalService {
     }
 
     private boolean shouldRefreshContractLink(String contractLinkRaw) {
-        String contractLink = trim(contractLinkRaw);
+        String contractLink = normalizeStoredContractLink(contractLinkRaw);
         if (!StringUtils.hasText(contractLink)) {
             return true;
         }
@@ -236,7 +242,7 @@ public class PaymentApprovalService {
             return "";
         }
 
-        String currentLink = trim(proceso.getContractLink());
+        String currentLink = normalizeStoredContractLink(proceso.getContractLink());
         if (!shouldRefreshContractLink(currentLink)) {
             return currentLink;
         }
@@ -255,6 +261,10 @@ public class PaymentApprovalService {
                     proceso.getId(), ex.getMessage());
             return currentLink;
         }
+    }
+
+    private String normalizeStoredContractLink(String rawContractLink) {
+        return normalizeContractUiUrl(trim(rawContractLink));
     }
 
     private String appendQueryParam(String baseUrl, String key, String value) {

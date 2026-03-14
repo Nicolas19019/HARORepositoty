@@ -1403,7 +1403,7 @@ public class ChatbotInboundController {
         if (ui.isBlank()) {
             return ui;
         }
-        return ui.replaceFirst("(?i)/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
+        return ui.replaceFirst("(?i)(?:/Contratos)*/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
     }
 
     private String normalizeStoredContractLink(String rawContractLink) {

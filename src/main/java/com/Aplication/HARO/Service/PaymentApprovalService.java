@@ -234,7 +234,7 @@ public class PaymentApprovalService {
         if (!StringUtils.hasText(ui)) {
             return ui;
         }
-        return ui.replaceFirst("(?i)/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
+        return ui.replaceFirst("(?i)(?:/Contratos)*/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
     }
 
     private String resolveCurrentContractLink(ChatbotMatriculaProceso proceso) {

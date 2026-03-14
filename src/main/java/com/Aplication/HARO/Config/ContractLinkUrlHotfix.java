@@ -24,11 +24,11 @@ public class ContractLinkUrlHotfix implements CommandLineRunner {
                     UPDATE chatbot_matricula_proceso
                     SET contract_link = regexp_replace(
                         contract_link,
-                        '^(https?://[^/]+)/contrato\\.html',
-                        '\\1/Contratos/contrato.html',
+                        '^(https?://[^/]+)(?:/Contratos)*/contrato\\.html([?#].*)?$',
+                        '\\1/Contratos/contrato.html\\2',
                         'i'
                     )
-                    WHERE contract_link ~* '^(https?://[^/]+)/contrato\\.html([?#]|$)'
+                    WHERE contract_link ~* '^(https?://[^/]+)(?:/Contratos)*/contrato\\.html([?#].*)?$'
                     """);
 
             if (updated > 0) {

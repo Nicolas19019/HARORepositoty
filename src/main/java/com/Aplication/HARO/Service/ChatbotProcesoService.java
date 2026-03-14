@@ -1182,7 +1182,7 @@ private String paymentConfirmationUrl;
         if (link.isBlank()) {
             return link;
         }
-        return link.replaceFirst("(?i)/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
+        return link.replaceFirst("(?i)(?:/Contratos)*/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
     }
 
     private String maskMaskedValue(String raw) {

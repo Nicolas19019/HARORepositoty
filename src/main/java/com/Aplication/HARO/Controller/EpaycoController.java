@@ -2083,7 +2083,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         if (!StringUtils.hasText(ui)) {
             return ui;
         }
-        return ui.replaceFirst("(?i)/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
+        return ui.replaceFirst("(?i)(?:/Contratos)*/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
     }
 
     private String resolveContractLinkForProceso(ChatbotMatriculaProceso proceso) {

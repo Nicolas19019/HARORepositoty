@@ -19,7 +19,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.util.StringUtils;
@@ -304,6 +306,18 @@ public class VerificationService {
             String fileUrl
     ) {}
 
+    @Transactional(readOnly = true)
+    public Map<String, Object> buildContractAccessPayload(String rawEmail) {
+        String email = normalizeEmail(rawEmail);
+        try {
+            return chatbotProcesoService.buildContractAccessPayloadByEmail(email);
+        } catch (Exception ex) {
+            Map<String, Object> fallback = new LinkedHashMap<>();
+            fallback.put("email", email);
+            return fallback;
+        }
+    }
+
     /** Genera código alfanumérico para firma y devuelve URL verificable. */
     @Transactional
     public ContractLinkResult createContractVerificationLink(String rawEmail, String rawBaseUrl) {
@@ -486,7 +500,7 @@ public class VerificationService {
         if (StringUtils.hasText(documento)) {
             try {
                 studentId = chatbotProcesoService.createStudentFromSignedContract(documento);
-                message = "Contrato validado y matricula activada";
+                message = "Contrato validado, estudiante, estado de cuenta y pago actualizados";
             } catch (Exception ex) {
                 message = "Contrato validado, pero no se pudo activar matricula: " + ex.getMessage();
             }
@@ -514,6 +528,8 @@ public class VerificationService {
                                                              String rawCode,
                                                              String rawSignerName,
                                                              String rawContractName,
+                                                             String rawPdfFile,
+                                                             String rawFormDataJson,
                                                              MultipartFile file) {
         final String email = normalizeEmail(rawEmail);
         ContractAccessResult access = validateContractAccessCode(email, rawCode);
@@ -547,6 +563,17 @@ public class VerificationService {
 
         ContractDocumentStorageService.StoredDocument stored =
                 contractDocumentStorageService.storeSignedContract(file, signerName, documento, contractName);
+
+        chatbotProcesoService.mergeContractSubmissionByEmail(
+                email,
+                contractName,
+                trim(rawPdfFile),
+                trim(rawFormDataJson),
+                stored.fileName(),
+                stored.publicUrl(),
+                stored.objectKey(),
+                stored.signerFolder()
+        );
 
         return new ContractUploadResult(
                 true,
@@ -628,6 +655,9 @@ public class VerificationService {
         if (!waService.getConfigStatus().ready()) return;
 
         String phone = trim(proceso.getPhone());
+        if (!StringUtils.hasText(phone)) {
+            phone = trim(proceso.getTelefono());
+        }
         if (!StringUtils.hasText(phone)) return;
 
         try {
@@ -637,6 +667,7 @@ public class VerificationService {
                             "📌 Categoria: " + safe(proceso.getCategoria()) + "\n" +
                             "🆔 Documento: " + safe(proceso.getNumeroDocumento()) + "\n" +
                             "🧾 Ref estudiante: " + studentId + "\n\n" +
+                            "Tu estado de cuenta y pago quedaron registrados.\n\n" +
                             "Si deseas consultar o agendar clases, escribe MENU y luego 'Soy estudiante'."
             );
         } catch (Exception ignored) {

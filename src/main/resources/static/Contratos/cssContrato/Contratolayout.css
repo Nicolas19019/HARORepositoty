@@ -1,0 +1,240 @@
+/* =========================================================
+   layout.css
+   - Topbar, Navbar, Offcanvas
+   - Footer, WhatsApp float
+   - Responsive de layout
+   ========================================================= */
+
+/* =========================
+   TOPBAR
+   ========================= */
+.topbar{
+  padding: 12px 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.topbar-link{
+  color: #000;
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  transition: color .2s ease;
+}
+
+.topbar-link:hover{
+  color: var(--danger-bs);
+}
+
+.separator{
+  margin: 0 10px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* Texto “CEA HARO” con borde sutil */
+.cea-outline{
+  color: var(--danger-bs);
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-shadow:
+    0.5px 0 #000,
+    -0.5px 0 #000,
+    0 0.5px #000,
+    0 -0.5px #000;
+}
+
+/* =========================
+   NAVBAR
+   ========================= */
+.navbar{
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+  min-height: 70px;
+}
+
+.navbar-brand{
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: .5px;
+}
+
+/* Logo navbar */
+.logo-navbar{
+  height: 60px;
+  width: auto;
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  transition: transform .3s ease;
+}
+
+.logo-navbar:hover{
+  transform: scale(1.05);
+}
+
+/* Links navbar con subrayado exacto al texto */
+.navbar-nav > .nav-item > .nav-link{
+  display: inline-block;
+  position: relative;
+  padding-bottom: 4px;
+  margin: 0 .8rem;
+  color: var(--text) !important;
+  font-weight: 500;
+}
+
+.navbar-nav > .nav-item > .nav-link::after{
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 0;
+  background: var(--accent);
+  transition: width .25s ease;
+}
+
+.navbar-nav > .nav-item > .nav-link:hover::after,
+.navbar-nav > .nav-item > .nav-link.active::after{
+  width: 100%;
+}
+
+/* Mantener siempre negro */
+.navbar-nav .nav-link,
+.navbar-nav .nav-link:hover,
+.navbar-nav .nav-link.active{
+  color: var(--text) !important;
+}
+
+/* Botón carrito */
+#cartBtn{
+  border-width: 2px;
+  border-radius: var(--radius-sm);
+  height: 42px;
+  width: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#cartBtn i{ font-size: 1.25rem; }
+
+#cartBtn:hover{
+  background-color: var(--accent);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* =========================
+   OFFCANVAS (menú móvil)
+   ========================= */
+.offcanvas{
+  background: #fff;
+  width: 250px;
+  padding: 1rem 1.5rem;
+}
+
+.offcanvas-title{ font-weight: 600; }
+
+/* Links offcanvas con subrayado exacto */
+.offcanvas .nav-link{
+  display: inline-block;
+  position: relative;
+  color: var(--text) !important;
+  font-weight: 500;
+  text-decoration: none;
+  margin: .4rem 0;
+  padding: .3rem 0 4px;
+  font-size: .95rem;
+}
+
+.offcanvas .nav-link::after{
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 0;
+  background: var(--accent);
+  transition: width .25s ease;
+}
+
+.offcanvas .nav-link:hover::after,
+.offcanvas .nav-link.active::after{
+  width: 100%;
+}
+
+/* =========================
+   FOOTER
+   ========================= */
+.footer-haro{
+  background: var(--footer-bg);
+}
+
+.footer-logo-haro{
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+  border-radius: 10px;
+  background: rgba(255,255,255,.06);
+  padding: 6px;
+}
+
+.footer-title{ letter-spacing: .08em; }
+
+.footer-ico{
+  color: #ef4444;
+  font-size: 1.05rem;
+  margin-top: 2px;
+}
+
+.footer-link{
+  color: rgba(255,255,255,.75);
+  text-decoration: none;
+  transition: .2s ease;
+}
+
+.footer-link:hover{
+  color: #fff;
+  text-decoration: underline;
+  text-decoration-color: rgba(239,68,68,.9);
+  text-underline-offset: 4px;
+}
+
+.footer-divider{
+  border-color: rgba(255,255,255,.12);
+}
+
+/* =========================
+   WHATSAPP FLOAT
+   ========================= */
+.whatsapp-float{
+  position: fixed;
+  bottom: 25px;
+  right: 25px;
+  z-index: 999;
+}
+
+.whatsapp-float img{
+  width: 55px;
+  height: 55px;
+  border-radius: 50%;
+  box-shadow: 0 3px 8px rgba(0,0,0,.3);
+  transition: transform .3s;
+}
+
+.whatsapp-float img:hover{
+  transform: scale(1.1);
+}
+
+/* =========================
+   RESPONSIVE (layout)
+   ========================= */
+@media (max-width: 992px){
+  .navbar{ flex-wrap: nowrap; }
+  .navbar-toggler{ order: 1; }
+  .navbar-brand{ order: 2; margin-left: 0; }
+  #cartBtn{ order: 3; margin-left: auto; }
+}
+

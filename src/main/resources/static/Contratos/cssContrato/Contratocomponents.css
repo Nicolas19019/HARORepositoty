@@ -1,0 +1,457 @@
+/* =========================================================
+   components.css
+   - Títulos de sección
+   - Carrusel + cajas
+   - Botones, cards, proceso
+   - Carrito
+   - Opiniones, consultas, alianzas
+   - Componentes específicos reutilizables
+   ========================================================= */
+
+/* =========================
+   TÍTULOS DE SECCIÓN
+   ========================= */
+.section-title,
+h2.section-title{
+  display: block;
+  width: max-content;
+  margin: 0 auto 1.5rem;
+  text-align: center;
+  position: relative;
+  padding-bottom: 6px;
+  font-weight: 700;
+  font-size: 1.8rem;
+  color: var(--text);
+}
+
+.section-title::after,
+h2.section-title::after{
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* =========================
+   CARRUSEL / HERO
+   ========================= */
+.carousel-item img{
+  height: 75vh;
+  object-fit: cover;
+  filter: brightness(.9);
+}
+
+.carousel-caption{
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  padding: 0 15px;
+}
+
+.translucent-box{
+  background: rgba(255,255,255,.8);
+  backdrop-filter: blur(6px);
+  border-radius: var(--radius-md);
+  padding: 1rem 2rem;
+  color: var(--text);
+  max-width: 600px;
+  margin: 0 auto;
+  box-shadow: 0 4px 15px rgba(0,0,0,.15);
+  text-align: center;
+}
+
+.translucent-box h2{
+  font-weight: 700;
+  font-size: 1.8rem;
+  margin-bottom: .5rem;
+}
+
+/* =========================
+   BOTONES (tuning)
+   ========================= */
+.btn-danger{
+  background-color: var(--danger);
+  border: none;
+}
+
+.btn-danger:hover,
+.btn-outline-danger:hover{
+  background-color: var(--accent);
+  color: var(--text);
+  border: none;
+  transition: .3s ease;
+}
+
+/* =========================
+   TARJETAS
+   ========================= */
+.card{
+  border-radius: 10px;
+  transition: transform .3s ease;
+}
+
+.card:hover{ transform: scale(1.03); }
+
+/* =========================
+   PROCESO
+   ========================= */
+.process-flow{
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+
+.circle{
+  width: 110px;
+  height: 110px;
+  background: #fff;
+  border: 3px solid var(--danger);
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  transition: all .3s ease;
+}
+
+.circle small{
+  font-size: .8rem;
+  margin-top: 4px;
+}
+
+.arrow{
+  font-size: 2rem;
+  color: var(--accent);
+}
+
+/* =========================
+   NOSOTROS (video)
+   ========================= */
+#nosotros video{
+  width: 100%;
+  height: 500px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+}
+
+/* =========================
+   CARRITO (offcanvas)
+   ========================= */
+#offcanvasCart .offcanvas-body{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#cartItems{
+  width: 100%;
+  padding: 0;
+  margin-bottom: 1rem;
+  list-style: none;
+}
+
+.cart-item-fixed{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 48px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: var(--radius-sm);
+  padding: .5rem 1rem;
+  margin-bottom: .5rem;
+  font-size: .95rem;
+  width: 100%;
+  transition: background .2s ease-in-out;
+}
+
+.cart-item-fixed:hover{
+  background-color: #fff7cc;
+}
+
+.cart-actions button{
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: .85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+#clearCart,
+#goPay{
+  height: 48px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  width: 100%;
+}
+
+#clearCart{
+  background-color: var(--danger);
+  color: #fff;
+  border: none;
+}
+
+#clearCart:hover{
+  background-color: var(--accent);
+  color: var(--text);
+}
+
+#goPay{
+  border: 2px solid var(--danger);
+  color: var(--danger);
+  background: #fff;
+}
+
+#goPay:hover{
+  background-color: var(--accent);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* =========================
+   OPINIONES
+   ========================= */
+.opinion-card{
+  max-width: 850px;
+  background: #fff;
+  border-radius: var(--radius-lg);
+  padding: 32px 28px;
+  box-shadow: 0 14px 35px rgba(0,0,0,.08);
+}
+
+.stars{
+  color: #fbbf24;
+  font-size: 1.2rem;
+  margin-bottom: 12px;
+}
+
+.opinion-text{
+  font-size: 1.05rem;
+  color: #374151;
+  margin-bottom: 16px;
+}
+
+.opinion-author{
+  font-weight: 600;
+  color: #6b7280;
+}
+
+/* =========================
+   CONSULTAS
+   ========================= */
+.consulta-box{
+  width: 100%;
+  transition: transform .3s ease, box-shadow .3s ease;
+}
+
+.consulta-box:hover{
+  transform: translateY(-5px);
+  box-shadow: 0 6px 18px rgba(0,0,0,.15);
+}
+
+.consulta-card{
+  border: 1px solid rgba(0,0,0,.06);
+}
+
+.consulta-icon{
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(220,53,69,.10);
+  color: var(--danger-bs);
+  flex: 0 0 44px;
+}
+
+.consulta-icon i{ font-size: 1.2rem; }
+
+/* =========================
+   ALIANZAS
+   ========================= */
+.alianzas-grid{ row-gap: 12px; }
+
+.logo-box{
+  width: 170px;
+  aspect-ratio: 1 / 1;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 14px;
+  box-shadow: 0 10px 25px rgba(0,0,0,.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.logo-img{
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+@media (min-width: 992px){
+  .logo-box{ width: 190px; }
+}
+
+/* ===== Checkout modal overlay ===== */
+.checkout-overlay{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 20px;
+}
+.checkout-overlay.hidden{ display:none; }
+
+.checkout-panel{
+  width: min(720px, 94vw);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.35);
+  padding: 22px;
+}
+
+.checkout-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom: 14px;
+}
+
+.checkout-close{
+  border: none;
+  background: transparent;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  color: #111;
+}
+
+.checkout-items{
+  display:flex;
+  flex-direction:column;
+  gap: 10px;
+  max-height: 280px;
+  overflow:auto;
+  padding-right: 6px;
+}
+
+.checkout-item{
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+
+.checkout-total{
+  display:flex;
+  justify-content:space-between;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0,0,0,0.08);
+}
+
+/* ===== Carrito row (offcanvas) ajustes ===== */
+.cart-row{
+  border-radius: 12px;
+}
+
+.cart-qty{
+  min-width: 18px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.cart-remove{
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: 0;
+}
+
+.cart-x{
+  color: #dc3545;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+/* ===== PRIVACIDAD - MENÚ LATERAL ===== */
+
+.policy-aside {
+  position: sticky;
+  top: 100px; /* debajo del navbar sticky */
+}
+
+.policy-card {
+  border-radius: 14px;
+  border: none;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.06);
+}
+
+/* Título del menú */
+.policy-card h5 {
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.5px;
+}
+
+/* Contenedor de enlaces */
+.policy-toc {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Enlaces estilo limpio y profesional */
+.policy-toc a {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #e9ecef;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #212529;
+  transition: all 0.25s ease;
+}
+
+/* Hover elegante estilo HARO */
+.policy-toc a:hover {
+  background-color: rgba(220, 53, 69, 0.08);
+  border-color: #dc3545;
+  color: #dc3545;
+  transform: translateX(4px);
+}
+
+/* Sección info inferior */
+.policy-card .small {
+  font-size: 0.8rem;
+}
+

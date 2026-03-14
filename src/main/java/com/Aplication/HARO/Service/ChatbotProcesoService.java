@@ -4,14 +4,19 @@ import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Model.Clase;
 import com.Aplication.HARO.Model.EstadoCuenta;
 import com.Aplication.HARO.Model.Estudiante;
+import com.Aplication.HARO.Model.Pagos;
 import com.Aplication.HARO.Model.Profesor;
 import com.Aplication.HARO.Model.Vehiculo;
 import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
 import com.Aplication.HARO.Repository.ClaseRepository;
 import com.Aplication.HARO.Repository.EstadoCuentaRepository;
 import com.Aplication.HARO.Repository.EstudianteRepository;
+import com.Aplication.HARO.Repository.PagoRepository;
 import com.Aplication.HARO.Repository.ProfesorRepository;
 import com.Aplication.HARO.Repository.VehiculoRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,7 +42,9 @@ import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -49,10 +56,12 @@ public class ChatbotProcesoService {
     private final EstudianteRepository estudianteRepository;
     private final EstudianteService estudianteService;
     private final EstadoCuentaRepository estadoCuentaRepository;
+    private final PagoRepository pagoRepository;
     private final ClaseRepository claseRepository;
     private final ProfesorRepository profesorRepository;
     private final VehiculoRepository vehiculoRepository;
     private final GoogleCalendarService googleCalendarService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${chatbot.payment.link:https://epayco-link.com}")
     private String defaultPaymentLink;
@@ -147,11 +156,20 @@ private String paymentConfirmationUrl;
                                      BigDecimal valorMulta,
                                      long horasRestantes,
                                      BigDecimal multasAcumuladas) {}
+    private record ContractStudentProfile(String nombre,
+                                          String apellido,
+                                          String tipoDocumento,
+                                          String telefono,
+                                          String email,
+                                          String direccion,
+                                          String categoria,
+                                          String sede) {}
 
     public ChatbotProcesoService(ChatbotMatriculaProcesoRepository procesoRepository,
                                  EstudianteRepository estudianteRepository,
                                  EstudianteService estudianteService,
                                  EstadoCuentaRepository estadoCuentaRepository,
+                                 PagoRepository pagoRepository,
                                  ClaseRepository claseRepository,
                                  ProfesorRepository profesorRepository,
                                  VehiculoRepository vehiculoRepository,
@@ -160,6 +178,7 @@ private String paymentConfirmationUrl;
         this.estudianteRepository = estudianteRepository;
         this.estudianteService = estudianteService;
         this.estadoCuentaRepository = estadoCuentaRepository;
+        this.pagoRepository = pagoRepository;
         this.claseRepository = claseRepository;
         this.profesorRepository = profesorRepository;
         this.vehiculoRepository = vehiculoRepository;
@@ -409,6 +428,117 @@ private String paymentConfirmationUrl;
         return procesoRepository.findTopByPaymentLinkContainingOrderByUpdatedAtDesc(invoice);
     }
 
+    public Optional<ChatbotMatriculaProceso> mergeContractSubmissionByEmail(String email,
+                                                                            String contractName,
+                                                                            String pdfFile,
+                                                                            String formDataJson,
+                                                                            String fileName,
+                                                                            String fileUrl,
+                                                                            String objectKey,
+                                                                            String signerFolder) {
+        String mail = normalizeEmail(email);
+        Optional<ChatbotMatriculaProceso> procesoOpt =
+                procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail);
+        if (procesoOpt.isEmpty()) {
+            return Optional.empty();
+        }
+
+        ChatbotMatriculaProceso proceso = procesoOpt.get();
+        Map<String, Object> mergedFormData = readJsonMap(proceso.getContractFormData());
+        Map<String, Object> incomingFormData = readJsonMap(formDataJson);
+        if (!incomingFormData.isEmpty()) {
+            mergedFormData.putAll(incomingFormData);
+            proceso.setContractFormData(writeJson(mergedFormData));
+            applyContractFormSnapshotToProceso(proceso, mergedFormData);
+        }
+
+        Map<String, Object> uploadMeta = new LinkedHashMap<>();
+        putIfNotBlank(uploadMeta, "contractName", contractName);
+        putIfNotBlank(uploadMeta, "pdfFile", pdfFile);
+        putIfNotBlank(uploadMeta, "fileName", fileName);
+        putIfNotBlank(uploadMeta, "fileUrl", fileUrl);
+        putIfNotBlank(uploadMeta, "objectKey", objectKey);
+        putIfNotBlank(uploadMeta, "signerFolder", signerFolder);
+        if (!uploadMeta.isEmpty()) {
+            uploadMeta.put("storedAt", Instant.now().toString());
+            List<Map<String, Object>> uploads = readJsonList(proceso.getSignedContractFiles());
+            upsertContractUpload(uploads, uploadMeta);
+            proceso.setSignedContractFiles(writeJson(uploads));
+        }
+
+        return Optional.of(procesoRepository.save(proceso));
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> buildContractAccessPayloadByEmail(String email) {
+        String mail = normalizeEmail(email);
+        Optional<ChatbotMatriculaProceso> procesoOpt =
+                procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("email", mail);
+        if (procesoOpt.isEmpty()) {
+            return payload;
+        }
+
+        ChatbotMatriculaProceso proceso = procesoOpt.get();
+        Map<String, Object> formData = readJsonMap(proceso.getContractFormData());
+
+        putIfNotBlank(payload, "nombreCompleto", firstNotBlank(
+                readValue(formData, "c2_nombre"),
+                readValue(formData, "est_nombre"),
+                readValue(formData, "c3_est_nombre"),
+                proceso.getNombreCompleto()
+        ));
+        putIfNotBlank(payload, "document", firstNotBlank(
+                readValue(formData, "c2_doc_num"),
+                readValue(formData, "est_doc_num"),
+                readValue(formData, "c3_est_doc_num"),
+                proceso.getNumeroDocumento()
+        ));
+        putIfNotBlank(payload, "documentType", firstNotBlank(
+                readValue(formData, "c2_doc_tipo"),
+                readValue(formData, "est_doc_tipo"),
+                readValue(formData, "c3_est_doc_tipo")
+        ));
+        putIfNotBlank(payload, "categoria", firstNotBlank(
+                readValue(formData, "c2_categoria"),
+                proceso.getCategoria()
+        ));
+
+        putIfNotBlank(payload, "shared_contact_email", firstNotBlank(
+                readValue(formData, "shared_contact_email"),
+                readValue(formData, "c2_correo"),
+                proceso.getEmail()
+        ));
+        putIfNotBlank(payload, "shared_contact_phone", firstNotBlank(
+                readValue(formData, "shared_contact_phone"),
+                readValue(formData, "c2_celular"),
+                proceso.getTelefono(),
+                proceso.getPhone()
+        ));
+        putIfNotBlank(payload, "shared_contact_address", firstNotBlank(
+                readValue(formData, "shared_contact_address"),
+                readValue(formData, "c2_direccion")
+        ));
+        putIfNotBlank(payload, "shared_sede", readValue(formData, "shared_sede"));
+        putIfNotBlank(payload, "shared_payment_method", readValue(formData, "shared_payment_method"));
+        putIfNotBlank(payload, "shared_payment_note", readValue(formData, "shared_payment_note"));
+        putIfNotBlank(payload, "paymentStatus", proceso.getPaymentStatus());
+        putIfNotBlank(payload, "contractStatus", proceso.getContractStatus());
+        putIfNotBlank(payload, "flowStatus", proceso.getFlowStatus());
+        if (proceso.getExpectedAmount() != null) {
+            payload.put("expectedAmount", proceso.getExpectedAmount().toPlainString());
+        }
+        if (proceso.getPaymentAmount() != null) {
+            payload.put("paymentAmount", proceso.getPaymentAmount().toPlainString());
+        }
+        if (proceso.getStudentId() != null) {
+            payload.put("studentId", proceso.getStudentId());
+        }
+        return payload;
+    }
+
     public Long createStudentFromSignedContract(String documento) {
         String doc = normalizeDoc(documento);
         ChatbotMatriculaProceso proceso = getByDocumentoOrThrow(doc);
@@ -421,10 +551,15 @@ private String paymentConfirmationUrl;
             throw new IllegalStateException("El contrato aun no esta firmado para el documento " + doc);
         }
 
+        ContractStudentProfile profile = extractStudentProfile(proceso);
+
         Optional<Estudiante> existing = estudianteRepository.findByNumeroDocumento(doc);
         if (existing.isPresent()) {
             Estudiante e = existing.get();
+            applyContractProfileToStudent(e, profile, proceso);
+            estudianteRepository.save(e);
             ensureEstadoCuentaForStudent(proceso, e.getId());
+            ensurePagoForStudent(proceso, e.getId());
             proceso.setStudentId(e.getId());
             proceso.setFlowStatus("STUDENT_CREATED");
             if (proceso.getEnrolledAt() == null) {
@@ -435,24 +570,26 @@ private String paymentConfirmationUrl;
         }
 
         Estudiante nuevo = new Estudiante();
-        String[] nombrePartes = splitName(proceso.getNombreCompleto());
-        nuevo.setNombre(nombrePartes[0]);
-        nuevo.setApellido(nombrePartes[1]);
+        nuevo.setNombre(profile.nombre());
+        nuevo.setApellido(profile.apellido());
         nuevo.setNumeroDocumento(doc);
-        nuevo.setCategoria(proceso.getCategoria());
-        nuevo.setTipoPase(toTipoPase(proceso.getCategoria()));
-        nuevo.setTipoDocumento("CC");
-        nuevo.setTelefono(proceso.getTelefono());
-        nuevo.setEmail(proceso.getEmail());
+        nuevo.setCategoria(profile.categoria());
+        nuevo.setTipoPase(toTipoPase(profile.categoria()));
+        nuevo.setTipoDocumento(profile.tipoDocumento());
+        nuevo.setTelefono(profile.telefono());
+        nuevo.setEmail(profile.email());
+        nuevo.setDireccion(profile.direccion());
+        nuevo.setSede(profile.sede());
         nuevo.setTipoEstudiante("matriculado");
         nuevo.setEstado("Activo");
         nuevo.setVisible(true);
-        nuevo.setUsuario(generateUniqueUsername(proceso.getEmail(), doc));
+        nuevo.setUsuario(generateUniqueUsername(profile.email(), doc));
         // Si no llega contraseña, EstudianteService asigna default seguro
         nuevo.setContrasena(null);
 
         Estudiante created = estudianteService.createEstudiante(nuevo);
         ensureEstadoCuentaForStudent(proceso, created.getId());
+        ensurePagoForStudent(proceso, created.getId());
 
         proceso.setStudentId(created.getId());
         proceso.setFlowStatus("STUDENT_CREATED");
@@ -471,6 +608,296 @@ private String paymentConfirmationUrl;
             });
         }
         return studentId;
+    }
+
+    private void applyContractFormSnapshotToProceso(ChatbotMatriculaProceso proceso, Map<String, Object> formData) {
+        if (proceso == null || formData == null || formData.isEmpty()) {
+            return;
+        }
+
+        String fullName = firstNotBlank(
+                readValue(formData, "c2_nombre"),
+                readValue(formData, "est_nombre"),
+                readValue(formData, "c3_est_nombre"),
+                proceso.getNombreCompleto()
+        );
+        if (!fullName.isBlank()) {
+            proceso.setNombreCompleto(collapseSpaces(fullName));
+        }
+
+        String category = firstNotBlank(readValue(formData, "c2_categoria"), proceso.getCategoria());
+        if (!category.isBlank()) {
+            proceso.setCategoria(normalizeCategoria(category));
+        }
+
+        String phone = normalizePhoneIfPossible(firstNotBlank(
+                readValue(formData, "shared_contact_phone"),
+                readValue(formData, "c2_celular"),
+                proceso.getTelefono()
+        ));
+        if (!phone.isBlank()) {
+            proceso.setTelefono(phone);
+            if (trim(proceso.getPhone()).isBlank()) {
+                proceso.setPhone(phone);
+            }
+        }
+    }
+
+    private ContractStudentProfile extractStudentProfile(ChatbotMatriculaProceso proceso) {
+        Map<String, Object> formData = readJsonMap(proceso.getContractFormData());
+        String fullName = firstNotBlank(
+                readValue(formData, "c2_nombre"),
+                readValue(formData, "est_nombre"),
+                readValue(formData, "c3_est_nombre"),
+                proceso.getNombreCompleto()
+        );
+        String[] nameParts = splitName(fullName);
+
+        String tipoDocumento = normalizeStudentDocType(firstNotBlank(
+                readValue(formData, "c2_doc_tipo"),
+                readValue(formData, "est_doc_tipo"),
+                readValue(formData, "c3_est_doc_tipo"),
+                "CC"
+        ));
+        String telefono = normalizePhoneIfPossible(firstNotBlank(
+                readValue(formData, "shared_contact_phone"),
+                readValue(formData, "c2_celular"),
+                proceso.getTelefono(),
+                proceso.getPhone()
+        ));
+        String email = normalizeEmailIfPossible(firstNotBlank(
+                readValue(formData, "shared_contact_email"),
+                readValue(formData, "c2_correo"),
+                proceso.getEmail()
+        ));
+        String direccion = firstNotBlank(
+                readValue(formData, "shared_contact_address"),
+                readValue(formData, "c2_direccion")
+        );
+        String categoria = normalizeCategoria(firstNotBlank(
+                readValue(formData, "c2_categoria"),
+                proceso.getCategoria()
+        ));
+        String sede = firstNotBlank(readValue(formData, "shared_sede"));
+
+        return new ContractStudentProfile(
+                nameParts[0],
+                nameParts[1],
+                tipoDocumento,
+                telefono,
+                email,
+                direccion,
+                categoria,
+                sede
+        );
+    }
+
+    private void applyContractProfileToStudent(Estudiante estudiante,
+                                               ContractStudentProfile profile,
+                                               ChatbotMatriculaProceso proceso) {
+        if (estudiante == null || profile == null) {
+            return;
+        }
+
+        if (!profile.nombre().isBlank()) {
+            estudiante.setNombre(profile.nombre());
+        }
+        if (!profile.apellido().isBlank()) {
+            estudiante.setApellido(profile.apellido());
+        }
+        if (!profile.tipoDocumento().isBlank()) {
+            estudiante.setTipoDocumento(profile.tipoDocumento());
+        }
+        if (!profile.telefono().isBlank()) {
+            estudiante.setTelefono(profile.telefono());
+        }
+        if (!profile.email().isBlank()) {
+            estudiante.setEmail(profile.email());
+        }
+        if (!profile.direccion().isBlank()) {
+            estudiante.setDireccion(profile.direccion());
+        }
+        if (!profile.sede().isBlank()) {
+            estudiante.setSede(profile.sede());
+        }
+        if (!profile.categoria().isBlank()) {
+            estudiante.setCategoria(profile.categoria());
+            estudiante.setTipoPase(toTipoPase(profile.categoria()));
+        }
+        if (estudiante.getTipoEstudiante() == null || estudiante.getTipoEstudiante().isBlank()) {
+            estudiante.setTipoEstudiante("matriculado");
+        }
+        if (estudiante.getEstado() == null || estudiante.getEstado().isBlank()) {
+            estudiante.setEstado("Activo");
+        }
+        if (estudiante.getVisible() == null) {
+            estudiante.setVisible(true);
+        }
+        if ((estudiante.getUsuario() == null || estudiante.getUsuario().isBlank()) && proceso != null) {
+            estudiante.setUsuario(generateUniqueUsername(profile.email(), proceso.getNumeroDocumento()));
+        }
+    }
+
+    private void upsertContractUpload(List<Map<String, Object>> uploads, Map<String, Object> incoming) {
+        if (uploads == null || incoming == null || incoming.isEmpty()) {
+            return;
+        }
+        String identity = firstNotBlank(
+                stringValue(incoming.get("pdfFile")),
+                stringValue(incoming.get("contractName")),
+                stringValue(incoming.get("fileName"))
+        );
+        if (identity.isBlank()) {
+            uploads.add(incoming);
+            return;
+        }
+
+        for (int i = 0; i < uploads.size(); i++) {
+            Map<String, Object> current = uploads.get(i);
+            String currentIdentity = firstNotBlank(
+                    stringValue(current.get("pdfFile")),
+                    stringValue(current.get("contractName")),
+                    stringValue(current.get("fileName"))
+            );
+            if (identity.equalsIgnoreCase(currentIdentity)) {
+                uploads.set(i, incoming);
+                return;
+            }
+        }
+        uploads.add(incoming);
+    }
+
+    private Map<String, Object> readJsonMap(String rawJson) {
+        String json = trim(rawJson);
+        if (json.isBlank()) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<LinkedHashMap<String, Object>>() {});
+        } catch (Exception ex) {
+            log.warn("No se pudo leer JSON de formulario de contrato: {}", ex.getMessage());
+            return new LinkedHashMap<>();
+        }
+    }
+
+    private List<Map<String, Object>> readJsonList(String rawJson) {
+        String json = trim(rawJson);
+        if (json.isBlank()) {
+            return new ArrayList<>();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<ArrayList<LinkedHashMap<String, Object>>>() {});
+        } catch (Exception ex) {
+            log.warn("No se pudo leer JSON de archivos firmados: {}", ex.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    private String writeJson(Object value) {
+        if (value == null) {
+            return "";
+        }
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("No se pudo serializar la informacion del contrato", ex);
+        }
+    }
+
+    private String readValue(Map<String, Object> data, String key) {
+        if (data == null || data.isEmpty() || key == null || key.isBlank()) {
+            return "";
+        }
+        Object value = data.get(key);
+        return stringValue(value);
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? "" : trim(String.valueOf(value));
+    }
+
+    private String normalizeStudentDocType(String raw) {
+        String value = trim(raw).toUpperCase(Locale.ROOT);
+        if (value.isBlank()) {
+            return "CC";
+        }
+        return switch (value) {
+            case "C.C.", "CC" -> "CC";
+            case "C.E.", "CE" -> "CE";
+            case "T.I.", "TI" -> "TI";
+            case "PAS", "PASAPORTE" -> "PAS";
+            default -> value;
+        };
+    }
+
+    private String normalizeEmailIfPossible(String raw) {
+        String value = trim(raw);
+        if (value.isBlank() || !value.contains("@")) {
+            return "";
+        }
+        try {
+            return normalizeEmail(value);
+        } catch (Exception ex) {
+            return "";
+        }
+    }
+
+    private String normalizePhoneIfPossible(String raw) {
+        String value = trim(raw);
+        if (value.isBlank()) {
+            return "";
+        }
+        try {
+            return normalizePhone(value);
+        } catch (Exception ex) {
+            return value.replaceAll("[^0-9+]", "");
+        }
+    }
+
+    private String resolvePaymentMethod(ChatbotMatriculaProceso proceso) {
+        if (proceso == null) {
+            return "PAGO_EN_LINEA";
+        }
+        Map<String, Object> formData = readJsonMap(proceso.getContractFormData());
+        String raw = firstNotBlank(
+                readValue(formData, "shared_payment_method"),
+                readValue(formData, "payment_method"),
+                readValue(formData, "medio_pago")
+        );
+        if (raw.isBlank()) {
+            return "PAGO_EN_LINEA";
+        }
+
+        return switch (trim(raw).toUpperCase(Locale.ROOT)) {
+            case "PSE" -> "PSE";
+            case "TARJETA_CREDITO", "TARJETA DE CREDITO" -> "TARJETA_CREDITO";
+            case "TARJETA_DEBITO", "TARJETA DE DEBITO" -> "TARJETA_DEBITO";
+            case "TRANSFERENCIA", "TRANSFERENCIA_BANCARIA" -> "TRANSFERENCIA";
+            case "NEQUI", "DAVIPLATA", "BILLETERA_DIGITAL" -> "BILLETERA_DIGITAL";
+            case "EFECTIVO" -> "EFECTIVO";
+            case "OTRO" -> "OTRO";
+            default -> collapseSpaces(raw).toUpperCase(Locale.ROOT).replace(' ', '_');
+        };
+    }
+
+    private void putIfNotBlank(Map<String, Object> out, String key, String value) {
+        String normalized = trim(value);
+        if (!normalized.isBlank()) {
+            out.put(key, normalized);
+        }
+    }
+
+    private String firstNotBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            String normalized = trim(value);
+            if (!normalized.isBlank()) {
+                return normalized;
+            }
+        }
+        return "";
     }
 
     @Transactional(readOnly = true)
@@ -726,6 +1153,31 @@ private String paymentConfirmationUrl;
         }
 
         estadoCuentaRepository.save(estadoCuenta);
+    }
+
+    private void ensurePagoForStudent(ChatbotMatriculaProceso proceso, Long studentId) {
+        if (proceso == null || studentId == null) return;
+        if (!"APPROVED".equalsIgnoreCase(trim(proceso.getPaymentStatus()))) return;
+
+        EstadoCuenta estadoCuenta = estadoCuentaRepository.findByIdEstudiante(studentId).orElse(null);
+        if (estadoCuenta == null || estadoCuenta.getId() == null) {
+            return;
+        }
+
+        BigDecimal monto = resolvePaidAmountForEstadoCuenta(proceso, resolveExpectedAmount(proceso));
+        if (monto == null || monto.signum() < 0) {
+            return;
+        }
+
+        Pagos pago = pagoRepository.findTopByEstadoCuentaOrderByIdDesc(estadoCuenta.getId())
+                .orElseGet(Pagos::new);
+        pago.setEstadoCuenta(estadoCuenta.getId());
+        if (pago.getFechaPago() == null) {
+            pago.setFechaPago(LocalDate.now(ZoneId.of("America/Bogota")));
+        }
+        pago.setMonto(monto);
+        pago.setMetodo(resolvePaymentMethod(proceso));
+        pagoRepository.save(pago);
     }
 
     private BigDecimal resolveExpectedAmount(ChatbotMatriculaProceso proceso) {

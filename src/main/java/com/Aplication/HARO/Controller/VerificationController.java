@@ -10,6 +10,9 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 @Validated
 @RestController
 @RequestMapping("/api/verification")
@@ -55,9 +58,15 @@ public class VerificationController {
   @PostMapping("/contract/access")
   public ResponseEntity<?> validateContractAccess(@RequestBody VerifyReq req) {
     VerificationService.ContractAccessResult out = svc.validateContractAccessCode(req.email(), req.code());
-    return out.ok()
-            ? ResponseEntity.ok(out)
-            : ResponseEntity.badRequest().body(out);
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("ok", out.ok());
+    body.put("message", out.message());
+    body.put("expiresAt", out.expiresAt());
+    if (out.ok()) {
+      body.put("data", svc.buildContractAccessPayload(req.email()));
+      return ResponseEntity.ok(body);
+    }
+    return ResponseEntity.badRequest().body(body);
   }
 
   @PostMapping("/contract/complete")
@@ -73,9 +82,11 @@ public class VerificationController {
                                                 @RequestParam @NotBlank String code,
                                                 @RequestParam(name = "signerName", required = false) String signerName,
                                                 @RequestParam(name = "contractName", required = false) String contractName,
+                                                @RequestParam(name = "pdfFile", required = false) String pdfFile,
+                                                @RequestParam(name = "formData", required = false) String formData,
                                                 @RequestPart("file") MultipartFile file) {
     VerificationService.ContractUploadResult out =
-            svc.uploadSignedContractDocument(email, code, signerName, contractName, file);
+            svc.uploadSignedContractDocument(email, code, signerName, contractName, pdfFile, formData, file);
     return out.ok()
             ? ResponseEntity.ok(out)
             : ResponseEntity.badRequest().body(out);

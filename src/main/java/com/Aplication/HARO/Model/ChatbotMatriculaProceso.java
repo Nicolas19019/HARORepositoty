@@ -50,6 +50,12 @@ public class ChatbotMatriculaProceso {
     @Column(name = "contract_link", columnDefinition = "TEXT")
     private String contractLink;
 
+    @Column(name = "contract_form_data", columnDefinition = "TEXT")
+    private String contractFormData;
+
+    @Column(name = "signed_contract_files", columnDefinition = "TEXT")
+    private String signedContractFiles;
+
     @Column(name = "payment_status", nullable = false, length = 40)
     private String paymentStatus = "PENDING";
 
@@ -164,6 +170,22 @@ public class ChatbotMatriculaProceso {
 
     public void setContractLink(String contractLink) {
         this.contractLink = contractLink;
+    }
+
+    public String getContractFormData() {
+        return contractFormData;
+    }
+
+    public void setContractFormData(String contractFormData) {
+        this.contractFormData = contractFormData;
+    }
+
+    public String getSignedContractFiles() {
+        return signedContractFiles;
+    }
+
+    public void setSignedContractFiles(String signedContractFiles) {
+        this.signedContractFiles = signedContractFiles;
     }
 
     public String getPaymentStatus() {

@@ -1,4 +1,4 @@
-﻿package com.Aplication.HARO.Controller;
+package com.Aplication.HARO.Controller;
 
 import java.math.BigDecimal;
 import java.net.URLEncoder;
@@ -2015,7 +2015,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     private String buildApprovedPaymentMessage(String contractLinkRaw,
                                                String customMessageTextRaw,
                                                String customMessageTemplateRaw) {
-        String contractLink = safeTrim(contractLinkRaw);
+        String contractLink = normalizeStoredContractLink(contractLinkRaw);
         if (!StringUtils.hasText(contractLink)) {
             return "✅ Pago recibido.";
         }

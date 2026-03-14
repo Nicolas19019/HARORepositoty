@@ -2053,7 +2053,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     private String buildContractUserLink(VerificationService.ContractLinkResult out) {
         if (out == null) return "";
 
-        String ui = safeTrim(contractUiUrl);
+        String ui = normalizeContractUiUrl(contractUiUrl);
         if (!StringUtils.hasText(ui)) {
             return safeTrim(out.url());
         }
@@ -2071,11 +2071,19 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         if (!StringUtils.hasText(contractLink)) {
             return true;
         }
-        String expectedUi = safeTrim(contractUiUrl);
+        String expectedUi = normalizeContractUiUrl(contractUiUrl);
         if (!StringUtils.hasText(expectedUi)) {
             return false;
         }
         return !contractLink.startsWith(expectedUi);
+    }
+
+    private String normalizeContractUiUrl(String rawUiUrl) {
+        String ui = safeTrim(rawUiUrl);
+        if (!StringUtils.hasText(ui)) {
+            return ui;
+        }
+        return ui.replaceFirst("(?i)/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
     }
 
     private String resolveContractLinkForProceso(ChatbotMatriculaProceso proceso) {

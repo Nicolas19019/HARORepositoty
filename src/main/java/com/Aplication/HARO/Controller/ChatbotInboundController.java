@@ -1367,10 +1367,11 @@ public class ChatbotInboundController {
 
     private String buildContractUserLink(VerificationService.ContractLinkResult out) {
         if (out == null) return "";
-        if (trim(contractUiUrl).isBlank()) {
+        String ui = normalizeContractUiUrl(contractUiUrl);
+        if (ui.isBlank()) {
             return trim(out.url());
         }
-        String link = appendQueryParam(contractUiUrl, "email", out.email());
+        String link = appendQueryParam(ui, "email", out.email());
         link = appendQueryParam(link, "code", out.code());
         if (!trim(contractBaseUrl).isBlank()) {
             link = appendQueryParam(link, "apiBase", contractBaseUrl);
@@ -1383,11 +1384,19 @@ public class ChatbotInboundController {
         if (contractLink.isBlank()) {
             return true;
         }
-        String expectedUi = trim(contractUiUrl);
+        String expectedUi = normalizeContractUiUrl(contractUiUrl);
         if (expectedUi.isBlank()) {
             return false;
         }
         return !contractLink.startsWith(expectedUi);
+    }
+
+    private String normalizeContractUiUrl(String rawUiUrl) {
+        String ui = trim(rawUiUrl);
+        if (ui.isBlank()) {
+            return ui;
+        }
+        return ui.replaceFirst("(?i)/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
     }
 
     private String appendQueryParam(String baseUrl, String key, String value) {

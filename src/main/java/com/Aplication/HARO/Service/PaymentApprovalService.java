@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 
 @Service
 public class PaymentApprovalService {
@@ -73,6 +74,11 @@ public class PaymentApprovalService {
                 .orElseThrow(() -> new NoSuchElementException("No existe proceso de matricula para documento " + documento));
 
         if (isAlreadyProcessed(proceso)) {
+            String currentContractLink = resolveCurrentContractLink(proceso);
+            if (!Objects.equals(trim(proceso.getContractLink()), currentContractLink)) {
+                proceso.setContractLink(currentContractLink);
+                procesoRepository.save(proceso);
+            }
             log.info("\uD83D\uDD01 Pago ya procesado anteriormente doc={} paymentStatus={} flowStatus={} contractStatus={}",
                     documento, trim(proceso.getPaymentStatus()), trim(proceso.getFlowStatus()), trim(proceso.getContractStatus()));
             return toResult("OK", proceso, false, true);
@@ -173,7 +179,7 @@ public class PaymentApprovalService {
                 status,
                 trim(proceso.getPaymentStatus()),
                 trim(proceso.getFlowStatus()),
-                trim(proceso.getContractLink()),
+                resolveCurrentContractLink(proceso),
                 whatsappSent,
                 duplicate
         );
@@ -193,7 +199,7 @@ public class PaymentApprovalService {
 
     private String buildContractUserLink(VerificationService.ContractLinkResult out) {
         if (out == null) return "";
-        String ui = trim(contractUiUrl);
+        String ui = normalizeContractUiUrl(contractUiUrl);
         if (!StringUtils.hasText(ui)) {
             return trim(out.url());
         }
@@ -210,11 +216,45 @@ public class PaymentApprovalService {
         if (!StringUtils.hasText(contractLink)) {
             return true;
         }
-        String expectedUi = trim(contractUiUrl);
+        String expectedUi = normalizeContractUiUrl(contractUiUrl);
         if (!StringUtils.hasText(expectedUi)) {
             return false;
         }
         return !contractLink.startsWith(expectedUi);
+    }
+
+    private String normalizeContractUiUrl(String rawUiUrl) {
+        String ui = trim(rawUiUrl);
+        if (!StringUtils.hasText(ui)) {
+            return ui;
+        }
+        return ui.replaceFirst("(?i)/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
+    }
+
+    private String resolveCurrentContractLink(ChatbotMatriculaProceso proceso) {
+        if (proceso == null) {
+            return "";
+        }
+
+        String currentLink = trim(proceso.getContractLink());
+        if (!shouldRefreshContractLink(currentLink)) {
+            return currentLink;
+        }
+
+        String email = trim(proceso.getEmail());
+        if (!StringUtils.hasText(email)) {
+            return currentLink;
+        }
+
+        try {
+            VerificationService.ContractLinkResult out =
+                    verificationService.createContractVerificationLink(email, contractBaseUrl);
+            return buildContractUserLink(out);
+        } catch (Exception ex) {
+            log.warn("No se pudo reconstruir contractLink para proceso id={}: {}",
+                    proceso.getId(), ex.getMessage());
+            return currentLink;
+        }
     }
 
     private String appendQueryParam(String baseUrl, String key, String value) {

@@ -899,13 +899,14 @@ public class ChatbotInboundController {
         }
 
         String contractLink = trim(proceso.getContractLink());
-        if (contractLink.isBlank()) {
+
+        if (shouldRefreshContractLink(contractLink)) {
             try {
                 contractLink = createAndStoreContractLink(documento);
             } catch (Exception ex) {
                 log.error("No se pudo reconstruir link de contrato doc={}: {}", documento, ex.getMessage(), ex);
             }
-        }
+        } 
 
         session.state = ChatState.CONTRACT_WAIT;
         if (!contractLink.isBlank()) {
@@ -1375,6 +1376,18 @@ public class ChatbotInboundController {
             link = appendQueryParam(link, "apiBase", contractBaseUrl);
         }
         return link;
+    }
+
+    private boolean shouldRefreshContractLink(String contractLinkRaw) {
+        String contractLink = trim(contractLinkRaw);
+        if (contractLink.isBlank()) {
+            return true;
+        }
+        String expectedUi = trim(contractUiUrl);
+        if (expectedUi.isBlank()) {
+            return false;
+        }
+        return !contractLink.startsWith(expectedUi);
     }
 
     private String appendQueryParam(String baseUrl, String key, String value) {

@@ -453,10 +453,11 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 out.put("paymentStatus", safeTrim(p.getPaymentStatus()));
                 out.put("document", safeTrim(p.getNumeroDocumento()));
                 out.put("email", firstNotBlank(safeTrim(p.getEmail()), safeTrim(asString(out.get("email")))));
-                if (StringUtils.hasText(safeTrim(p.getContractLink()))) {
-                    out.put("contractLink", safeTrim(p.getContractLink()));
+                String contractLink = resolveContractLinkForProceso(p);
+                if (StringUtils.hasText(contractLink)) {
+                    out.put("contractLink", contractLink);
                     out.put("nextStep",
-                            "Tu pago fue aprobado. Contin\u00faa con la contrataci\u00f3n en este enlace: " + safeTrim(p.getContractLink()));
+                            "Tu pago fue aprobado. Contin\u00faa con la contrataci\u00f3n en este enlace: " + contractLink);
                 }
             });
         } else if (StringUtils.hasText(finalEmail)) {
@@ -465,10 +466,11 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 out.put("paymentStatus", safeTrim(p.getPaymentStatus()));
                 out.put("document", firstNotBlank(safeTrim(p.getNumeroDocumento()), safeTrim(asString(out.get("document")))));
                 out.put("email", firstNotBlank(safeTrim(p.getEmail()), safeTrim(asString(out.get("email")))));
-                if (StringUtils.hasText(safeTrim(p.getContractLink()))) {
-                    out.put("contractLink", safeTrim(p.getContractLink()));
+                String contractLink = resolveContractLinkForProceso(p);
+                if (StringUtils.hasText(contractLink)) {
+                    out.put("contractLink", contractLink);
                     out.put("nextStep",
-                            "Tu pago fue aprobado. Contin\u00faa con la contrataci\u00f3n en este enlace: " + safeTrim(p.getContractLink()));
+                            "Tu pago fue aprobado. Contin\u00faa con la contrataci\u00f3n en este enlace: " + contractLink);
                 }
             });
         }
@@ -1057,7 +1059,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             if (StringUtils.hasText(paymentStatus)) out.put("paymentStatus", paymentStatus);
 
             if (status == PaymentUserStatus.APPROVED) {
-                String contractLink = safeTrim(proceso.getContractLink());
+                String contractLink = resolveContractLinkForProceso(proceso);
                 if (StringUtils.hasText(contractLink)) {
                     out.put("contractLink", contractLink);
                     out.put("nextStep",
@@ -2062,6 +2064,49 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             link = appendQueryParam(link, "apiBase", safeTrim(contractBaseUrl));
         }
         return link;
+    }
+
+    private boolean shouldRefreshContractLink(String contractLinkRaw) {
+        String contractLink = safeTrim(contractLinkRaw);
+        if (!StringUtils.hasText(contractLink)) {
+            return true;
+        }
+        String expectedUi = safeTrim(contractUiUrl);
+        if (!StringUtils.hasText(expectedUi)) {
+            return false;
+        }
+        return !contractLink.startsWith(expectedUi);
+    }
+
+    private String resolveContractLinkForProceso(ChatbotMatriculaProceso proceso) {
+        if (proceso == null) {
+            return "";
+        }
+
+        String currentLink = safeTrim(proceso.getContractLink());
+        if (!shouldRefreshContractLink(currentLink)) {
+            return currentLink;
+        }
+
+        String email = safeTrim(proceso.getEmail());
+        String document = normalizeDocumentoCandidate(proceso.getNumeroDocumento());
+        if (!StringUtils.hasText(email) || !StringUtils.hasText(document)) {
+            return currentLink;
+        }
+
+        try {
+            VerificationService.ContractLinkResult out =
+                    verificationService.createContractVerificationLink(email, contractBaseUrl);
+            String refreshedLink = buildContractUserLink(out);
+            if (StringUtils.hasText(refreshedLink)) {
+                chatbotProcesoService.markContractLinkSent(document, refreshedLink);
+                return refreshedLink;
+            }
+        } catch (Exception ex) {
+            log.warn("No se pudo refrescar link de contrato doc={}: {}", document, ex.getMessage());
+        }
+
+        return currentLink;
     }
 
     private String appendQueryParam(String baseUrl, String key, String value) {

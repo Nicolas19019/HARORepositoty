@@ -85,9 +85,15 @@ public class PaymentApprovalService {
         }
 
         String contractLink = trim(proceso.getContractLink());
-        if (!StringUtils.hasText(contractLink)) {
+
+        if (shouldRefreshContractLink(contractLink)) {
+
             VerificationService.ContractLinkResult out =
-                    verificationService.createContractVerificationLink(proceso.getEmail(), contractBaseUrl);
+                    verificationService.createContractVerificationLink(
+                            proceso.getEmail(),
+                            contractBaseUrl
+                    );
+
             contractLink = buildContractUserLink(out);
             proceso.setContractLink(contractLink);
         }
@@ -197,6 +203,18 @@ public class PaymentApprovalService {
             link = appendQueryParam(link, "apiBase", trim(contractBaseUrl));
         }
         return link;
+    }
+
+    private boolean shouldRefreshContractLink(String contractLinkRaw) {
+        String contractLink = trim(contractLinkRaw);
+        if (!StringUtils.hasText(contractLink)) {
+            return true;
+        }
+        String expectedUi = trim(contractUiUrl);
+        if (!StringUtils.hasText(expectedUi)) {
+            return false;
+        }
+        return !contractLink.startsWith(expectedUi);
     }
 
     private String appendQueryParam(String baseUrl, String key, String value) {

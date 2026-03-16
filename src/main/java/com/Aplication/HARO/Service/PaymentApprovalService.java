@@ -63,6 +63,11 @@ public class PaymentApprovalService {
 
     @Transactional
     public ApprovalResult handleApprovedPayment(String documentoRaw, BigDecimal amount) {
+        return handleApprovedPayment(documentoRaw, amount, true);
+    }
+
+    @Transactional
+    public ApprovalResult handleApprovedPayment(String documentoRaw, BigDecimal amount, boolean notifyContractLinkByChatbot) {
         String documento = normalizeDocumento(documentoRaw);
         if (!StringUtils.hasText(documento)) {
             throw new IllegalArgumentException("documento es requerido");
@@ -112,6 +117,11 @@ public class PaymentApprovalService {
                 documento, trim(proceso.getPaymentStatus()), trim(proceso.getFlowStatus()));
 
         boolean whatsappSent = false;
+        if (!notifyContractLinkByChatbot) {
+            log.info("\u2139\uFE0F Pago aprobado sin envio automatico de WhatsApp. doc={}", documento);
+            return toResult("OK", proceso, false, false);
+        }
+
         if (!autoSendContractOnPayment) {
             log.info("\u2139\uFE0F Envio de contrato por WhatsApp deshabilitado por configuracion. doc={}", documento);
             return toResult("OK", proceso, false, false);

@@ -469,6 +469,27 @@ private String paymentConfirmationUrl;
         return Optional.of(procesoRepository.save(proceso));
     }
 
+    public Optional<ChatbotMatriculaProceso> capturePaymentMetadataByDocument(String documento,
+                                                                              String paymentMethod,
+                                                                              String paymentNote) {
+        String doc = normalizeDoc(documento);
+        Optional<ChatbotMatriculaProceso> procesoOpt = procesoRepository.findByNumeroDocumento(doc);
+        if (procesoOpt.isEmpty()) {
+            return Optional.empty();
+        }
+
+        ChatbotMatriculaProceso proceso = procesoOpt.get();
+        Map<String, Object> formData = readJsonMap(proceso.getContractFormData());
+        putIfNotBlank(formData, "shared_payment_method", firstNotBlank(paymentMethod, readValue(formData, "shared_payment_method")));
+        putIfNotBlank(formData, "payment_method", firstNotBlank(paymentMethod, readValue(formData, "payment_method")));
+        putIfNotBlank(formData, "shared_payment_note", firstNotBlank(paymentNote, readValue(formData, "shared_payment_note")));
+        putIfNotBlank(formData, "payment_note", firstNotBlank(paymentNote, readValue(formData, "payment_note")));
+        if (!formData.isEmpty()) {
+            proceso.setContractFormData(writeJson(formData));
+        }
+        return Optional.of(procesoRepository.save(proceso));
+    }
+
     @Transactional(readOnly = true)
     public Map<String, Object> buildContractAccessPayloadByEmail(String email) {
         String mail = normalizeEmail(email);
@@ -522,8 +543,30 @@ private String paymentConfirmationUrl;
                 readValue(formData, "c2_direccion")
         ));
         putIfNotBlank(payload, "shared_sede", readValue(formData, "shared_sede"));
-        putIfNotBlank(payload, "shared_payment_method", readValue(formData, "shared_payment_method"));
-        putIfNotBlank(payload, "shared_payment_note", readValue(formData, "shared_payment_note"));
+        putIfNotBlank(payload, "shared_payment_method", firstNotBlank(
+                readValue(formData, "shared_payment_method"),
+                readValue(formData, "payment_method"),
+                readValue(formData, "medio_pago")
+        ));
+        putIfNotBlank(payload, "shared_payment_note", firstNotBlank(
+                readValue(formData, "shared_payment_note"),
+                readValue(formData, "payment_note"),
+                readValue(formData, "payment_detail"),
+                readValue(formData, "bank_name"),
+                readValue(formData, "franchise")
+        ));
+        putIfNotBlank(payload, "paymentMethod", firstNotBlank(
+                readValue(formData, "shared_payment_method"),
+                readValue(formData, "payment_method"),
+                readValue(formData, "medio_pago")
+        ));
+        putIfNotBlank(payload, "paymentNote", firstNotBlank(
+                readValue(formData, "shared_payment_note"),
+                readValue(formData, "payment_note"),
+                readValue(formData, "payment_detail"),
+                readValue(formData, "bank_name"),
+                readValue(formData, "franchise")
+        ));
         putIfNotBlank(payload, "paymentStatus", proceso.getPaymentStatus());
         putIfNotBlank(payload, "contractStatus", proceso.getContractStatus());
         putIfNotBlank(payload, "flowStatus", proceso.getFlowStatus());
@@ -872,6 +915,7 @@ private String paymentConfirmationUrl;
             case "PSE" -> "PSE";
             case "TARJETA_CREDITO", "TARJETA DE CREDITO" -> "TARJETA_CREDITO";
             case "TARJETA_DEBITO", "TARJETA DE DEBITO" -> "TARJETA_DEBITO";
+            case "TARJETA", "CARD" -> "TARJETA";
             case "TRANSFERENCIA", "TRANSFERENCIA_BANCARIA" -> "TRANSFERENCIA";
             case "NEQUI", "DAVIPLATA", "BILLETERA_DIGITAL" -> "BILLETERA_DIGITAL";
             case "EFECTIVO" -> "EFECTIVO";

@@ -229,6 +229,24 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             safeTrim(asString(safePayload.get("reason"))),
             safeTrim(asString(safePayload.get("message")))
     );
+    String payloadPaymentMethod = normalizePaymentMethodHint(firstNotBlank(
+            safeTrim(asString(safePayload.get("paymentMethod"))),
+            safeTrim(asString(safePayload.get("payment_method"))),
+            safeTrim(asString(safePayload.get("method"))),
+            safeTrim(asString(safePayload.get("x_payment_method"))),
+            safeTrim(asString(safePayload.get("x_franchise"))),
+            safeTrim(asString(safePayload.get("franchise"))),
+            safeTrim(asString(safePayload.get("x_bank_name"))),
+            safeTrim(asString(safePayload.get("bank_name")))
+    ));
+    String payloadPaymentNote = buildPaymentNoteHint(
+            safeTrim(asString(safePayload.get("paymentNote"))),
+            safeTrim(asString(safePayload.get("payment_note"))),
+            safeTrim(asString(safePayload.get("x_bank_name"))),
+            safeTrim(asString(safePayload.get("bank_name"))),
+            safeTrim(asString(safePayload.get("x_franchise"))),
+            safeTrim(asString(safePayload.get("franchise")))
+    );
 
     captureTemporaryContext(
             refPayco,
@@ -492,12 +510,25 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     out.put("statusSource", statusSource);
     out.put("syncAt", ZonedDateTime.now(ZoneId.of("America/Bogota"))
             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z")));
+    if (StringUtils.hasText(payloadPaymentMethod)) {
+        out.put("paymentMethod", payloadPaymentMethod);
+    }
+    if (StringUtils.hasText(payloadPaymentNote)) {
+        out.put("paymentNote", payloadPaymentNote);
+    }
     out.putIfAbsent("paymentStatus", safeTrim(asString(out.get("paymentStatus"))));
     out.putIfAbsent("flowStatus", safeTrim(asString(out.get("flowStatus"))));
     out.putIfAbsent("contractLink", safeTrim(asString(out.get("contractLink"))));
     out.remove("_maskedDocumentRaw");
     out.remove("_maskedEmailRaw");
     out.remove("_maskedPhoneRaw");
+
+    String metadataDocument = firstResolvedDocument(
+            safeTrim(asString(out.get("document"))),
+            summaryDocument,
+            documentHint
+    );
+    capturePaymentMetadataIfPossible(metadataDocument, payloadPaymentMethod, payloadPaymentNote);
 
     String contextRef = firstNotBlank(refPayco, safeTrim(asString(out.get("reference"))));
     String contextGatewayRef = firstNotBlank(summaryGatewayReference, safeTrim(asString(out.get("gatewayReference"))), gatewayRefPayco);
@@ -1164,6 +1195,24 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         );
         String xPhone = firstResolvedPhone(rawPhone);
         String maskedPhoneRaw = rawPhone != null && rawPhone.contains("*") ? safeTrim(rawPhone) : "";
+        String paymentMethod = normalizePaymentMethodHint(firstNotBlank(
+                safeTrim(asString(safePayload.get("paymentMethod"))),
+                safeTrim(asString(safePayload.get("payment_method"))),
+                safeTrim(asString(safePayload.get("method"))),
+                safeTrim(asString(safePayload.get("x_payment_method"))),
+                safeTrim(asString(safePayload.get("x_franchise"))),
+                safeTrim(asString(safePayload.get("franchise"))),
+                safeTrim(asString(safePayload.get("x_bank_name"))),
+                safeTrim(asString(safePayload.get("bank_name")))
+        ));
+        String paymentNote = buildPaymentNoteHint(
+                safeTrim(asString(safePayload.get("paymentNote"))),
+                safeTrim(asString(safePayload.get("payment_note"))),
+                safeTrim(asString(safePayload.get("x_bank_name"))),
+                safeTrim(asString(safePayload.get("bank_name"))),
+                safeTrim(asString(safePayload.get("x_franchise"))),
+                safeTrim(asString(safePayload.get("franchise")))
+        );
 
         if (flowId != null && (!StringUtils.hasText(xDocumento) || !StringUtils.hasText(xEmail) || !StringUtils.hasText(xPhone))) {
             Optional<ChatbotMatriculaProceso> procesoById = chatbotProcesoService.findProcesoById(flowId);
@@ -1202,6 +1251,8 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         if (StringUtils.hasText(xDocumento)) out.put("document", xDocumento);
         if (StringUtils.hasText(xEmail)) out.put("email", xEmail);
         if (StringUtils.hasText(xPhone)) out.put("phone", xPhone);
+        if (StringUtils.hasText(paymentMethod)) out.put("paymentMethod", paymentMethod);
+        if (StringUtils.hasText(paymentNote)) out.put("paymentNote", paymentNote);
         if (StringUtils.hasText(maskedDocumentRaw)) out.put("_maskedDocumentRaw", maskedDocumentRaw);
         if (StringUtils.hasText(maskedEmailRaw)) out.put("_maskedEmailRaw", maskedEmailRaw);
         if (StringUtils.hasText(maskedPhoneRaw)) out.put("_maskedPhoneRaw", maskedPhoneRaw);
@@ -1756,6 +1807,24 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 form.getFirst("customer_mobile"),
                 form.getFirst("mobile")
         );
+        String paymentMethodHint = normalizePaymentMethodHint(firstNotBlank(
+                form.getFirst("payment_method"),
+                form.getFirst("paymentMethod"),
+                form.getFirst("method"),
+                form.getFirst("x_payment_method"),
+                form.getFirst("x_franchise"),
+                form.getFirst("franchise"),
+                form.getFirst("x_bank_name"),
+                form.getFirst("bank_name")
+        ));
+        String paymentNoteHint = buildPaymentNoteHint(
+                form.getFirst("payment_note"),
+                form.getFirst("paymentNote"),
+                form.getFirst("x_bank_name"),
+                form.getFirst("bank_name"),
+                form.getFirst("x_franchise"),
+                form.getFirst("franchise")
+        );
         Optional<ChatbotMatriculaProceso> procesoByFlowId = flowId == null
                 ? Optional.empty()
                 : chatbotProcesoService.findProcesoById(flowId);
@@ -1818,11 +1887,13 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 }
             }
 
+            capturePaymentMetadataIfPossible(xDocumento, paymentMethodHint, paymentNoteHint);
+
             if (isApproved(estado, xCodResponse)) {
             log.info("💰 Pago aprobado doc={} ref={} amount={}", xDocumento, xRefPayco, xAmount);
             try {
                 PaymentApprovalService.ApprovalResult approval =
-                        paymentApprovalService.handleApprovedPayment(xDocumento, parseAmountOrNull(xAmount));
+                        paymentApprovalService.handleApprovedPayment(xDocumento, parseAmountOrNull(xAmount), false);
                 log.info("✅ Pago aprobado procesado doc={} paymentStatus={} flowStatus={} contractLinkPresent={}",
                         xDocumento,
                         approval.paymentStatus(),
@@ -1861,6 +1932,59 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         processApprovedPayment(documentoRaw, parseAmountOrNull(amountRaw), true, false, "", "");
     }
 
+    private void capturePaymentMetadataIfPossible(String documentoRaw, String paymentMethodRaw, String paymentNoteRaw) {
+        String documento = normalizeDocumentoCandidate(documentoRaw);
+        String paymentMethod = normalizePaymentMethodHint(paymentMethodRaw);
+        String paymentNote = buildPaymentNoteHint(paymentNoteRaw);
+        if (!StringUtils.hasText(documento) || (!StringUtils.hasText(paymentMethod) && !StringUtils.hasText(paymentNote))) {
+            return;
+        }
+        try {
+            chatbotProcesoService.capturePaymentMetadataByDocument(documento, paymentMethod, paymentNote);
+        } catch (Exception ex) {
+            log.debug("No se pudo guardar metadata de pago para doc={}: {}", documento, ex.getMessage());
+        }
+    }
+
+    private String normalizePaymentMethodHint(String raw) {
+        String normalized = safeTrim(raw).toUpperCase(Locale.ROOT)
+                .replace('Á', 'A')
+                .replace('É', 'E')
+                .replace('Í', 'I')
+                .replace('Ó', 'O')
+                .replace('Ú', 'U')
+                .replaceAll("[^A-Z0-9]+", "_")
+                .replaceAll("^_+|_+$", "");
+        if (!StringUtils.hasText(normalized)) {
+            return "";
+        }
+        if (normalized.contains("PSE") || normalized.contains("BANK") || normalized.contains("BANCO")) return "PSE";
+        if (normalized.contains("CREDITO")) return "TARJETA_CREDITO";
+        if (normalized.contains("DEBITO")) return "TARJETA_DEBITO";
+        if (normalized.contains("TARJETA") || normalized.contains("VISA") || normalized.contains("MASTERCARD") || normalized.contains("AMEX")) return "TARJETA";
+        if (normalized.contains("TRANSFER")) return "TRANSFERENCIA";
+        if (normalized.contains("NEQUI") || normalized.contains("DAVIPLATA") || normalized.contains("BILLETERA")) return "BILLETERA_DIGITAL";
+        if (normalized.contains("EFECTIVO")) return "EFECTIVO";
+        return normalized;
+    }
+
+    private String buildPaymentNoteHint(String... values) {
+        LinkedHashMap<String, Boolean> unique = new LinkedHashMap<>();
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            String current = safeTrim(value);
+            if (StringUtils.hasText(current)) {
+                unique.put(current, Boolean.TRUE);
+            }
+        }
+        if (unique.isEmpty()) {
+            return "";
+        }
+        return String.join(" | ", unique.keySet());
+    }
+
 
     private void processApprovedPayment(String documentoRaw,
                                         BigDecimal amount,
@@ -1874,7 +1998,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             return;
         }
         try {
-            paymentApprovalService.handleApprovedPayment(documento, amount);
+            paymentApprovalService.handleApprovedPayment(documento, amount, notifyContractLinkByChatbot);
         } catch (Exception ex) {
             log.error("No se pudo procesar pago aprobado doc={}: {}", documento, ex.getMessage(), ex);
         }

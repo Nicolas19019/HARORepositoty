@@ -76,6 +76,9 @@ public class ChatbotInboundController {
     );
 
     private static final Pattern PHONE_PATTERN = Pattern.compile("^\\+?\\d{8,15}$");
+    private static final Pattern ENROLLMENT_PASSWORD_PATTERN = Pattern.compile(
+            "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z\\d\\s]).{8,72}$"
+    );
 
     // YYYY-MM-DD HH:mm
     private static final Pattern BOOKING_SLOT_PATTERN = Pattern.compile(
@@ -98,6 +101,12 @@ public class ChatbotInboundController {
 
     @Value("${chatbot.inactivity.timeout.minutes:15}")
     private long inactivityTimeoutMinutes;
+
+    @Value("${chatbot.booking.duration.minutes:120}")
+    private int bookingDurationMinutes;
+
+    @Value("${chatbot.booking.cancel.min-hours:48}")
+    private long bookingCancelMinHours;
 
     @Value("${chatbot.enrollment.welcome-image-url:}")
     private String enrollmentWelcomeImageUrl;
@@ -143,6 +152,8 @@ public class ChatbotInboundController {
         ENROLLMENT_CAPTURE,
         ENROLLMENT_EMAIL_CAPTURE,
         ENROLLMENT_PHONE_CAPTURE,
+        ENROLLMENT_ADDRESS_CAPTURE,
+        ENROLLMENT_PASSWORD_CAPTURE,
         ENROLLMENT_SEDE_CAPTURE,
         ENROLLMENT_CONFIRM,
         PAYMENT_WAIT,
@@ -177,6 +188,8 @@ public class ChatbotInboundController {
         String categoria;
         String email;
         String telefono;
+        String direccion;
+        String password;
 
         // Sede seleccionada
         String sedeSeleccionada;
@@ -297,6 +310,8 @@ public class ChatbotInboundController {
                 case ENROLLMENT_CAPTURE -> handleEnrollmentCapture(rawText, session, actions);
                 case ENROLLMENT_EMAIL_CAPTURE -> handleEnrollmentEmailCapture(text, session, actions);
                 case ENROLLMENT_PHONE_CAPTURE -> handleEnrollmentPhoneCapture(text, session, actions);
+                case ENROLLMENT_ADDRESS_CAPTURE -> handleEnrollmentAddressCapture(rawText, session, actions);
+                case ENROLLMENT_PASSWORD_CAPTURE -> handleEnrollmentPasswordCapture(rawText, session, actions);
                 case ENROLLMENT_SEDE_CAPTURE -> handleEnrollmentSedeCapture(from, text, session, actions);
                 case ENROLLMENT_CONFIRM -> handleEnrollmentConfirm(text, session, actions);
                 case PAYMENT_WAIT -> handlePaymentWait(text, session, actions);
@@ -345,6 +360,7 @@ public class ChatbotInboundController {
             }
             case "3", "informacion", "info", "horarios" -> {
                 actions.add(textMsg(infoText()));
+                actions.add(textMsg(practicalProcessText()));
                 actions.add(textMsg("Opciones: MENU"));
             }
             case "4", "estudiante", "soy estudiante" -> {
@@ -474,6 +490,7 @@ public class ChatbotInboundController {
         if (isEnrollmentDataAuthAccepted(cmd)) {
             session.state = ChatState.ENROLLMENT_CAPTURE;
             actions.add(textMsg(enrollmentInitialPromptText()));
+            actions.add(textMsg("Despues de ese primer mensaje te pedire correo, telefono, direccion, una contrasena de acceso y la sede."));
             actions.add(textMsg("Opciones: MENU | CANCELAR"));
             return;
         }
@@ -502,7 +519,7 @@ public class ChatbotInboundController {
         session.state = ChatState.ENROLLMENT_EMAIL_CAPTURE;
 
         actions.add(textMsg(
-                "Paso 2 de 6: envia tu correo electronico.\n" +
+                "Paso 2 de 8: envia tu correo electronico.\n" +
                         "Ejemplo: usuario@correo.com"
         ));
         actions.add(textMsg("Opciones: MENU | CANCELAR"));
@@ -523,7 +540,7 @@ public class ChatbotInboundController {
         session.state = ChatState.ENROLLMENT_PHONE_CAPTURE;
 
         actions.add(textMsg(
-                "Paso 3 de 6: envia tu telefono de contacto.\n" +
+                "Paso 3 de 8: envia tu telefono de contacto.\n" +
                         "Ejemplo: 573001112233"
         ));
         actions.add(textMsg("Opciones: MENU | CANCELAR"));
@@ -542,9 +559,50 @@ public class ChatbotInboundController {
         }
 
         session.telefono = phone;
+        session.state = ChatState.ENROLLMENT_ADDRESS_CAPTURE;
+        actions.add(textMsg(
+                "Paso 4 de 8: envia tu direccion de residencia.\n\n" +
+                        "Escríbela completa con barrio, nomenclatura o apartamento si aplica.\n\n" +
+                        "Ejemplo: Cra 80 #12-45 Apto 302, Kennedy, Bogota"
+        ));
+        actions.add(textMsg("Opciones: MENU | CANCELAR"));
+    }
+
+    private void handleEnrollmentAddressCapture(String rawText, SessionData session, List<BotAction> actions) {
+        String address = collapseSpaces(rawText);
+        if (address.length() < 8) {
+            actions.add(textMsg(
+                    "⚠️ Direccion invalida.\n\n" +
+                            "Enviala con mas detalle para poder registrarla correctamente.\n" +
+                            "Ejemplo: Cra 80 #12-45 Apto 302, Kennedy, Bogota"
+            ));
+            actions.add(textMsg("Opciones: MENU | CANCELAR"));
+            return;
+        }
+
+        session.direccion = address;
+        session.state = ChatState.ENROLLMENT_PASSWORD_CAPTURE;
+        actions.add(textMsg(
+                "Paso 5 de 8: crea tu contraseña para el modulo del estudiante.\n\n" +
+                        enrollmentPasswordRulesText() + "\n\n" +
+                        "Ejemplo: Haro2026*"
+        ));
+        actions.add(textMsg("Opciones: MENU | CANCELAR"));
+    }
+
+    private void handleEnrollmentPasswordCapture(String rawText, SessionData session, List<BotAction> actions) {
+        String password = trim(rawText);
+        String validationError = validateEnrollmentPassword(password);
+        if (!validationError.isBlank()) {
+            actions.add(textMsg(validationError + "\n\n" + enrollmentPasswordRulesText()));
+            actions.add(textMsg("Opciones: MENU | CANCELAR"));
+            return;
+        }
+
+        session.password = password;
         session.state = ChatState.ENROLLMENT_SEDE_CAPTURE;
         actions.add(textMsg(
-                "Paso 4 de 6: selecciona tu sede.\n\n" +
+                "Paso 6 de 8: selecciona tu sede.\n\n" +
                         "1) Kennedy - Av. 1 de Mayo #68D-23 Piso 2\n" +
                         "2) CC El Eden - Local L2-094A\n\n" +
                         "Responde con 1 o 2."
@@ -574,8 +632,11 @@ public class ChatbotInboundController {
                     session.documento,
                     session.categoria,
                     session.email,
-                    session.telefono
+                    session.telefono,
+                    session.direccion,
+                    session.password
             );
+            session.password = null;
         } catch (Exception e) {
             log.error("No se pudo guardar pre-registro from={} doc={}",
                     maskPhone(from),
@@ -589,13 +650,15 @@ public class ChatbotInboundController {
         session.state = ChatState.ENROLLMENT_CONFIRM;
 
         actions.add(textMsg(
-                "Paso 5 de 6: revisa tus datos y confirma.\n\n" +
+                "Paso 7 de 8: revisa tus datos y confirma.\n\n" +
                         "Nombre: " + safe(session.nombre) + "\n" +
                         "Documento: " + safe(session.documento) + "\n" +
                         "Categoria: " + safe(session.categoria) + "\n" +
                         "Correo: " + safe(session.email) + "\n" +
                         "Telefono: " + safe(session.telefono) + "\n" +
+                        "Direccion: " + safe(session.direccion) + "\n" +
                         "Sede: " + safe(session.sedeSeleccionada) + "\n\n" +
+                        "Contrasena: registrada de forma segura\n\n" +
                         "Responde:\n" +
                         "1) Confirmar y continuar\n" +
                         "2) Corregir datos\n" +
@@ -613,7 +676,7 @@ public class ChatbotInboundController {
                     session.state = ChatState.PAYMENT_WAIT;
 
                     actions.add(textMsg(
-                            "Paso 6 de 6: realiza el pago para continuar.\n\n" +
+                            "Paso 8 de 8: realiza el pago para continuar.\n\n" +
                                     "Enlace de pago:\n" + link + "\n\n" +
                                     "Cuando lo realices, vuelve a este chat.\n" +
                                     "Si necesitas el enlace otra vez escribe: LINK\n\n" +
@@ -634,6 +697,7 @@ public class ChatbotInboundController {
                 clearEnrollmentData(session);
                 session.state = ChatState.ENROLLMENT_CAPTURE;
                 actions.add(textMsg(enrollmentInitialPromptText()));
+                actions.add(textMsg("Despues de ese primer mensaje te pedire correo, telefono, direccion, una contrasena de acceso y la sede."));
                 actions.add(textMsg("Opciones: MENU | CANCELAR"));
             }
             case "3", "no", "cancelar" -> {
@@ -648,16 +712,7 @@ public class ChatbotInboundController {
     }
 
         private void handlePaymentWait(String text, SessionData session, List<BotAction> actions) {
-
-        if (text == null) {
-            log.warn("valio verga");
-            log.info(text);   
-        }else {
-            log.warn("no valio verga");
-            log.info(text);   
-        }    
-        
-    switch (text) {
+        switch (text) {
 
        
         case "pendiente" -> {
@@ -1079,6 +1134,7 @@ public class ChatbotInboundController {
                 session.pendingStudentAction = StudentAction.NONE;
                 session.studentBookingDate = null;
                 session.state = ChatState.STUDENT_BOOKING_SLOT;
+                actions.add(textMsg(practicalProcessText()));
                 actions.add(textMsg(
                         "🚘 Vamos a reservar tu práctica.\n\n" +
                                 "Pasos a seguir:\n" +
@@ -1661,6 +1717,8 @@ public class ChatbotInboundController {
         session.categoria = null;
         session.email = null;
         session.telefono = null;
+        session.direccion = null;
+        session.password = null;
         session.sedeSeleccionada = null;
     }
 
@@ -1671,6 +1729,33 @@ public class ChatbotInboundController {
         session.studentEmail = null;
         session.studentNombre = null;
         session.studentBookingDate = null;
+    }
+
+    private String validateEnrollmentPassword(String passwordRaw) {
+        String password = trim(passwordRaw);
+        if (password.isBlank()) {
+            return "⚠️ La contrasena no puede quedar vacia.";
+        }
+        if (password.contains(" ")) {
+            return "⚠️ La contrasena no debe llevar espacios.";
+        }
+        if (!ENROLLMENT_PASSWORD_PATTERN.matcher(password).matches()) {
+            return "⚠️ La contrasena no cumple los requisitos de seguridad.";
+        }
+        return "";
+    }
+
+    private String enrollmentPasswordRulesText() {
+        return "Debe tener minimo 8 caracteres, una mayuscula, una minuscula, un numero y un simbolo.";
+    }
+
+    private String practicalProcessText() {
+        return "Proceso practico:\n" +
+                "1) Tu pago debe estar aprobado y tu contrato firmado.\n" +
+                "2) Ingresas como estudiante y validas tu identidad con OTP.\n" +
+                "3) Eliges fecha y luego ves solo horas con profesor y vehiculo disponibles.\n" +
+                "4) Cada practica dura " + Math.max(30, bookingDurationMinutes) + " minutos.\n" +
+                "5) Si cancelas con menos de " + Math.max(1, bookingCancelMinHours) + " horas, se aplica multa.";
     }
 
     private boolean isMenuCommand(String text) {

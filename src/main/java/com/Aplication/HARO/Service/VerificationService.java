@@ -81,6 +81,9 @@ public class VerificationService {
     @Value("${app.contract.verify.path:/api/verification/contract/verify}")
     private String contractVerifyPath;
 
+    @Value("${chatbot.auto-send-enrollment-whatsapp:false}")
+    private boolean autoSendEnrollmentWhatsapp;
+
     public VerificationService(OtpTokenRepository repo,
                                MailService mail,
                                EstudianteService estudianteService,
@@ -651,6 +654,7 @@ public class VerificationService {
     }
 
     private void notifyContractCompletionByWhatsApp(ChatbotMatriculaProceso proceso, Long studentId) {
+        if (!autoSendEnrollmentWhatsapp) return;
         if (proceso == null || studentId == null) return;
         if (!waService.getConfigStatus().ready()) return;
 

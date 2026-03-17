@@ -17,10 +17,12 @@ import com.Aplication.HARO.Repository.VehiculoRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,6 +63,7 @@ public class ChatbotProcesoService {
     private final ProfesorRepository profesorRepository;
     private final VehiculoRepository vehiculoRepository;
     private final GoogleCalendarService googleCalendarService;
+    private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${chatbot.payment.link:https://epayco-link.com}")
@@ -173,7 +176,8 @@ private String paymentConfirmationUrl;
                                  ClaseRepository claseRepository,
                                  ProfesorRepository profesorRepository,
                                  VehiculoRepository vehiculoRepository,
-                                 GoogleCalendarService googleCalendarService) {
+                                 GoogleCalendarService googleCalendarService,
+                                 @Qualifier("passwordEncoder") PasswordEncoder passwordEncoder) {
         this.procesoRepository = procesoRepository;
         this.estudianteRepository = estudianteRepository;
         this.estudianteService = estudianteService;
@@ -183,6 +187,7 @@ private String paymentConfirmationUrl;
         this.profesorRepository = profesorRepository;
         this.vehiculoRepository = vehiculoRepository;
         this.googleCalendarService = googleCalendarService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     public ChatbotMatriculaProceso upsertDraft(String phone,
@@ -191,6 +196,17 @@ private String paymentConfirmationUrl;
                                                String categoria,
                                                String email,
                                                String telefono) {
+        return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, "", "");
+    }
+
+    public ChatbotMatriculaProceso upsertDraft(String phone,
+                                               String nombreCompleto,
+                                               String documento,
+                                               String categoria,
+                                               String email,
+                                               String telefono,
+                                               String direccion,
+                                               String studentPasswordRaw) {
         String doc = normalizeDoc(documento);
         String mail = normalizeEmail(email);
         String cat = normalizeCategoria(categoria);
@@ -204,6 +220,10 @@ private String paymentConfirmationUrl;
         proceso.setCategoria(cat);
         proceso.setEmail(mail);
         proceso.setTelefono(normalizePhone(telefono));
+        proceso.setDireccion(collapseSpaces(direccion));
+        if (!trim(studentPasswordRaw).isBlank()) {
+            proceso.setStudentPasswordHash(passwordEncoder.encode(studentPasswordRaw));
+        }
         proceso.setExpectedAmount(resolveExpectedAmountByCategory(cat));
         proceso.setFlowStatus("DRAFT");
 
@@ -448,6 +468,7 @@ private String paymentConfirmationUrl;
         Map<String, Object> incomingFormData = readJsonMap(formDataJson);
         if (!incomingFormData.isEmpty()) {
             mergedFormData.putAll(incomingFormData);
+            captureStudentPasswordFromForm(proceso, mergedFormData);
             proceso.setContractFormData(writeJson(mergedFormData));
             applyContractFormSnapshotToProceso(proceso, mergedFormData);
         }
@@ -540,7 +561,8 @@ private String paymentConfirmationUrl;
         ));
         putIfNotBlank(payload, "shared_contact_address", firstNotBlank(
                 readValue(formData, "shared_contact_address"),
-                readValue(formData, "c2_direccion")
+                readValue(formData, "c2_direccion"),
+                proceso.getDireccion()
         ));
         putIfNotBlank(payload, "shared_sede", readValue(formData, "shared_sede"));
         putIfNotBlank(payload, "shared_payment_method", firstNotBlank(
@@ -578,6 +600,9 @@ private String paymentConfirmationUrl;
         }
         if (proceso.getStudentId() != null) {
             payload.put("studentId", proceso.getStudentId());
+        }
+        if (!trim(proceso.getStudentPasswordHash()).isBlank()) {
+            payload.put("accessPasswordConfigured", true);
         }
         return payload;
     }
@@ -628,7 +653,7 @@ private String paymentConfirmationUrl;
         nuevo.setVisible(true);
         nuevo.setUsuario(generateUniqueUsername(profile.email(), doc));
         // Si no llega contraseña, EstudianteService asigna default seguro
-        nuevo.setContrasena(null);
+        nuevo.setContrasena(trim(proceso.getStudentPasswordHash()).isBlank() ? null : proceso.getStudentPasswordHash());
 
         Estudiante created = estudianteService.createEstudiante(nuevo);
         ensureEstadoCuentaForStudent(proceso, created.getId());
@@ -684,6 +709,36 @@ private String paymentConfirmationUrl;
                 proceso.setPhone(phone);
             }
         }
+
+        String direccion = firstNotBlank(
+                readValue(formData, "shared_contact_address"),
+                readValue(formData, "c2_direccion"),
+                proceso.getDireccion()
+        );
+        if (!direccion.isBlank()) {
+            proceso.setDireccion(collapseSpaces(direccion));
+        }
+    }
+
+    private void captureStudentPasswordFromForm(ChatbotMatriculaProceso proceso, Map<String, Object> formData) {
+        if (proceso == null || formData == null || formData.isEmpty()) {
+            return;
+        }
+
+        String password = firstNotBlank(
+                readValue(formData, "shared_access_password"),
+                readValue(formData, "shared_password"),
+                readValue(formData, "access_password"),
+                readValue(formData, "student_password")
+        );
+        formData.remove("shared_access_password");
+        formData.remove("shared_access_password_confirm");
+        formData.remove("shared_password");
+        formData.remove("access_password");
+        formData.remove("student_password");
+        if (!password.isBlank()) {
+            proceso.setStudentPasswordHash(passwordEncoder.encode(password));
+        }
     }
 
     private ContractStudentProfile extractStudentProfile(ChatbotMatriculaProceso proceso) {
@@ -715,7 +770,8 @@ private String paymentConfirmationUrl;
         ));
         String direccion = firstNotBlank(
                 readValue(formData, "shared_contact_address"),
-                readValue(formData, "c2_direccion")
+                readValue(formData, "c2_direccion"),
+                proceso.getDireccion()
         );
         String categoria = normalizeCategoria(firstNotBlank(
                 readValue(formData, "c2_categoria"),

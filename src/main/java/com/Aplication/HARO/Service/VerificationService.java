@@ -7,6 +7,8 @@ import com.Aplication.HARO.Repository.OtpTokenRepository;
 import com.Aplication.HARO.Security.OtpHasher;
 import jakarta.annotation.PostConstruct;
 import jakarta.mail.internet.InternetAddress;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
@@ -28,6 +30,8 @@ import org.springframework.util.StringUtils;
 
 @Service
 public class VerificationService {
+
+    private static final Logger log = LoggerFactory.getLogger(VerificationService.class);
 
     private final OtpTokenRepository repo;
     private final MailService mail;
@@ -402,16 +406,7 @@ public class VerificationService {
         boolean ok = codeHash.equals(token.getOtpHash());
         if (ok || (attempts + 1) >= maxAttempts) {
             token.setConsumedAt(now); // one-time use
-        }
-        repo.save(token);
-        if (ok) {
-            try {
-                chatbotProcesoService.markContractSignedByEmail(email);
-            } catch (Exception ignored) {
-                // Si no hay proceso de chatbot para ese email, no bloquea la verificación del contrato.
-            }
-        }
-        return ok;
+        }\n        repo.save(token);\n        return ok;
     }
 
     /** Valida código de acceso a contratos sin consumirlo. */
@@ -466,10 +461,23 @@ public class VerificationService {
     }
 
     /** Consume código de contrato y activa matrícula (creación de estudiante) si aplica. */
-    @Transactional
     public ContractCompletionResult completeContractSigning(String rawEmail, String rawCode) {
         final String email = normalizeEmail(rawEmail);
-        final boolean verified = verifyContractCode(email, rawCode);
+        final boolean verified;
+        try {
+            verified = verifyContractCode(email, rawCode);
+        } catch (Exception ex) {
+            log.error("Error validando codigo de contrato email={}: {}", email, ex.getMessage(), ex);
+            return new ContractCompletionResult(
+                    false,
+                    "No se pudo validar el contrato en este momento. Intenta nuevamente.",
+                    email,
+                    "",
+                    null,
+                    "",
+                    ""
+            );
+        }
         if (!verified) {
             return new ContractCompletionResult(
                     false,
@@ -480,6 +488,13 @@ public class VerificationService {
                     "",
                     ""
             );
+        }
+
+        // Best-effort: actualiza el proceso del chatbot sin afectar el consumo del OTP.
+        try {
+            chatbotProcesoService.markContractSignedByEmail(email);
+        } catch (Exception ex) {
+            log.warn("No se pudo marcar contrato firmado por email={}: {}", email, ex.getMessage());
         }
 
         Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
@@ -505,6 +520,7 @@ public class VerificationService {
                 studentId = chatbotProcesoService.createStudentFromSignedContract(documento);
                 message = "Contrato validado, estudiante, estado de cuenta y pago actualizados";
             } catch (Exception ex) {
+                log.error("No se pudo activar matricula doc={} email={}: {}", documento, email, ex.getMessage(), ex);
                 message = "Contrato validado, pero no se pudo activar matricula: " + ex.getMessage();
             }
         }
@@ -526,7 +542,6 @@ public class VerificationService {
         );
     }
 
-    @Transactional
     public ContractUploadResult uploadSignedContractDocument(String rawEmail,
                                                              String rawCode,
                                                              String rawSignerName,
@@ -567,16 +582,22 @@ public class VerificationService {
         ContractDocumentStorageService.StoredDocument stored =
                 contractDocumentStorageService.storeSignedContract(file, signerName, documento, contractName);
 
-        chatbotProcesoService.mergeContractSubmissionByEmail(
-                email,
-                contractName,
-                trim(rawPdfFile),
-                trim(rawFormDataJson),
-                stored.fileName(),
-                stored.publicUrl(),
-                stored.objectKey(),
-                stored.signerFolder()
-        );
+        try {
+            chatbotProcesoService.mergeContractSubmissionByEmail(
+                    email,
+                    contractName,
+                    trim(rawPdfFile),
+                    trim(rawFormDataJson),
+                    stored.fileName(),
+                    stored.publicUrl(),
+                    stored.objectKey(),
+                    stored.signerFolder()
+            );
+        } catch (Exception ex) {
+            // El archivo ya fue almacenado; no queremos fallar toda la respuesta por un error de persistencia.
+            log.error("Contrato subido a almacenamiento pero no se pudo persistir metadata/form. email={} doc={} fileName={}: {}",
+                    email, documento, safe(stored.fileName()), ex.getMessage(), ex);
+        }
 
         return new ContractUploadResult(
                 true,

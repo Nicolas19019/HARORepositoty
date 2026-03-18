@@ -1,4 +1,4 @@
-package com.Aplication.HARO.Service;
+﻿package com.Aplication.HARO.Service;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Model.Clase;
@@ -247,7 +247,7 @@ private String paymentConfirmationUrl;
 
     ChatbotMatriculaProceso saved = procesoRepository.save(p);
 
-    log.info("💳 Pago pendiente doc={} link={}",
+    log.info("Pago pendiente doc={} link={}",
             saved.getNumeroDocumento(),
             saved.getPaymentLink());
 
@@ -278,7 +278,7 @@ private String paymentConfirmationUrl;
             p.setPaymentAmount(resolvePaidAmountForEstadoCuenta(p, resolveExpectedAmount(p)));
         }
         ChatbotMatriculaProceso saved = procesoRepository.save(p);
-        log.info("✅ Pago aprobado doc={} amount={}",
+        log.info("Pago aprobado doc={} amount={}",
                 saved.getNumeroDocumento(),
                 saved.getPaymentAmount());
         return saved;
@@ -305,7 +305,7 @@ private String paymentConfirmationUrl;
     public ChatbotMatriculaProceso markContractSignedByEmail(String email) {
         String mail = normalizeEmail(email);
         ChatbotMatriculaProceso proceso = procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail)
-                .orElseThrow(() -> new NoSuchElementException("No hay proceso de matrícula para " + mail));
+                .orElseThrow(() -> new NoSuchElementException("No hay proceso de matricula para " + mail));
         proceso.setContractStatus("SIGNED");
         proceso.setFlowStatus("CONTRACT_SIGNED");
         proceso.setContractSignedAt(Instant.now());
@@ -652,7 +652,7 @@ private String paymentConfirmationUrl;
         nuevo.setEstado("Activo");
         nuevo.setVisible(true);
         nuevo.setUsuario(generateUniqueUsername(profile.email(), doc));
-        // Si no llega contraseña, EstudianteService asigna default seguro
+        // Si no llega contrasena, EstudianteService asigna default seguro
         nuevo.setContrasena(trim(proceso.getStudentPasswordHash()).isBlank() ? null : proceso.getStudentPasswordHash());
 
         Estudiante created = estudianteService.createEstudiante(nuevo);
@@ -927,7 +927,8 @@ private String paymentConfirmationUrl;
             return new ArrayList<>();
         }
         try {
-            return objectMapper.readValue(json, new TypeReference<ArrayList<LinkedHashMap<String, Object>>>() {});
+            // Jackson normalmente materializa mapas como LinkedHashMap; tipamos como Map para evitar mismatch de generics.
+            return objectMapper.readValue(json, new TypeReference<List<Map<String, Object>>>() {});
         } catch (Exception ex) {
             log.warn("No se pudo leer JSON de archivos firmados: {}", ex.getMessage());
             return new ArrayList<>();
@@ -1050,7 +1051,7 @@ private String paymentConfirmationUrl;
 
         String email = trim(estudiante.getEmail()).toLowerCase(Locale.ROOT);
         if (email.isBlank()) {
-            throw new IllegalStateException("El estudiante no tiene correo registrado para verificación OTP");
+            throw new IllegalStateException("El estudiante no tiene correo registrado para verificacion OTP");
         }
 
         String nombreCompleto = buildStudentDisplayName(estudiante);
@@ -1117,10 +1118,10 @@ private String paymentConfirmationUrl;
         }
 
         Profesor profesor = pickAvailableProfesor(fecha, horaInicio, horaFin)
-                .orElseThrow(() -> new IllegalStateException("Ese horario está ocupado. Elige otra hora."));
+                .orElseThrow(() -> new IllegalStateException("Ese horario esta ocupado. Elige otra hora."));
 
         Vehiculo vehiculo = pickAvailableVehiculo(fecha, horaInicio, horaFin)
-                .orElseThrow(() -> new IllegalStateException("Ese horario está ocupado. Elige otra hora."));
+                .orElseThrow(() -> new IllegalStateException("Ese horario esta ocupado. Elige otra hora."));
 
         Clase clase = new Clase();
         clase.setId_estudiante(id);
@@ -1624,12 +1625,12 @@ private String paymentConfirmationUrl;
         ZonedDateTime inicio = ZonedDateTime.of(clase.getFecha(), clase.getHoraInicio(), zone);
         ZonedDateTime fin = ZonedDateTime.of(clase.getFecha(), clase.getHoraFin(), zone);
 
-        String titulo = "Clase práctica HARO - " + safe(estudiante.getNombre()) + " " + safe(estudiante.getApellido());
+        String titulo = "Clase practica HARO - " + safe(estudiante.getNombre()) + " " + safe(estudiante.getApellido());
         String descripcion =
-                "Clase práctica agendada desde chatbot.\n" +
+                "Clase practica agendada desde chatbot.\n" +
                         "Documento estudiante: " + safe(estudiante.getNumeroDocumento()) + "\n" +
                         "Profesor ID: " + profesor.getId() + "\n" +
-                        "Vehículo: " + safe(clase.getPlaca_vehiculo()) + "\n" +
+                        "Vehiculo: " + safe(clase.getPlaca_vehiculo()) + "\n" +
                         "Clase ID: " + clase.getId();
 
         List<String> asistentes = new ArrayList<>();
@@ -1657,7 +1658,7 @@ private String paymentConfirmationUrl;
     private ChatbotMatriculaProceso getByDocumentoOrThrow(String documento) {
         String doc = normalizeDoc(documento);
         return procesoRepository.findByNumeroDocumento(doc)
-                .orElseThrow(() -> new NoSuchElementException("No existe proceso de matrícula para documento " + doc));
+                .orElseThrow(() -> new NoSuchElementException("No existe proceso de matricula para documento " + doc));
     }
 
     private String[] splitName(String fullName) {
@@ -1732,7 +1733,7 @@ private String paymentConfirmationUrl;
     private String normalizeDoc(String doc) {
         String out = trim(doc).replaceAll("\\D+", "");
         if (out.length() < 5) {
-            throw new IllegalArgumentException("Documento inválido");
+            throw new IllegalArgumentException("Documento invalido");
         }
         return out;
     }
@@ -1740,7 +1741,7 @@ private String paymentConfirmationUrl;
     private String normalizeEmail(String email) {
         String out = trim(email).toLowerCase(Locale.ROOT);
         if (out.isBlank() || !out.contains("@")) {
-            throw new IllegalArgumentException("Email inválido");
+            throw new IllegalArgumentException("Email invalido");
         }
         return out;
     }
@@ -1748,7 +1749,7 @@ private String paymentConfirmationUrl;
     private String normalizePhone(String phone) {
         String out = trim(phone).replaceAll("[^0-9+]", "");
         if (out.isBlank()) {
-            throw new IllegalArgumentException("Teléfono requerido");
+            throw new IllegalArgumentException("Telefono requerido");
         }
         return out;
     }

@@ -406,7 +406,9 @@ public class VerificationService {
         boolean ok = codeHash.equals(token.getOtpHash());
         if (ok || (attempts + 1) >= maxAttempts) {
             token.setConsumedAt(now); // one-time use
-        }\n        repo.save(token);\n        return ok;
+        }
+        repo.save(token);
+        return ok;
     }
 
     /** Valida código de acceso a contratos sin consumirlo. */

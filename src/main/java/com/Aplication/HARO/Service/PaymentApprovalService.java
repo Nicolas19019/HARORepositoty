@@ -226,16 +226,44 @@ public class PaymentApprovalService {
 
     private String buildContractUserLink(VerificationService.ContractLinkResult out) {
         if (out == null) return "";
-        String ui = normalizeContractUiUrl(contractUiUrl);
-        if (!StringUtils.hasText(ui)) {
-            return trim(out.url());
-        }
+        String ui = resolveContractUiUrl(out);
+        if (!StringUtils.hasText(ui)) return trim(out.url());
         String link = appendQueryParam(ui, "email", out.email());
         link = appendQueryParam(link, "code", out.code());
-        if (StringUtils.hasText(contractBaseUrl)) {
-            link = appendQueryParam(link, "apiBase", trim(contractBaseUrl));
-        }
+        // apiBase is optional. Only add when it looks like a real backend base URL.
+        if (looksLikeBackendBaseUrl(contractBaseUrl)) link = appendQueryParam(link, "apiBase", trim(contractBaseUrl));
         return link;
+    }
+
+    private String resolveContractUiUrl(VerificationService.ContractLinkResult out) {
+        String ui = normalizeContractUiUrl(contractUiUrl);
+        if (StringUtils.hasText(ui)) return ui;
+
+        // Fallback 1: use configured base and point to the actual UI (avoid /api/verification/... links).
+        String base = trim(contractBaseUrl);
+        if (StringUtils.hasText(base) && !looksLikeBackendBaseUrl(base)) {
+            while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+            return base + "/Contratos/contrato.html";
+        }
+
+        // Fallback 2: derive origin from the verification URL returned by backend.
+        String verificationUrl = out == null ? "" : trim(out.url());
+        if (!StringUtils.hasText(verificationUrl)) return "";
+        try {
+            java.net.URL u = new java.net.URL(verificationUrl);
+            return u.getProtocol() + "://" + u.getAuthority() + "/Contratos/contrato.html";
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private boolean looksLikeBackendBaseUrl(String raw) {
+        String v = trim(raw).toLowerCase(Locale.ROOT);
+        if (!StringUtils.hasText(v)) return false;
+        // Heuristic: avoid passing the website domain as apiBase (causes extra 404s).
+        return v.contains("run.app")
+                || v.contains("localhost")
+                || v.matches(".*:\\d{2,5}$");
     }
 
     private boolean shouldRefreshContractLink(String contractLinkRaw) {

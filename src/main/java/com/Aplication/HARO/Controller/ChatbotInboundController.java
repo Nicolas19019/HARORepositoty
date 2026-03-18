@@ -1430,16 +1430,40 @@ public class ChatbotInboundController {
 
     private String buildContractUserLink(VerificationService.ContractLinkResult out) {
         if (out == null) return "";
-        String ui = normalizeContractUiUrl(contractUiUrl);
-        if (ui.isBlank()) {
-            return trim(out.url());
-        }
+        String ui = resolveContractUiUrl(out);
+        if (ui.isBlank()) return trim(out.url());
         String link = appendQueryParam(ui, "email", out.email());
         link = appendQueryParam(link, "code", out.code());
-        if (!trim(contractBaseUrl).isBlank()) {
-            link = appendQueryParam(link, "apiBase", contractBaseUrl);
-        }
+        if (looksLikeBackendBaseUrl(contractBaseUrl)) link = appendQueryParam(link, "apiBase", contractBaseUrl);
         return link;
+    }
+
+    private String resolveContractUiUrl(VerificationService.ContractLinkResult out) {
+        String ui = normalizeContractUiUrl(contractUiUrl);
+        if (!ui.isBlank()) return ui;
+
+        String base = trim(contractBaseUrl);
+        if (!base.isBlank() && !looksLikeBackendBaseUrl(base)) {
+            while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+            return base + "/Contratos/contrato.html";
+        }
+
+        String verificationUrl = out == null ? "" : trim(out.url());
+        if (verificationUrl.isBlank()) return "";
+        try {
+            java.net.URL u = new java.net.URL(verificationUrl);
+            return u.getProtocol() + "://" + u.getAuthority() + "/Contratos/contrato.html";
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private boolean looksLikeBackendBaseUrl(String raw) {
+        String v = trim(raw).toLowerCase(java.util.Locale.ROOT);
+        if (v.isBlank()) return false;
+        return v.contains("run.app")
+                || v.contains("localhost")
+                || v.matches(".*:\\d{2,5}$");
     }
 
     private boolean shouldRefreshContractLink(String contractLinkRaw) {

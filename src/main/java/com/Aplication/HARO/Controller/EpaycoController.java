@@ -2177,17 +2177,41 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     private String buildContractUserLink(VerificationService.ContractLinkResult out) {
         if (out == null) return "";
 
-        String ui = normalizeContractUiUrl(contractUiUrl);
-        if (!StringUtils.hasText(ui)) {
-            return safeTrim(out.url());
-        }
+        String ui = resolveContractUiUrl(out);
+        if (!StringUtils.hasText(ui)) return safeTrim(out.url());
 
         String link = appendQueryParam(ui, "email", out.email());
         link = appendQueryParam(link, "code", out.code());
-        if (StringUtils.hasText(contractBaseUrl)) {
-            link = appendQueryParam(link, "apiBase", safeTrim(contractBaseUrl));
-        }
+        if (looksLikeBackendBaseUrl(contractBaseUrl)) link = appendQueryParam(link, "apiBase", safeTrim(contractBaseUrl));
         return link;
+    }
+
+    private String resolveContractUiUrl(VerificationService.ContractLinkResult out) {
+        String ui = normalizeContractUiUrl(contractUiUrl);
+        if (StringUtils.hasText(ui)) return ui;
+
+        String base = safeTrim(contractBaseUrl);
+        if (StringUtils.hasText(base) && !looksLikeBackendBaseUrl(base)) {
+            while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+            return base + "/Contratos/contrato.html";
+        }
+
+        String verificationUrl = out == null ? "" : safeTrim(out.url());
+        if (!StringUtils.hasText(verificationUrl)) return "";
+        try {
+            java.net.URL u = new java.net.URL(verificationUrl);
+            return u.getProtocol() + "://" + u.getAuthority() + "/Contratos/contrato.html";
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private boolean looksLikeBackendBaseUrl(String raw) {
+        String v = safeTrim(raw).toLowerCase(java.util.Locale.ROOT);
+        if (!StringUtils.hasText(v)) return false;
+        return v.contains("run.app")
+                || v.contains("localhost")
+                || v.matches(".*:\\d{2,5}$");
     }
 
     private boolean shouldRefreshContractLink(String contractLinkRaw) {

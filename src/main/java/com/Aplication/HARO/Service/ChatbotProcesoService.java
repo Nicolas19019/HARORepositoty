@@ -666,6 +666,48 @@ private String paymentConfirmationUrl;
         return created.getId();
     }
 
+    /**
+     * Intenta finalizar la matricula (crear/actualizar estudiante, estado de cuenta y pago) si y solo si:
+     * - paymentStatus = APPROVED
+     * - contractStatus = SIGNED
+     *
+     * No lanza excepciones para evitar marcar transacciones como rollback-only (idempotente / best-effort).
+     */
+    public Optional<Long> tryFinalizeEnrollmentIfReadyByDocumento(String documentoRaw) {
+        String doc = normalizeDoc(documentoRaw);
+        if (doc.isBlank()) {
+            return Optional.empty();
+        }
+
+        ChatbotMatriculaProceso proceso;
+        try {
+            // Lock para evitar carreras pago/contrato.
+            proceso = procesoRepository.findByNumeroDocumentoForUpdate(doc)
+                    .orElseThrow(() -> new NoSuchElementException("No existe proceso de matricula para documento " + doc));
+        } catch (Exception ex) {
+            log.error("No se pudo resolver proceso para finalizar matricula doc={}: {}", doc, ex.getMessage(), ex);
+            return Optional.empty();
+        }
+
+        String paymentStatus = trim(proceso.getPaymentStatus()).toUpperCase(Locale.ROOT);
+        String contractStatus = trim(proceso.getContractStatus()).toUpperCase(Locale.ROOT);
+        if (!"APPROVED".equals(paymentStatus) || !"SIGNED".equals(contractStatus)) {
+            return Optional.empty();
+        }
+
+        if (proceso.getStudentId() != null) {
+            return Optional.of(proceso.getStudentId());
+        }
+
+        try {
+            Long studentId = createStudentFromSignedContract(doc);
+            return Optional.ofNullable(studentId);
+        } catch (Exception ex) {
+            log.error("Error finalizando matricula doc={}: {}", doc, ex.getMessage(), ex);
+            return Optional.empty();
+        }
+    }
+
     public Long createStudentFromSignedContract(String documento, String sede) {
         Long studentId = createStudentFromSignedContract(documento);
         String sedeValue = trim(sede);

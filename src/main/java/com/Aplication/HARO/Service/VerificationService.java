@@ -519,11 +519,18 @@ public class VerificationService {
 
         if (StringUtils.hasText(documento)) {
             try {
-                studentId = chatbotProcesoService.createStudentFromSignedContract(documento);
-                message = "Contrato validado, estudiante, estado de cuenta y pago actualizados";
+                studentId = chatbotProcesoService
+                        .tryFinalizeEnrollmentIfReadyByDocumento(documento)
+                        .orElse(null);
+                if (studentId != null) {
+                    message = "Contrato validado, estudiante, estado de cuenta y pago actualizados";
+                } else {
+                    // Pago aun pendiente o no se cumplen precondiciones: no debe romper el flujo.
+                    message = "Contrato validado. Pago pendiente o en proceso de verificacion.";
+                }
             } catch (Exception ex) {
-                log.error("No se pudo activar matricula doc={} email={}: {}", documento, email, ex.getMessage(), ex);
-                message = "Contrato validado, pero no se pudo activar matricula: " + ex.getMessage();
+                log.error("No se pudo finalizar matricula doc={} email={}: {}", documento, email, ex.getMessage(), ex);
+                message = "Contrato validado, pero no se pudo activar matricula en este momento.";
             }
         }
 

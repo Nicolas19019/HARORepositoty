@@ -28,6 +28,7 @@ public class PaymentApprovalService {
 
     private final ChatbotMatriculaProcesoRepository procesoRepository;
     private final VerificationService verificationService;
+    private final ChatbotProcesoService chatbotProcesoService;
     private final WhatsAppTemplateService waService;
     private final RestTemplate restTemplate;
 
@@ -54,9 +55,11 @@ public class PaymentApprovalService {
 
     public PaymentApprovalService(ChatbotMatriculaProcesoRepository procesoRepository,
                                   VerificationService verificationService,
+                                  ChatbotProcesoService chatbotProcesoService,
                                   WhatsAppTemplateService waService) {
         this.procesoRepository = procesoRepository;
         this.verificationService = verificationService;
+        this.chatbotProcesoService = chatbotProcesoService;
         this.waService = waService;
         this.restTemplate = new RestTemplate();
     }
@@ -113,6 +116,14 @@ public class PaymentApprovalService {
         }
 
         procesoRepository.save(proceso);
+
+        // Si el contrato ya esta firmado, intenta finalizar la matricula automaticamente.
+        try {
+            chatbotProcesoService.tryFinalizeEnrollmentIfReadyByDocumento(documento);
+        } catch (Exception ex) {
+            log.warn("No se pudo finalizar matricula automaticamente tras pago aprobado doc={}: {}", documento, ex.getMessage());
+        }
+
         log.info("\u2705 Pago persistido doc={} paymentStatus={} flowStatus={}",
                 documento, trim(proceso.getPaymentStatus()), trim(proceso.getFlowStatus()));
 

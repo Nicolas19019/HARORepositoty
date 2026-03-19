@@ -1,12 +1,15 @@
 // src/main/java/com/Aplication/HARO/Service/VerificationService.java
 package com.Aplication.HARO.Service;
 
+import org.springframework.transaction.annotation.Propagation;
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Model.OtpToken;
 import com.Aplication.HARO.Repository.OtpTokenRepository;
 import com.Aplication.HARO.Security.OtpHasher;
 import jakarta.annotation.PostConstruct;
 import jakarta.mail.internet.InternetAddress;
+import main.java.com.Aplication.HARO.Service.ContractEnrollmentFinalizeService;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.multipart.MultipartFile;
@@ -39,6 +42,7 @@ public class VerificationService {
     private final ChatbotProcesoService chatbotProcesoService;
     private final WhatsAppTemplateService waService;
     private final ContractDocumentStorageService contractDocumentStorageService;
+    private final ContractEnrollmentFinalizeService contractEnrollmentFinalizeService;
     private final SecureRandom rng = new SecureRandom();
 
     // ===== Config =====
@@ -93,13 +97,15 @@ public class VerificationService {
                                EstudianteService estudianteService,
                                ChatbotProcesoService chatbotProcesoService,
                                WhatsAppTemplateService waService,
-                               ContractDocumentStorageService contractDocumentStorageService) {
+                               ContractDocumentStorageService contractDocumentStorageService,
+                               ContractEnrollmentFinalizeService contractEnrollmentFinalizeService) {
         this.repo = repo;
         this.mail = mail;
         this.estudianteService = estudianteService;
         this.chatbotProcesoService = chatbotProcesoService;
         this.waService = waService;
         this.contractDocumentStorageService = contractDocumentStorageService;
+        this.contractEnrollmentFinalizeService = contractEnrollmentFinalizeService;
     }
 
     @PostConstruct
@@ -463,92 +469,120 @@ public class VerificationService {
     }
 
     /** Consume código de contrato y activa matrícula (creación de estudiante) si aplica. */
-    public ContractCompletionResult completeContractSigning(String rawEmail, String rawCode) {
-        final String email = normalizeEmail(rawEmail);
-        final boolean verified;
-        try {
-            verified = verifyContractCode(email, rawCode);
-        } catch (Exception ex) {
-            log.error("Error validando codigo de contrato email={}: {}", email, ex.getMessage(), ex);
-            return new ContractCompletionResult(
-                    false,
-                    "No se pudo validar el contrato en este momento. Intenta nuevamente.",
-                    email,
-                    "",
-                    null,
-                    "",
-                    ""
-            );
-        }
-        if (!verified) {
-            return new ContractCompletionResult(
-                    false,
-                    "Codigo invalido o vencido",
-                    email,
-                    "",
-                    null,
-                    "",
-                    ""
-            );
-        }
+ @Transactional
+public ContractCompletionResult completeContractSigning(String rawEmail, String rawCode) {
+    final String email = normalizeEmail(rawEmail);
+    final boolean verified;
 
-        // Best-effort: actualiza el proceso del chatbot sin afectar el consumo del OTP.
-        try {
-            chatbotProcesoService.markContractSignedByEmail(email);
-        } catch (Exception ex) {
-            log.warn("No se pudo marcar contrato firmado por email={}: {}", email, ex.getMessage());
-        }
+    try {
+        verified = verifyContractCode(email, rawCode);
+    } catch (Exception ex) {
+        log.error("Error validando codigo de contrato email={}: {}", email, ex.getMessage(), ex);
+        return new ContractCompletionResult(
+                false,
+                "No se pudo validar el contrato en este momento. Intenta nuevamente.",
+                email,
+                "",
+                null,
+                "",
+                ""
+        );
+    }
 
-        Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
-        if (procesoOpt.isEmpty()) {
-            return new ContractCompletionResult(
-                    true,
-                    "Contrato validado correctamente",
-                    email,
-                    "",
-                    null,
-                    "CONTRACT_SIGNED",
-                    ""
-            );
-        }
+    if (!verified) {
+        return new ContractCompletionResult(
+                false,
+                "Codigo invalido o vencido",
+                email,
+                "",
+                null,
+                "",
+                ""
+        );
+    }
 
-        ChatbotMatriculaProceso proceso = procesoOpt.get();
-        String documento = trim(proceso.getNumeroDocumento());
-        Long studentId = null;
-        String message = "Contrato validado correctamente";
+    try {
+        chatbotProcesoService.markContractSignedByEmail(email);
+    } catch (Exception ex) {
+        log.warn("No se pudo marcar contrato firmado por email={}: {}", email, ex.getMessage());
+    }
 
-        if (StringUtils.hasText(documento)) {
-            try {
-                studentId = chatbotProcesoService
-                        .tryFinalizeEnrollmentIfReadyByDocumento(documento)
-                        .orElse(null);
-                if (studentId != null) {
-                    message = "Contrato validado, estudiante, estado de cuenta y pago actualizados";
-                } else {
-                    // Pago aun pendiente o no se cumplen precondiciones: no debe romper el flujo.
-                    message = "Contrato validado. Pago pendiente o en proceso de verificacion.";
-                }
-            } catch (Exception ex) {
-                log.error("No se pudo finalizar matricula doc={} email={}: {}", documento, email, ex.getMessage(), ex);
-                message = "Contrato validado, pero no se pudo activar matricula en este momento.";
-            }
-        }
-
-        ChatbotMatriculaProceso updated = StringUtils.hasText(documento)
-                ? chatbotProcesoService.findProcesoByDocumento(documento).orElse(proceso)
-                : proceso;
-
-        notifyContractCompletionByWhatsApp(updated, studentId);
-
+    Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+    if (procesoOpt.isEmpty()) {
         return new ContractCompletionResult(
                 true,
-                message,
+                "Contrato validado correctamente",
                 email,
-                documento,
-                studentId,
-                safe(updated.getFlowStatus()),
-                safe(updated.getPaymentStatus())
+                "",
+                null,
+                "CONTRACT_SIGNED",
+                ""
         );
+    }
+
+    ChatbotMatriculaProceso proceso = procesoOpt.get();
+    String documento = trim(proceso.getNumeroDocumento());
+    Long studentId = null;
+    String message = "Contrato validado correctamente";
+
+    if (StringUtils.hasText(documento)) {
+        try {
+            studentId = contractEnrollmentFinalizeService.finalizeEnrollment(documento);
+            if (studentId != null) {
+                message = "Contrato validado, estudiante, estado de cuenta y pago actualizados";
+            } else {
+                message = "Contrato validado. Pago pendiente o en proceso de verificacion.";
+            }
+        } catch (Exception ex) {
+            log.error("No se pudo finalizar matricula doc={} email={}: {}", documento, email, ex.getMessage(), ex);
+            message = "Contrato validado, pero no se pudo activar matricula en este momento.";
+        }
+    }
+
+    ChatbotMatriculaProceso updated = StringUtils.hasText(documento)
+            ? chatbotProcesoService.findProcesoByDocumento(documento).orElse(proceso)
+            : proceso;
+
+    return new ContractCompletionResult(
+            true,
+            message,
+            email,
+            documento,
+            studentId,
+            safe(updated.getFlowStatus()),
+            safe(updated.getPaymentStatus())
+    );
+}
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Long finalizeEnrollmentInNewTransaction(String documento) {
+        return chatbotProcesoService
+                .tryFinalizeEnrollmentIfReadyByDocumento(documento)
+                .orElse(null);
+
+    public void notifyContractCompletionAfterCommit(String email, Long studentId) {
+    if (!autoSendEnrollmentWhatsapp) return;
+    if (studentId == null) return;
+
+    try {
+        Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+        procesoOpt.ifPresent(proceso -> notifyContractCompletionByWhatsApp(proceso, studentId));
+    } catch (Exception ex) {
+        log.warn("La matricula se activo, pero fallo la notificacion de WhatsApp para email={}: {}", email, ex.getMessage());
+    }
+}
+}
+
+    public void notifyContractCompletionAfterCommit(String email, Long studentId) {
+        if (!autoSendEnrollmentWhatsapp) return;
+        if (studentId == null) return;
+
+        try {
+            Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+            procesoOpt.ifPresent(proceso -> notifyContractCompletionByWhatsApp(proceso, studentId));
+        } catch (Exception ex) {
+            log.warn("La matricula se activo, pero fallo la notificacion de WhatsApp para email={}: {}", email, ex.getMessage());
+        }
     }
 
     public ContractUploadResult uploadSignedContractDocument(String rawEmail,

@@ -50,7 +50,6 @@ import java.util.Map;
 import java.util.Set;
 
 @Service
-@Transactional
 public class ChatbotProcesoService {
     private static final Logger log = LoggerFactory.getLogger(ChatbotProcesoService.class);
 
@@ -189,7 +188,7 @@ private String paymentConfirmationUrl;
         this.googleCalendarService = googleCalendarService;
         this.passwordEncoder = passwordEncoder;
     }
-
+    @Transactional
     public ChatbotMatriculaProceso upsertDraft(String phone,
                                                String nombreCompleto,
                                                String documento,
@@ -198,7 +197,7 @@ private String paymentConfirmationUrl;
                                                String telefono) {
         return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, "", "");
     }
-
+    @Transactional
     public ChatbotMatriculaProceso upsertDraft(String phone,
                                                String nombreCompleto,
                                                String documento,
@@ -236,7 +235,7 @@ private String paymentConfirmationUrl;
 
         return procesoRepository.save(proceso);
     }
-
+    @Transactional
     public ChatbotMatriculaProceso markPaymentPending(String documento) {
     ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
 
@@ -253,21 +252,21 @@ private String paymentConfirmationUrl;
 
     return saved;
 }
-
+    @Transactional
     public ChatbotMatriculaProceso markPaymentRejected(String documento) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
         p.setPaymentStatus("REJECTED");
         p.setFlowStatus("PAYMENT_REJECTED");
         return procesoRepository.save(p);
     }
-
+    @Transactional
     public ChatbotMatriculaProceso markPaymentCancelled(String documento) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
         p.setPaymentStatus("CANCELLED");
         p.setFlowStatus("PAYMENT_CANCELLED");
         return procesoRepository.save(p);
     }
-
+    @Transactional
     public ChatbotMatriculaProceso markPaymentApproved(String documento, BigDecimal amountPaid) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
         p.setPaymentStatus("APPROVED");
@@ -283,7 +282,7 @@ private String paymentConfirmationUrl;
                 saved.getPaymentAmount());
         return saved;
     }
-
+    @Transactional
     public ChatbotMatriculaProceso markContractLinkSent(String documento, String contractLink) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
         p.setContractLink(normalizeContractLink(contractLink));
@@ -291,7 +290,7 @@ private String paymentConfirmationUrl;
         p.setFlowStatus("CONTRACT_LINK_SENT");
         return procesoRepository.save(p);
     }
-
+    @Transactional
     public ChatbotMatriculaProceso updateContractLink(String documento, String contractLink) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
         String normalized = normalizeContractLink(contractLink);
@@ -301,7 +300,7 @@ private String paymentConfirmationUrl;
         p.setContractLink(normalized);
         return procesoRepository.save(p);
     }
-
+    @Transactional
     public ChatbotMatriculaProceso markContractSignedByEmail(String email) {
         String mail = normalizeEmail(email);
         ChatbotMatriculaProceso proceso = procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail)
@@ -447,7 +446,7 @@ private String paymentConfirmationUrl;
         }
         return procesoRepository.findTopByPaymentLinkContainingOrderByUpdatedAtDesc(invoice);
     }
-
+    @Transactional
     public Optional<ChatbotMatriculaProceso> mergeContractSubmissionByEmail(String email,
                                                                             String contractName,
                                                                             String pdfFile,
@@ -489,7 +488,7 @@ private String paymentConfirmationUrl;
 
         return Optional.of(procesoRepository.save(proceso));
     }
-
+    @Transactional
     public Optional<ChatbotMatriculaProceso> capturePaymentMetadataByDocument(String documento,
                                                                               String paymentMethod,
                                                                               String paymentNote) {
@@ -606,7 +605,7 @@ private String paymentConfirmationUrl;
         }
         return payload;
     }
-
+    @Transactional
     public Long createStudentFromSignedContract(String documento) {
         String doc = normalizeDoc(documento);
         ChatbotMatriculaProceso proceso = getByDocumentoOrThrow(doc);
@@ -707,7 +706,7 @@ private String paymentConfirmationUrl;
             return Optional.empty();
         }
     }
-
+    @Transactional
     public Long createStudentFromSignedContract(String documento, String sede) {
         Long studentId = createStudentFromSignedContract(documento);
         String sedeValue = trim(sede);

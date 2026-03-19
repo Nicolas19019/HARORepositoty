@@ -6,10 +6,13 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.transaction.UnexpectedRollbackException;
 import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.LinkedHashMap;
@@ -19,6 +22,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/verification")
 public class VerificationController {
+
+  private static final Logger log = LoggerFactory.getLogger(VerificationController.class);
 
   private final VerificationService svc;
 
@@ -86,18 +91,30 @@ public ResponseEntity<?> completeContract(@RequestBody VerifyReq req) {
     boolean recovered = false;
     String mode = contractCompleteUseV2 ? "V2" : "V1";
     try {
-        result = contractCompleteUseV2
-                ? svc.completeContractSigningV2(req.email(), req.code())
-                : svc.completeContractSigning(req.email(), req.code());
-    } catch (UnexpectedRollbackException ex) {
-        if (!contractCompleteEnableRecovery) {
-            throw ex;
-        }
-        // Recovery path: the original flow got rollback-only and crashed at commit time.
-        // Re-run the completion in a non-transactional flow so we can still create the student/estado/pago.
+      result = contractCompleteUseV2
+              ? svc.completeContractSigningV2(req.email(), req.code())
+              : svc.completeContractSigning(req.email(), req.code());
+    } catch (Exception ex) {
+      boolean isRollback =
+              (ex instanceof UnexpectedRollbackException) ||
+              (ex.getCause() instanceof UnexpectedRollbackException) ||
+              (ex.getMessage() != null && ex.getMessage().toLowerCase().contains("rollback-only"));
+
+      if (contractCompleteEnableRecovery && isRollback) {
         recovered = true;
         mode = "RECOVERY";
+        log.warn("Rollback detectado en /contract/complete, activando RECOVERY. email={}", req.email(), ex);
         result = svc.completeContractSigningRecovery(req.email(), req.code());
+      } else {
+        log.error("Error en /contract/complete (mode={}) email={}: {}", mode, req.email(), ex.getMessage(), ex);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("ok", false);
+        body.put("message", "Error interno del servidor: " + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage()));
+        body.put("email", req.email());
+        body.put("mode", "EXCEPTION");
+        body.put("recovered", false);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+      }
     }
 
     if (result.ok() && result.studentId() != null) {

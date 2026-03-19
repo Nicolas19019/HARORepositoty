@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.transaction.UnexpectedRollbackException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.LinkedHashMap;
@@ -20,6 +21,15 @@ import java.util.Map;
 public class VerificationController {
 
   private final VerificationService svc;
+
+  // Feature flags (can be overridden via env vars on Cloud Run):
+  // - app.contract.complete.use-v2 -> APP_CONTRACT_COMPLETE_USE_V2
+  // - app.contract.complete.enable-recovery -> APP_CONTRACT_COMPLETE_ENABLE_RECOVERY
+  @Value("${app.contract.complete.use-v2:true}")
+  private boolean contractCompleteUseV2;
+
+  @Value("${app.contract.complete.enable-recovery:true}")
+  private boolean contractCompleteEnableRecovery;
 
   public VerificationController(VerificationService svc) {
     this.svc = svc;
@@ -73,11 +83,20 @@ public class VerificationController {
 @PostMapping("/contract/complete")
 public ResponseEntity<?> completeContract(@RequestBody VerifyReq req) {
     VerificationService.ContractCompletionResult result;
+    boolean recovered = false;
+    String mode = contractCompleteUseV2 ? "V2" : "V1";
     try {
-        result = svc.completeContractSigning(req.email(), req.code());
+        result = contractCompleteUseV2
+                ? svc.completeContractSigningV2(req.email(), req.code())
+                : svc.completeContractSigning(req.email(), req.code());
     } catch (UnexpectedRollbackException ex) {
-        // Recovery path: the original transactional flow got rollback-only and crashed at commit time.
+        if (!contractCompleteEnableRecovery) {
+            throw ex;
+        }
+        // Recovery path: the original flow got rollback-only and crashed at commit time.
         // Re-run the completion in a non-transactional flow so we can still create the student/estado/pago.
+        recovered = true;
+        mode = "RECOVERY";
         result = svc.completeContractSigningRecovery(req.email(), req.code());
     }
 
@@ -93,6 +112,8 @@ public ResponseEntity<?> completeContract(@RequestBody VerifyReq req) {
     body.put("studentId", result.studentId());
     body.put("flowStatus", result.flowStatus());
     body.put("paymentStatus", result.paymentStatus());
+    body.put("mode", mode);
+    body.put("recovered", recovered);
 
     return result.ok()
             ? ResponseEntity.ok(body)

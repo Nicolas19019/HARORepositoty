@@ -17,7 +17,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +49,7 @@ public class VerificationService {
     private final ContractDocumentStorageService contractDocumentStorageService;
     private final ContractEnrollmentFinalizeService contractEnrollmentFinalizeService;
     private final ObjectProvider<VerificationService> selfProvider;
+    private final PlatformTransactionManager txManager;
     private final SecureRandom rng = new SecureRandom();
 
     // ===== Config =====
@@ -102,7 +106,8 @@ public class VerificationService {
                                WhatsAppTemplateService waService,
                                ContractDocumentStorageService contractDocumentStorageService,
                                ContractEnrollmentFinalizeService contractEnrollmentFinalizeService,
-                               ObjectProvider<VerificationService> selfProvider) {
+                               ObjectProvider<VerificationService> selfProvider,
+                               PlatformTransactionManager txManager) {
         this.repo = repo;
         this.mail = mail;
         this.estudianteService = estudianteService;
@@ -111,6 +116,7 @@ public class VerificationService {
         this.contractDocumentStorageService = contractDocumentStorageService;
         this.contractEnrollmentFinalizeService = contractEnrollmentFinalizeService;
         this.selfProvider = selfProvider;
+        this.txManager = txManager;
     }
 
     @PostConstruct
@@ -631,6 +637,78 @@ public class VerificationService {
                 }
             } catch (Exception ex) {
                 log.error("[contract.complete.recover] No se pudo forzar matricula doc={} email={}: {}", documento, email, ex.getMessage(), ex);
+                message = "Contrato validado, pero fallo la creacion del estudiante/estado/pago: " + safe(ex.getMessage());
+            }
+        }
+
+        ChatbotMatriculaProceso updated = StringUtils.hasText(documento)
+                ? chatbotProcesoService.findProcesoByDocumento(documento).orElse(proceso)
+                : proceso;
+
+        return new ContractCompletionResult(
+                true,
+                message,
+                email,
+                documento,
+                studentId,
+                safe(updated.getFlowStatus()),
+                safe(updated.getPaymentStatus())
+        );
+    }
+
+    private TransactionTemplate newTx(int propagationBehavior) {
+        TransactionTemplate tt = new TransactionTemplate(txManager);
+        tt.setPropagationBehavior(propagationBehavior);
+        return tt;
+    }
+
+    /**
+     * Root implementation for contract completion. No outer @Transactional.
+     * Each step runs in its own transaction so rollback-only cannot crash the whole request.
+     */
+    public ContractCompletionResult completeContractSigningV2(String rawEmail, String rawCode) {
+        final String email = normalizeEmail(rawEmail);
+        log.info("[contract.complete.v2] email={} outerTxActive={}", email, TransactionSynchronizationManager.isActualTransactionActive());
+
+        Boolean verified = newTx(TransactionDefinition.PROPAGATION_REQUIRES_NEW).execute(status -> {
+            try {
+                return selfProvider.getObject().verifyContractCode(email, rawCode);
+            } catch (Exception ex) {
+                log.error("[contract.complete.v2] Error verificando codigo email={}: {}", email, ex.getMessage(), ex);
+                return false;
+            }
+        });
+
+        if (verified == null || !verified) {
+            return new ContractCompletionResult(false, "Codigo invalido o vencido", email, "", null, "", "");
+        }
+
+        // Mark contract signed (best effort) in its own tx.
+        newTx(TransactionDefinition.PROPAGATION_REQUIRES_NEW).execute(status -> {
+            try {
+                chatbotProcesoService.markContractSignedByEmail(email);
+            } catch (Exception ex) {
+                log.warn("[contract.complete.v2] No se pudo marcar contrato firmado email={}: {}", email, ex.getMessage(), ex);
+            }
+            return null;
+        });
+
+        Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+        if (procesoOpt.isEmpty()) {
+            return new ContractCompletionResult(true, "Contrato validado correctamente", email, "", null, "CONTRACT_SIGNED", "");
+        }
+
+        ChatbotMatriculaProceso proceso = procesoOpt.get();
+        String documento = trim(proceso.getNumeroDocumento());
+        Long studentId = null;
+        String message = "Contrato validado correctamente";
+
+        if (StringUtils.hasText(documento)) {
+            try {
+                studentId = contractEnrollmentFinalizeService.forceFinalizeEnrollment(documento);
+                message = "Contrato validado, estudiante, estado de cuenta y pago actualizados";
+            } catch (Exception ex) {
+                log.error("[contract.complete.v2] Fallo forzando matricula doc={} email={}: {}", documento, email, ex.getMessage(), ex);
                 message = "Contrato validado, pero fallo la creacion del estudiante/estado/pago: " + safe(ex.getMessage());
             }
         }

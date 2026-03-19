@@ -566,6 +566,90 @@ public class VerificationService {
     );
 }
 
+    /**
+     * Recovery path for cases where an old transactional flow throws UnexpectedRollbackException at commit time.
+     * This method is non-transactional and uses inner REQUIRES_NEW / transactional methods for each step.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public ContractCompletionResult completeContractSigningRecovery(String rawEmail, String rawCode) {
+        final String email = normalizeEmail(rawEmail);
+        log.warn("[contract.complete.recover] email={}", email);
+
+        boolean verified = false;
+        try {
+            verified = selfProvider.getObject().verifyContractCode(email, rawCode);
+        } catch (Exception ex) {
+            log.error("[contract.complete.recover] Error verificando codigo email={}: {}", email, ex.getMessage(), ex);
+        }
+
+        Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+        if (procesoOpt.isEmpty()) {
+            return new ContractCompletionResult(
+                    verified,
+                    verified ? "Contrato validado correctamente" : "Codigo invalido o vencido",
+                    email,
+                    "",
+                    null,
+                    verified ? "CONTRACT_SIGNED" : "",
+                    ""
+            );
+        }
+
+        ChatbotMatriculaProceso proceso = procesoOpt.get();
+        String documento = trim(proceso.getNumeroDocumento());
+
+        // If code verification failed but the process is already signed, we can continue idempotently.
+        boolean alreadySigned = "SIGNED".equalsIgnoreCase(trim(proceso.getContractStatus()));
+        if (!verified && !alreadySigned) {
+            return new ContractCompletionResult(
+                    false,
+                    "Codigo invalido o vencido",
+                    email,
+                    documento,
+                    null,
+                    safe(proceso.getFlowStatus()),
+                    safe(proceso.getPaymentStatus())
+            );
+        }
+
+        try {
+            chatbotProcesoService.markContractSignedByEmail(email);
+        } catch (Exception ex) {
+            log.warn("[contract.complete.recover] No se pudo marcar contrato firmado email={}: {}", email, ex.getMessage(), ex);
+        }
+
+        Long studentId = null;
+        String message = "Contrato validado correctamente";
+
+        if (StringUtils.hasText(documento)) {
+            try {
+                studentId = contractEnrollmentFinalizeService.forceFinalizeEnrollment(documento);
+                if (studentId != null) {
+                    message = "Contrato validado, estudiante, estado de cuenta y pago actualizados";
+                } else {
+                    message = "Contrato validado. No fue posible crear el estudiante en este momento.";
+                }
+            } catch (Exception ex) {
+                log.error("[contract.complete.recover] No se pudo forzar matricula doc={} email={}: {}", documento, email, ex.getMessage(), ex);
+                message = "Contrato validado, pero fallo la creacion del estudiante/estado/pago: " + safe(ex.getMessage());
+            }
+        }
+
+        ChatbotMatriculaProceso updated = StringUtils.hasText(documento)
+                ? chatbotProcesoService.findProcesoByDocumento(documento).orElse(proceso)
+                : proceso;
+
+        return new ContractCompletionResult(
+                true,
+                message,
+                email,
+                documento,
+                studentId,
+                safe(updated.getFlowStatus()),
+                safe(updated.getPaymentStatus())
+        );
+    }
+
     public void notifyContractCompletionAfterCommit(String email, Long studentId) {
         if (!autoSendEnrollmentWhatsapp) return;
         if (studentId == null) return;

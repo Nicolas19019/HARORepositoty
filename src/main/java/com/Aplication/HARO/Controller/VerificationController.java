@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.UnexpectedRollbackException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.LinkedHashMap;
@@ -71,8 +72,14 @@ public class VerificationController {
 
 @PostMapping("/contract/complete")
 public ResponseEntity<?> completeContract(@RequestBody VerifyReq req) {
-    VerificationService.ContractCompletionResult result =
-            svc.completeContractSigning(req.email(), req.code());
+    VerificationService.ContractCompletionResult result;
+    try {
+        result = svc.completeContractSigning(req.email(), req.code());
+    } catch (UnexpectedRollbackException ex) {
+        // Recovery path: the original transactional flow got rollback-only and crashed at commit time.
+        // Re-run the completion in a non-transactional flow so we can still create the student/estado/pago.
+        result = svc.completeContractSigningRecovery(req.email(), req.code());
+    }
 
     if (result.ok() && result.studentId() != null) {
         svc.notifyContractCompletionAfterCommit(result.email(), result.studentId());

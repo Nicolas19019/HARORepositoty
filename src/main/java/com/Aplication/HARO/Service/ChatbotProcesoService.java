@@ -1,4 +1,4 @@
-﻿package com.Aplication.HARO.Service;
+package com.Aplication.HARO.Service;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Model.Clase;
@@ -24,6 +24,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -300,7 +301,7 @@ private String paymentConfirmationUrl;
         p.setContractLink(normalized);
         return procesoRepository.save(p);
     }
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ChatbotMatriculaProceso markContractSignedByEmail(String email) {
         String mail = normalizeEmail(email);
         ChatbotMatriculaProceso proceso = procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail)

@@ -1,14 +1,13 @@
 // src/main/java/com/Aplication/HARO/Service/VerificationService.java
 package com.Aplication.HARO.Service;
 
-import org.springframework.transaction.annotation.Propagation;
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Model.OtpToken;
 import com.Aplication.HARO.Repository.OtpTokenRepository;
 import com.Aplication.HARO.Security.OtpHasher;
 import jakarta.annotation.PostConstruct;
 import jakarta.mail.internet.InternetAddress;
-import main.java.com.Aplication.HARO.Service.ContractEnrollmentFinalizeService;
+
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -504,7 +503,7 @@ public ContractCompletionResult completeContractSigning(String rawEmail, String 
     try {
         chatbotProcesoService.markContractSignedByEmail(email);
     } catch (Exception ex) {
-        log.warn("No se pudo marcar contrato firmado por email={}: {}", email, ex.getMessage());
+        log.warn("No se pudo marcar contrato firmado por email={}: {}", email, ex.getMessage(), ex);
     }
 
     Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
@@ -552,25 +551,6 @@ public ContractCompletionResult completeContractSigning(String rawEmail, String 
             safe(updated.getFlowStatus()),
             safe(updated.getPaymentStatus())
     );
-}
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Long finalizeEnrollmentInNewTransaction(String documento) {
-        return chatbotProcesoService
-                .tryFinalizeEnrollmentIfReadyByDocumento(documento)
-                .orElse(null);
-
-    public void notifyContractCompletionAfterCommit(String email, Long studentId) {
-    if (!autoSendEnrollmentWhatsapp) return;
-    if (studentId == null) return;
-
-    try {
-        Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
-        procesoOpt.ifPresent(proceso -> notifyContractCompletionByWhatsApp(proceso, studentId));
-    } catch (Exception ex) {
-        log.warn("La matricula se activo, pero fallo la notificacion de WhatsApp para email={}: {}", email, ex.getMessage());
-    }
-}
 }
 
     public void notifyContractCompletionAfterCommit(String email, Long studentId) {

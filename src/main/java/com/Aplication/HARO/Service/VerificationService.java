@@ -11,11 +11,13 @@ import jakarta.mail.internet.InternetAddress;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URLEncoder;
@@ -42,6 +44,7 @@ public class VerificationService {
     private final WhatsAppTemplateService waService;
     private final ContractDocumentStorageService contractDocumentStorageService;
     private final ContractEnrollmentFinalizeService contractEnrollmentFinalizeService;
+    private final ObjectProvider<VerificationService> selfProvider;
     private final SecureRandom rng = new SecureRandom();
 
     // ===== Config =====
@@ -97,7 +100,8 @@ public class VerificationService {
                                ChatbotProcesoService chatbotProcesoService,
                                WhatsAppTemplateService waService,
                                ContractDocumentStorageService contractDocumentStorageService,
-                               ContractEnrollmentFinalizeService contractEnrollmentFinalizeService) {
+                               ContractEnrollmentFinalizeService contractEnrollmentFinalizeService,
+                               ObjectProvider<VerificationService> selfProvider) {
         this.repo = repo;
         this.mail = mail;
         this.estudianteService = estudianteService;
@@ -105,6 +109,7 @@ public class VerificationService {
         this.waService = waService;
         this.contractDocumentStorageService = contractDocumentStorageService;
         this.contractEnrollmentFinalizeService = contractEnrollmentFinalizeService;
+        this.selfProvider = selfProvider;
     }
 
     @PostConstruct
@@ -468,13 +473,15 @@ public class VerificationService {
     }
 
     /** Consume código de contrato y activa matrícula (creación de estudiante) si aplica. */
- @Transactional
-public ContractCompletionResult completeContractSigning(String rawEmail, String rawCode) {
+    // Keep this method non-transactional so a caught exception cannot poison the request with rollback-only.
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public ContractCompletionResult completeContractSigning(String rawEmail, String rawCode) {
     final String email = normalizeEmail(rawEmail);
     final boolean verified;
 
     try {
-        verified = verifyContractCode(email, rawCode);
+        // Self-invocation bypasses Spring AOP; call through proxy so @Transactional is applied.
+        verified = selfProvider.getObject().verifyContractCode(email, rawCode);
     } catch (Exception ex) {
         log.error("Error validando codigo de contrato email={}: {}", email, ex.getMessage(), ex);
         return new ContractCompletionResult(

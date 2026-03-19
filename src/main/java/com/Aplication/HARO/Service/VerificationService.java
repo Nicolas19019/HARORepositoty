@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -478,6 +479,10 @@ public class VerificationService {
     public ContractCompletionResult completeContractSigning(String rawEmail, String rawCode) {
     final String email = normalizeEmail(rawEmail);
     final boolean verified;
+
+    // Marker to confirm the deployed revision is running the non-transactional flow.
+    // If you still see UnexpectedRollbackException on commit, this marker likely won't appear (old revision).
+    log.info("[contract.complete] v2026-03-19 nonTx txActive={}", TransactionSynchronizationManager.isActualTransactionActive());
 
     try {
         // Self-invocation bypasses Spring AOP; call through proxy so @Transactional is applied.

@@ -19,4 +19,9 @@ public class ContractEnrollmentFinalizeService {
                 .tryFinalizeEnrollmentIfReadyByDocumento(documento)
                 .orElse(null);
     }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Long forceFinalizeEnrollment(String documento) {
+        return chatbotProcesoService.forceFinalizeEnrollmentByDocumento(documento);
+    }
 }

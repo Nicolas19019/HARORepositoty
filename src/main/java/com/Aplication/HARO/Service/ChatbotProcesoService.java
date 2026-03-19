@@ -707,6 +707,76 @@ private String paymentConfirmationUrl;
             return Optional.empty();
         }
     }
+
+    /**
+     * Fuerza la finalizacion de matricula: crea/actualiza estudiante, estado de cuenta y pago
+     * aun si el flujo no cumple precondiciones (ej. pago aun no aprobado).
+     *
+     * Esto se usa cuando el negocio requiere que el estudiante exista obligatoriamente despues de firmar contrato.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public Long forceFinalizeEnrollmentByDocumento(String documentoRaw) {
+        String doc = normalizeDoc(documentoRaw);
+        if (doc.isBlank()) {
+            throw new IllegalArgumentException("documento requerido para finalizar matricula");
+        }
+
+        // Lock para evitar carreras en la creacion/actualizacion del estudiante.
+        ChatbotMatriculaProceso proceso = procesoRepository.findByNumeroDocumentoForUpdate(doc)
+                .orElseThrow(() -> new NoSuchElementException("No existe proceso de matricula para documento " + doc));
+
+        if (proceso.getStudentId() != null) {
+            Long id = proceso.getStudentId();
+            ensureEstadoCuentaForStudent(proceso, id);
+            ensurePagoForStudentForce(proceso, id);
+            if (trim(proceso.getFlowStatus()).isBlank() || !"STUDENT_CREATED".equalsIgnoreCase(trim(proceso.getFlowStatus()))) {
+                proceso.setFlowStatus("STUDENT_CREATED");
+                if (proceso.getEnrolledAt() == null) proceso.setEnrolledAt(Instant.now());
+                procesoRepository.save(proceso);
+            }
+            return id;
+        }
+
+        ContractStudentProfile profile = extractStudentProfile(proceso);
+
+        Optional<Estudiante> existing = estudianteRepository.findByNumeroDocumento(doc);
+        final Long studentId;
+        if (existing.isPresent()) {
+            Estudiante e = existing.get();
+            applyContractProfileToStudent(e, profile, proceso);
+            estudianteRepository.save(e);
+            studentId = e.getId();
+        } else {
+            Estudiante nuevo = new Estudiante();
+            nuevo.setNombre(profile.nombre());
+            nuevo.setApellido(profile.apellido());
+            nuevo.setNumeroDocumento(doc);
+            nuevo.setCategoria(profile.categoria());
+            nuevo.setTipoPase(toTipoPase(profile.categoria()));
+            nuevo.setTipoDocumento(profile.tipoDocumento());
+            nuevo.setTelefono(profile.telefono());
+            nuevo.setEmail(profile.email());
+            nuevo.setDireccion(profile.direccion());
+            nuevo.setSede(profile.sede());
+            nuevo.setTipoEstudiante("matriculado");
+            nuevo.setEstado("Activo");
+            nuevo.setVisible(true);
+            nuevo.setUsuario(generateUniqueUsername(profile.email(), doc));
+            nuevo.setContrasena(trim(proceso.getStudentPasswordHash()).isBlank() ? null : proceso.getStudentPasswordHash());
+
+            Estudiante created = estudianteService.createEstudiante(nuevo);
+            studentId = created.getId();
+        }
+
+        ensureEstadoCuentaForStudent(proceso, studentId);
+        ensurePagoForStudentForce(proceso, studentId);
+
+        proceso.setStudentId(studentId);
+        proceso.setFlowStatus("STUDENT_CREATED");
+        if (proceso.getEnrolledAt() == null) proceso.setEnrolledAt(Instant.now());
+        procesoRepository.save(proceso);
+        return studentId;
+    }
     @Transactional
     public Long createStudentFromSignedContract(String documento, String sede) {
         Long studentId = createStudentFromSignedContract(documento);
@@ -1310,6 +1380,30 @@ private String paymentConfirmationUrl;
         BigDecimal monto = resolvePaidAmountForEstadoCuenta(proceso, resolveExpectedAmount(proceso));
         if (monto == null || monto.signum() < 0) {
             return;
+        }
+
+        Pagos pago = pagoRepository.findTopByEstadoCuentaOrderByIdDesc(estadoCuenta.getId())
+                .orElseGet(Pagos::new);
+        pago.setEstadoCuenta(estadoCuenta.getId());
+        if (pago.getFechaPago() == null) {
+            pago.setFechaPago(LocalDate.now(ZoneId.of("America/Bogota")));
+        }
+        pago.setMonto(monto);
+        pago.setMetodo(resolvePaymentMethod(proceso));
+        pagoRepository.save(pago);
+    }
+
+    private void ensurePagoForStudentForce(ChatbotMatriculaProceso proceso, Long studentId) {
+        if (proceso == null || studentId == null) return;
+
+        EstadoCuenta estadoCuenta = estadoCuentaRepository.findByIdEstudiante(studentId).orElse(null);
+        if (estadoCuenta == null || estadoCuenta.getId() == null) {
+            return;
+        }
+
+        BigDecimal monto = resolvePaidAmountForEstadoCuenta(proceso, resolveExpectedAmount(proceso));
+        if (monto == null || monto.signum() < 0) {
+            monto = BigDecimal.ZERO;
         }
 
         Pagos pago = pagoRepository.findTopByEstadoCuentaOrderByIdDesc(estadoCuenta.getId())

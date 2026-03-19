@@ -538,15 +538,16 @@ public class VerificationService {
 
     if (StringUtils.hasText(documento)) {
         try {
-            studentId = contractEnrollmentFinalizeService.finalizeEnrollment(documento);
+            // Force creation of student + estado de cuenta + pago as a hard requirement after signing.
+            studentId = contractEnrollmentFinalizeService.forceFinalizeEnrollment(documento);
             if (studentId != null) {
                 message = "Contrato validado, estudiante, estado de cuenta y pago actualizados";
             } else {
-                message = "Contrato validado. Pago pendiente o en proceso de verificacion.";
+                message = "Contrato validado. No fue posible crear el estudiante en este momento.";
             }
         } catch (Exception ex) {
             log.error("No se pudo finalizar matricula doc={} email={}: {}", documento, email, ex.getMessage(), ex);
-            message = "Contrato validado, pero no se pudo activar matricula en este momento.";
+            message = "Contrato validado, pero fallo la creacion del estudiante/estado/pago: " + safe(ex.getMessage());
         }
     }
 

@@ -475,7 +475,7 @@ public class VerificationService {
 
     /** Consume código de contrato y activa matrícula (creación de estudiante) si aplica. */
     // Keep this method non-transactional so a caught exception cannot poison the request with rollback-only.
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    //@Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ContractCompletionResult completeContractSigning(String rawEmail, String rawCode) {
     final String email = normalizeEmail(rawEmail);
     final boolean verified;

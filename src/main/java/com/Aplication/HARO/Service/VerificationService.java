@@ -29,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -40,6 +41,11 @@ import org.springframework.util.StringUtils;
 public class VerificationService {
 
     private static final Logger log = LoggerFactory.getLogger(VerificationService.class);
+    private static final String[] REQUIRED_SIGNED_CONTRACTS = {
+            "Contrato1.pdf",
+            "Contrato2.pdf",
+            "Contrato3.pdf"
+    };
 
     private final OtpTokenRepository repo;
     private final MailService mail;
@@ -327,7 +333,11 @@ public class VerificationService {
             String signerFolder,
             String objectKey,
             String fileName,
-            String fileUrl
+            String fileUrl,
+            boolean contractCompleted,
+            Long studentId,
+            String flowStatus,
+            String paymentStatus
     ) {}
 
     @Transactional(readOnly = true)
@@ -758,6 +768,10 @@ public class VerificationService {
                     "",
                     "",
                     "",
+                    "",
+                    false,
+                    null,
+                    "",
                     ""
             );
         }
@@ -780,8 +794,9 @@ public class VerificationService {
         ContractDocumentStorageService.StoredDocument stored =
                 contractDocumentStorageService.storeSignedContract(file, signerName, documento, contractName);
 
+        Optional<ChatbotMatriculaProceso> mergedProcesoOpt = Optional.empty();
         try {
-            chatbotProcesoService.mergeContractSubmissionByEmail(
+            mergedProcesoOpt = chatbotProcesoService.mergeContractSubmissionByEmail(
                     email,
                     contractName,
                     trim(rawPdfFile),
@@ -797,15 +812,63 @@ public class VerificationService {
                     email, documento, safe(stored.fileName()), ex.getMessage(), ex);
         }
 
+        boolean contractCompleted = false;
+        Long studentId = procesoOpt.map(ChatbotMatriculaProceso::getStudentId).orElse(null);
+        String flowStatus = procesoOpt.map(ChatbotMatriculaProceso::getFlowStatus).map(this::safe).orElse("");
+        String paymentStatus = procesoOpt.map(ChatbotMatriculaProceso::getPaymentStatus).map(this::safe).orElse("");
+        String message = "Contrato cargado correctamente";
+
+        ChatbotMatriculaProceso statusSource = mergedProcesoOpt.orElseGet(() -> procesoOpt.orElse(null));
+        if (statusSource != null && hasAllRequiredSignedContracts(statusSource.getSignedContractFiles())) {
+            message = "Contrato cargado correctamente. Se detectaron todos los contratos firmados.";
+
+            try {
+                chatbotProcesoService.markContractSignedByEmail(email);
+                contractCompleted = true;
+            } catch (Exception ex) {
+                log.error("No se pudo completar la firma tras el ultimo upload email={} doc={}: {}",
+                        email, documento, ex.getMessage(), ex);
+                message = "Contrato cargado correctamente, pero la finalizacion del proceso quedo pendiente.";
+            }
+
+            if (contractCompleted && StringUtils.hasText(documento)) {
+                try {
+                    studentId = contractEnrollmentFinalizeService.forceFinalizeEnrollment(documento);
+                    if (studentId != null) {
+                        message = "Contrato cargado correctamente. Firma y matricula finalizadas.";
+                        notifyContractCompletionAfterCommit(email, studentId);
+                    } else {
+                        message = "Contrato cargado correctamente. Firma completada; la matricula queda pendiente.";
+                    }
+                } catch (Exception ex) {
+                    log.error("No se pudo finalizar matricula tras upload final email={} doc={}: {}",
+                            email, documento, ex.getMessage(), ex);
+                    message = "Contrato cargado correctamente. La firma se completo, pero la matricula quedo pendiente.";
+                }
+            }
+        }
+
+        ChatbotMatriculaProceso refreshed = resolveLatestContractStatus(email, documento).orElse(statusSource);
+        if (refreshed != null) {
+            documento = safe(refreshed.getNumeroDocumento());
+            studentId = refreshed.getStudentId();
+            flowStatus = safe(refreshed.getFlowStatus());
+            paymentStatus = safe(refreshed.getPaymentStatus());
+        }
+
         return new ContractUploadResult(
                 true,
-                "Contrato cargado correctamente",
+                message,
                 email,
                 documento,
                 safe(stored.signerFolder()),
                 safe(stored.objectKey()),
                 safe(stored.fileName()),
-                safe(stored.publicUrl())
+                safe(stored.publicUrl()),
+                contractCompleted,
+                studentId,
+                flowStatus,
+                paymentStatus
         );
     }
 
@@ -896,6 +959,21 @@ public class VerificationService {
         } catch (Exception ignored) {
             // La activacion no debe fallar por un error de notificacion.
         }
+    }
+
+    private boolean hasAllRequiredSignedContracts(String signedContractFilesJson) {
+        String signedFiles = safe(signedContractFilesJson);
+        return Arrays.stream(REQUIRED_SIGNED_CONTRACTS).allMatch(signedFiles::contains);
+    }
+
+    private Optional<ChatbotMatriculaProceso> resolveLatestContractStatus(String email, String documento) {
+        if (StringUtils.hasText(documento)) {
+            Optional<ChatbotMatriculaProceso> byDocument = chatbotProcesoService.findProcesoByDocumento(documento);
+            if (byDocument.isPresent()) {
+                return byDocument;
+            }
+        }
+        return chatbotProcesoService.findLatestProcesoByEmail(email);
     }
 
     private String safe(String value) {

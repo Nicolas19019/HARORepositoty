@@ -491,7 +491,7 @@ public class VerificationService {
 
     /** Consume código de contrato y activa matrícula (creación de estudiante) si aplica. */
     // Keep this method non-transactional so a caught exception cannot poison the request with rollback-only.
-    //@Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ContractCompletionResult completeContractSigning(String rawEmail, String rawCode) {
     final String email = normalizeEmail(rawEmail);
     final boolean verified;
@@ -517,15 +517,22 @@ public class VerificationService {
     }
 
     if (!verified) {
-        return new ContractCompletionResult(
-                false,
-                "Codigo invalido o vencido",
-                email,
-                "",
-                null,
-                "",
-                ""
-        );
+        // Idempotency: if the contract is already signed, allow re-running completion even if the OTP was consumed.
+        Optional<ChatbotMatriculaProceso> signedOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+        boolean alreadySigned = signedOpt.isPresent()
+                && "SIGNED".equalsIgnoreCase(trim(signedOpt.get().getContractStatus()));
+        if (!alreadySigned) {
+            return new ContractCompletionResult(
+                    false,
+                    "Codigo invalido o vencido",
+                    email,
+                    "",
+                    null,
+                    "",
+                    ""
+            );
+        }
+        log.info("[contract.complete] codigo ya consumido pero contrato ya esta SIGNED. email={}", email);
     }
 
     try {
@@ -551,6 +558,7 @@ public class VerificationService {
     String documento = trim(proceso.getNumeroDocumento());
     Long studentId = null;
     String message = "Contrato validado correctamente";
+    boolean okResult = true;
 
     if (StringUtils.hasText(documento)) {
         try {
@@ -559,11 +567,13 @@ public class VerificationService {
             if (studentId != null) {
                 message = "Contrato validado, estudiante, estado de cuenta y pago actualizados";
             } else {
-                message = "Contrato validado. No fue posible crear el estudiante en este momento.";
+                okResult = false;
+                message = "Contrato validado, pero no fue posible crear el estudiante/estado/pago en este momento.";
             }
         } catch (Exception ex) {
             log.error("No se pudo finalizar matricula doc={} email={}: {}", documento, email, ex.getMessage(), ex);
-            message = "Contrato validado, pero fallo la creacion del estudiante/estado/pago: " + safe(ex.getMessage());
+            okResult = false;
+            message = "Fallo creando estudiante/estado/pago: " + safe(ex.getMessage());
         }
     }
 
@@ -572,7 +582,7 @@ public class VerificationService {
             : proceso;
 
     return new ContractCompletionResult(
-            true,
+            okResult,
             message,
             email,
             documento,
@@ -636,6 +646,7 @@ public class VerificationService {
 
         Long studentId = null;
         String message = "Contrato validado correctamente";
+        boolean okResult = true;
 
         if (StringUtils.hasText(documento)) {
             try {
@@ -643,11 +654,13 @@ public class VerificationService {
                 if (studentId != null) {
                     message = "Contrato validado, estudiante, estado de cuenta y pago actualizados";
                 } else {
-                    message = "Contrato validado. No fue posible crear el estudiante en este momento.";
+                    okResult = false;
+                    message = "Contrato validado, pero no fue posible crear el estudiante/estado/pago en este momento.";
                 }
             } catch (Exception ex) {
                 log.error("[contract.complete.recover] No se pudo forzar matricula doc={} email={}: {}", documento, email, ex.getMessage(), ex);
-                message = "Contrato validado, pero fallo la creacion del estudiante/estado/pago: " + safe(ex.getMessage());
+                okResult = false;
+                message = "Fallo creando estudiante/estado/pago: " + safe(ex.getMessage());
             }
         }
 
@@ -656,7 +669,7 @@ public class VerificationService {
                 : proceso;
 
         return new ContractCompletionResult(
-                true,
+                okResult,
                 message,
                 email,
                 documento,
@@ -690,7 +703,14 @@ public class VerificationService {
         });
 
         if (verified == null || !verified) {
-            return new ContractCompletionResult(false, "Codigo invalido o vencido", email, "", null, "", "");
+            // Idempotency: if already signed, proceed even if OTP was consumed.
+            Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+            boolean alreadySigned = procesoOpt.isPresent()
+                    && "SIGNED".equalsIgnoreCase(trim(procesoOpt.get().getContractStatus()));
+            if (!alreadySigned) {
+                return new ContractCompletionResult(false, "Codigo invalido o vencido", email, "", null, "", "");
+            }
+            log.info("[contract.complete.v2] codigo ya consumido pero contrato ya esta SIGNED. email={}", email);
         }
 
         // Mark contract signed (best effort) in its own tx.
@@ -712,14 +732,21 @@ public class VerificationService {
         String documento = trim(proceso.getNumeroDocumento());
         Long studentId = null;
         String message = "Contrato validado correctamente";
+        boolean okResult = true;
 
         if (StringUtils.hasText(documento)) {
             try {
                 studentId = contractEnrollmentFinalizeService.forceFinalizeEnrollment(documento);
-                message = "Contrato validado, estudiante, estado de cuenta y pago actualizados";
+                if (studentId != null) {
+                    message = "Contrato validado, estudiante, estado de cuenta y pago actualizados";
+                } else {
+                    okResult = false;
+                    message = "Contrato validado, pero no fue posible crear el estudiante/estado/pago en este momento.";
+                }
             } catch (Exception ex) {
                 log.error("[contract.complete.v2] Fallo forzando matricula doc={} email={}: {}", documento, email, ex.getMessage(), ex);
-                message = "Contrato validado, pero fallo la creacion del estudiante/estado/pago: " + safe(ex.getMessage());
+                okResult = false;
+                message = "Fallo creando estudiante/estado/pago: " + safe(ex.getMessage());
             }
         }
 
@@ -728,7 +755,7 @@ public class VerificationService {
                 : proceso;
 
         return new ContractCompletionResult(
-                true,
+                okResult,
                 message,
                 email,
                 documento,

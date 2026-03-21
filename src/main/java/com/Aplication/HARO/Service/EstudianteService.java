@@ -28,6 +28,11 @@ public class EstudianteService {
     this.encoder = encoder;
   }
 
+  private String normalizeEmail(String email) {
+    if (email == null) return "";
+    return email.trim().toLowerCase(Locale.ROOT);
+  }
+
   /* ==========================
      Lecturas
      ========================== */
@@ -48,7 +53,7 @@ public class EstudianteService {
 
   @Transactional(readOnly = true)
   public Optional<Estudiante> buscarPorCorreo(String email) {
-    String normalizado = email == null ? "" : email.trim();
+    String normalizado = normalizeEmail(email);
     return repo.findByEmailNormalizadoVisible(normalizado);
   }
 
@@ -59,9 +64,10 @@ public class EstudianteService {
 
   @Transactional(readOnly = true)
   public boolean existePorCorreo(String email) {
-    String normalizado = email == null ? "" : email.trim();
+    String normalizado = normalizeEmail(email);
     if (normalizado.isBlank()) return false;
-    return repo.findByEmailNormalizadoVisible(normalizado).isPresent();
+    // Unicidad real: si existe aunque sea visible=false, no se permite repetir.
+    return repo.findByEmailNormalizado(normalizado).isPresent();
   }
 
   /* ==========================
@@ -71,6 +77,12 @@ public class EstudianteService {
     // por si llega con id desde el front
     in.setId(null);
 
+    // Normaliza email para evitar duplicados por mayusculas/espacios.
+    if (in.getEmail() != null) {
+      String normalizedEmail = normalizeEmail(in.getEmail());
+      in.setEmail(normalizedEmail.isBlank() ? null : normalizedEmail);
+    }
+
     // Validaciones de unicidad si vienen set
     if (in.getNumeroDocumento() != null && repo.existsByNumeroDocumento(in.getNumeroDocumento())) {
       throw new IllegalStateException("Ya existe un estudiante con ese número de documento: " + in.getNumeroDocumento());
@@ -78,7 +90,7 @@ public class EstudianteService {
     if (in.getUsuario() != null && repo.existsByUsuarioIgnoreCase(in.getUsuario())) {
       throw new IllegalStateException("El usuario ya existe: " + in.getUsuario());
     }
-    if (in.getEmail() != null && repo.existsByEmailIgnoreCase(in.getEmail())) {
+    if (in.getEmail() != null && repo.findByEmailNormalizado(in.getEmail()).isPresent()) {
       throw new IllegalStateException("El correo ya existe: " + in.getEmail());
     }
 
@@ -143,11 +155,26 @@ public class EstudianteService {
     }
 
     // Email (validar cambio con unicidad)
-    if (incoming.getEmail() != null && !incoming.getEmail().equalsIgnoreCase(db.getEmail())) {
-      if (repo.existsByEmailIgnoreCase(incoming.getEmail())) {
-        throw new IllegalStateException("El correo ya existe: " + incoming.getEmail());
+    if (incoming.getEmail() != null) {
+      String normalized = normalizeEmail(incoming.getEmail());
+      String newEmail = normalized.isBlank() ? null : normalized;
+      String currentEmail = db.getEmail() == null ? null : normalizeEmail(db.getEmail());
+
+      boolean changed =
+          (newEmail == null && currentEmail != null) ||
+          (newEmail != null && (currentEmail == null || !newEmail.equalsIgnoreCase(currentEmail)));
+
+      if (changed) {
+        if (newEmail != null) {
+          Optional<Estudiante> existing = repo.findByEmailNormalizado(newEmail);
+          if (existing.isPresent()
+              && existing.get().getId() != null
+              && !existing.get().getId().equals(db.getId())) {
+            throw new IllegalStateException("El correo ya existe: " + newEmail);
+          }
+        }
+        db.setEmail(newEmail);
       }
-      db.setEmail(incoming.getEmail());
     }
 
     // Documento (si lo permites editar)

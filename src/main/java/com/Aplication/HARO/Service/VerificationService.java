@@ -8,7 +8,6 @@ import com.Aplication.HARO.Repository.OtpTokenRepository;
 import com.Aplication.HARO.Security.OtpHasher;
 import jakarta.annotation.PostConstruct;
 import jakarta.mail.internet.InternetAddress;
-import main.java.com.Aplication.HARO.Service.ContractEnrollmentFinalizeService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1073,8 +1072,7 @@ public class VerificationService {
         return "\uD83C\uDF93 \u00a1Ya eres estudiante de HARO!\n\n"
                 + "\u23F0 En tu pr\u00f3xima clase debes llegar 30 minutos antes para la toma de biom\u00e9tricos "
                 + "y finalizar tu proceso de matr\u00edcula.\n\n"
-                + "Gracias por escoger CEA HARO"
-                + "Si necesitas ayuda, escribe *ASESOR* o Terminar.";
+                + "Si necesitas ayuda, escribe *ASESOR*.";
     }
 
     private void sendWhatsappText(String normalizedPhone, String message) {

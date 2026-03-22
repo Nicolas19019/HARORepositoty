@@ -1020,6 +1020,7 @@ public class VerificationService {
     private String buildContractReceivedWhatsappMessage(ChatbotMatriculaProceso proceso, Long studentId) {
         StringBuilder message = new StringBuilder()
                 .append("\u2705 \u00a1Listo! Tu contrato fue recibido.\n\n")
+                .append("\uD83D\uDCCD Ac\u00e9rcate a la academia para registrar tus datos biom\u00e9tricos.\n\n")
                 .append("\uD83D\uDCDD Categor\u00eda: ").append(safe(proceso.getCategoria())).append("\n")
                 .append("\uD83C\uDD94 Documento: ").append(safe(proceso.getNumeroDocumento())).append("\n")
                 .append("Ref estudiante: ").append(studentId).append("\n\n");
@@ -1040,7 +1041,8 @@ public class VerificationService {
         return "\uD83C\uDF93 \u00a1Ya eres estudiante de HARO!\n\n"
                 + "\u23F0 En tu pr\u00f3xima clase debes llegar 30 minutos antes para la toma de biom\u00e9tricos "
                 + "y finalizar tu proceso de matr\u00edcula.\n\n"
-                + "Si necesitas ayuda, escribe *ASESOR*.";
+                + "Gracias por escoger CEA HARO.\n\n"
+                + "Ya puedes escribir MENU para volver al men\u00fa o TERMINAR para salir.";
     }
 
     private void sendWhatsappText(String normalizedPhone, String message) {

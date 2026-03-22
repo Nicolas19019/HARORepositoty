@@ -3,7 +3,6 @@ package com.Aplication.HARO.Service;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Model.OtpToken;
-import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
 import com.Aplication.HARO.Repository.OtpTokenRepository;
 import com.Aplication.HARO.Security.OtpHasher;
 import jakarta.annotation.PostConstruct;
@@ -51,7 +50,6 @@ public class VerificationService {
     };
 
     private final OtpTokenRepository repo;
-    private final ChatbotMatriculaProcesoRepository procesoRepository;
     private final MailService mail;
     private final EstudianteService estudianteService;
     private final ChatbotProcesoService chatbotProcesoService;
@@ -119,7 +117,6 @@ public class VerificationService {
     private final RestTemplate restTemplate = new RestTemplate();
 
     public VerificationService(OtpTokenRepository repo,
-                               ChatbotMatriculaProcesoRepository procesoRepository,
                                MailService mail,
                                EstudianteService estudianteService,
                                ChatbotProcesoService chatbotProcesoService,
@@ -129,7 +126,6 @@ public class VerificationService {
                                ObjectProvider<VerificationService> selfProvider,
                                PlatformTransactionManager txManager) {
         this.repo = repo;
-        this.procesoRepository = procesoRepository;
         this.mail = mail;
         this.estudianteService = estudianteService;
         this.chatbotProcesoService = chatbotProcesoService;
@@ -786,14 +782,7 @@ public class VerificationService {
         try {
             Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
             if (procesoOpt.isEmpty()) return false;
-            Optional<ChatbotMatriculaProceso> claimedOpt =
-                    claimEnrollmentWhatsappNotification(procesoOpt.get().getId());
-            if (claimedOpt.isEmpty()) {
-                log.info("Notificacion de contrato ya enviada previamente. email={} studentId={}",
-                        email, studentId);
-                return false;
-            }
-            return notifyContractCompletionByWhatsApp(claimedOpt.get(), studentId);
+            return notifyContractCompletionByWhatsApp(procesoOpt.get(), studentId);
         } catch (Exception ex) {
             log.warn("La matricula se activo, pero fallo la notificacion de WhatsApp para email={}: {}", email, ex.getMessage());
             return false;
@@ -886,7 +875,6 @@ public class VerificationService {
                     studentId = contractEnrollmentFinalizeService.forceFinalizeEnrollment(documento);
                     if (studentId != null) {
                         message = "Contrato cargado correctamente. Firma y matricula finalizadas.";
-                        notifyContractCompletionAfterCommit(email, studentId);
                     } else {
                         message = "Contrato cargado correctamente. Firma completada; la matricula queda pendiente.";
                     }
@@ -983,27 +971,6 @@ public class VerificationService {
             }
         }
         return x;
-    }
-
-    private Optional<ChatbotMatriculaProceso> claimEnrollmentWhatsappNotification(Long procesoId) {
-        if (procesoId == null) return Optional.empty();
-
-        ChatbotMatriculaProceso claimed = newTx(TransactionDefinition.PROPAGATION_REQUIRES_NEW).execute(status -> {
-            Optional<ChatbotMatriculaProceso> lockedOpt = procesoRepository.findByIdForUpdate(procesoId);
-            if (lockedOpt.isEmpty()) {
-                return null;
-            }
-
-            ChatbotMatriculaProceso locked = lockedOpt.get();
-            if (locked.getEnrollmentWhatsappSentAt() != null) {
-                return null;
-            }
-
-            locked.setEnrollmentWhatsappSentAt(Instant.now());
-            return procesoRepository.saveAndFlush(locked);
-        });
-
-        return Optional.ofNullable(claimed);
     }
 
     private boolean notifyContractCompletionByWhatsApp(ChatbotMatriculaProceso proceso, Long studentId) {

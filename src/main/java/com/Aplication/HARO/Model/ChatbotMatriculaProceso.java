@@ -86,9 +86,6 @@ public class ChatbotMatriculaProceso {
     @Column(name = "enrolled_at")
     private Instant enrolledAt;
 
-    @Column(name = "enrollment_whatsapp_sent_at")
-    private Instant enrollmentWhatsappSentAt;
-
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -275,14 +272,6 @@ public class ChatbotMatriculaProceso {
 
     public void setEnrolledAt(Instant enrolledAt) {
         this.enrolledAt = enrolledAt;
-    }
-
-    public Instant getEnrollmentWhatsappSentAt() {
-        return enrollmentWhatsappSentAt;
-    }
-
-    public void setEnrollmentWhatsappSentAt(Instant enrollmentWhatsappSentAt) {
-        this.enrollmentWhatsappSentAt = enrollmentWhatsappSentAt;
     }
 
     public Instant getCreatedAt() {

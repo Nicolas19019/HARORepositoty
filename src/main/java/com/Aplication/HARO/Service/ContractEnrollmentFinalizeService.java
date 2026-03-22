@@ -1,4 +1,4 @@
-package main.java.com.Aplication.HARO.Service;
+package com.Aplication.HARO.Service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;

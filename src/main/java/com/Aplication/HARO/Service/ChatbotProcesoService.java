@@ -665,8 +665,9 @@ private String paymentConfirmationUrl;
         nuevo.setEstado("Activo");
         nuevo.setVisible(true);
         nuevo.setUsuario(generateUniqueUsername(profile.email(), doc));
-        // Si no llega contrasena, EstudianteService asigna default seguro
-        nuevo.setContrasena(trim(proceso.getStudentPasswordHash()).isBlank() ? null : proceso.getStudentPasswordHash());
+        // La contrasena no debe venir del usuario en el flujo de contrato.
+        // El servidor asigna una clave temporal (ver EstudianteService) o un flujo dedicado.
+        nuevo.setContrasena(null);
 
         Estudiante created = estudianteService.createEstudiante(nuevo);
         ensureEstadoCuentaForStudent(proceso, created.getId());
@@ -775,7 +776,7 @@ private String paymentConfirmationUrl;
             nuevo.setEstado("Activo");
             nuevo.setVisible(true);
             nuevo.setUsuario(generateUniqueUsername(profile.email(), doc));
-            nuevo.setContrasena(trim(proceso.getStudentPasswordHash()).isBlank() ? null : proceso.getStudentPasswordHash());
+            nuevo.setContrasena(null);
 
             Estudiante created = estudianteService.createEstudiante(nuevo);
             studentId = created.getId();

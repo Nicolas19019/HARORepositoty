@@ -39,12 +39,17 @@ public class EstudianteController {
 	@PostMapping
 	public ResponseEntity<Estudiante> create(@RequestBody Estudiante e) {
 		e.setId(null); // <-- CLAVE: garantiza INSERT
+		// La contrasena no debe venir desde el cliente por este endpoint.
+		// El servidor la gestiona (default o flujo dedicado de cambio de clave).
+		e.setContrasena(null);
 		Estudiante created = service.createEstudiante(e);
 		return ResponseEntity.created(URI.create("/api/estudiantes/" + created.getId())).body(created);
 	}
 
 	@PutMapping("/{id}")
 	public Estudiante update(@PathVariable long id, @RequestBody Estudiante e) {
+		// No permitir cambio de contrasena por este endpoint generico.
+		e.setContrasena(null);
 		// Mejor flujo: leer y aplicar cambios (ver service abajo)
 		return service.updateEstudiante(id, e);
 	}
@@ -122,7 +127,7 @@ public class EstudianteController {
 		out.put("requeridos", List.of(
 				"nombre", "apellido", "tipoDocumento", "numeroDocumento",
 				"categoria", "sede", "telefono", "email",
-				"direccion", "usuario", "contrasena"));
+				"direccion", "usuario"));
 		out.put("opcionales", List.of(
 				"tipoEstudiante", "horas", "tipoPase",
 				"aproboExamenTeorico", "estado", "visible", "fotoPerfil"));
@@ -132,6 +137,7 @@ public class EstudianteController {
 		reglas.put("numeroDocumento", "Debe ser único");
 		reglas.put("email", "Debe ser único");
 		reglas.put("usuario", "Debe ser único");
+		reglas.put("contrasena", "No se recibe por este endpoint; se gestiona por un flujo dedicado.");
 		reglas.put("tipoPase", "Solo permite: carro, moto, carro,moto");
 		reglas.put("horas", "No puede ser negativo");
 		out.put("reglas", reglas);

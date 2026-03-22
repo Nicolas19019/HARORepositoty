@@ -99,8 +99,8 @@ public class ContractChatbotSyncController {
     // WhatsApp notification (best effort).
     if (studentId != null && StringUtils.hasText(email)) {
       try {
-        verificationService.notifyContractCompletionAfterCommit(email, studentId);
-        out.put("whatsappNotified", true);
+        boolean sent = verificationService.notifyContractCompletionAfterCommit(email, studentId);
+        out.put("whatsappNotified", sent);
       } catch (Exception ex) {
         out.put("whatsappNotified", false);
       }
@@ -128,4 +128,3 @@ public class ContractChatbotSyncController {
     return "";
   }
 }
-

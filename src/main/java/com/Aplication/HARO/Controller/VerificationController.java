@@ -141,20 +141,22 @@ public ResponseEntity<?> completeContract(@RequestBody VerifyReq req) {
       }
     }
 
-    if (result.ok() && result.studentId() != null) {
-        svc.notifyContractCompletionAfterCommit(result.email(), result.studentId());
-    }
+     boolean whatsappNotified = false;
+     if (result.ok() && result.studentId() != null) {
+         whatsappNotified = svc.notifyContractCompletionAfterCommit(result.email(), result.studentId());
+     }
 
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("ok", result.ok());
     body.put("message", result.message());
     body.put("email", result.email());
     body.put("document", result.documento());
-    body.put("studentId", result.studentId());
-    body.put("flowStatus", result.flowStatus());
-    body.put("paymentStatus", result.paymentStatus());
-    body.put("mode", mode);
-    body.put("recovered", recovered);
+     body.put("studentId", result.studentId());
+     body.put("flowStatus", result.flowStatus());
+     body.put("paymentStatus", result.paymentStatus());
+     body.put("whatsappNotified", whatsappNotified);
+     body.put("mode", mode);
+     body.put("recovered", recovered);
 
     return result.ok()
             ? ResponseEntity.ok(body)

@@ -1,4 +1,4 @@
-// src/main/java/com/Aplication/HARO/Service/VerificationService.java
+﻿// src/main/java/com/Aplication/HARO/Service/VerificationService.java
 package com.Aplication.HARO.Service;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
@@ -23,6 +23,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.http.ResponseEntity;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -105,6 +108,11 @@ public class VerificationService {
     // En el flujo de contratos, se espera notificar al usuario al finalizar.
     @Value("${chatbot.auto-send-enrollment-whatsapp:true}")
     private boolean autoSendEnrollmentWhatsapp;
+
+    @Value("${app.internal-api-base-url:}")
+    private String internalApiBaseUrl;
+
+    private final RestTemplate restTemplate = new RestTemplate();
 
     public VerificationService(OtpTokenRepository repo,
                                MailService mail,
@@ -766,15 +774,17 @@ public class VerificationService {
         );
     }
 
-    public void notifyContractCompletionAfterCommit(String email, Long studentId) {
-        if (!autoSendEnrollmentWhatsapp) return;
-        if (studentId == null) return;
+    public boolean notifyContractCompletionAfterCommit(String email, Long studentId) {
+        if (!autoSendEnrollmentWhatsapp) return false;
+        if (studentId == null) return false;
 
         try {
             Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
-            procesoOpt.ifPresent(proceso -> notifyContractCompletionByWhatsApp(proceso, studentId));
+            if (procesoOpt.isEmpty()) return false;
+            return notifyContractCompletionByWhatsApp(procesoOpt.get(), studentId);
         } catch (Exception ex) {
             log.warn("La matricula se activo, pero fallo la notificacion de WhatsApp para email={}: {}", email, ex.getMessage());
+            return false;
         }
     }
 
@@ -962,14 +972,13 @@ public class VerificationService {
         }
         return x;
     }
-
-    private void notifyContractCompletionByWhatsApp(ChatbotMatriculaProceso proceso, Long studentId) {
-        if (!autoSendEnrollmentWhatsapp) return;
-        if (proceso == null || studentId == null) return;
+    private boolean notifyContractCompletionByWhatsApp(ChatbotMatriculaProceso proceso, Long studentId) {
+        if (!autoSendEnrollmentWhatsapp) return false;
+        if (proceso == null || studentId == null) return false;
         if (!waService.getConfigStatus().ready()) {
             log.warn("WhatsApp no configurado. Se omite notificacion de contrato. doc={} email={}",
                     safe(proceso.getNumeroDocumento()), safe(proceso.getEmail()));
-            return;
+            return false;
         }
 
         String phone = trim(proceso.getPhone());
@@ -979,21 +988,54 @@ public class VerificationService {
         if (!StringUtils.hasText(phone)) {
             log.warn("No hay telefono para notificar por WhatsApp. doc={} email={}",
                     safe(proceso.getNumeroDocumento()), safe(proceso.getEmail()));
-            return;
+            return false;
         }
 
+        String normalizedPhone = normalizePhone(phone);
+        String message =
+                "\u2705 \u00a1Listo! Tu contrato fue recibido.\n\n" +
+                "\uD83D\uDCCD Ac\u00e9rcate a la academia para registrar tus datos biom\u00e9tricos.\n\n" +
+                "\uD83D\uDCDD Categor\u00eda: " + safe(proceso.getCategoria()) + "\n" +
+                "\uD83C\uDD94 Documento: " + safe(proceso.getNumeroDocumento()) + "\n" +
+                "Ref estudiante: " + studentId + "\n\n" +
+                "Si necesitas ayuda, escribe *ASESOR*.";
+
+        log.info("\uD83D\uDCF2 Preparando envio de confirmacion de contrato por WhatsApp a {} doc={} email={}",
+                maskPhone(normalizedPhone), safe(proceso.getNumeroDocumento()), safe(proceso.getEmail()));
+
         try {
-            waService.sendTextMessage(
-                    phone,
-                    "✅ ¡Listo! Tu contrato fue recibido.\n\n" +
-                            "📍 Acércate a la academia para registrar tus datos biométricos.\n\n" +
-                            "📝 Categoría: " + safe(proceso.getCategoria()) + "\n" +
-                            "🆔 Documento: " + safe(proceso.getNumeroDocumento()) + "\n" +
-                            "🧾 Ref estudiante: " + studentId + "\n\n" +
-                            "Si necesitas ayuda, escribe *ASESOR*."
-            );
-        } catch (Exception ignored) {
-            // La activacion no debe fallar por un error de notificacion.
+            if (StringUtils.hasText(internalApiBaseUrl)) {
+                String base = trim(internalApiBaseUrl);
+                while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+                String url = base + "/api/whatsapp/text/send";
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("to", normalizedPhone);
+                payload.put("text", message);
+                payload.put("message", message);
+
+                ResponseEntity<Map> response = restTemplate.postForEntity(url, payload, Map.class);
+                if (response.getStatusCode().is2xxSuccessful()) {
+                    log.info("\u2705 Mensaje de WhatsApp enviado correctamente (contrato completo) to={}",
+                            maskPhone(normalizedPhone));
+                    return true;
+                }
+                log.warn("\u26a0\ufe0f WhatsApp endpoint respondio con estado no exitoso (contrato completo). statusCode={} to={}",
+                        response.getStatusCode().value(), maskPhone(normalizedPhone));
+                return false;
+            }
+
+            waService.sendTextMessage(normalizedPhone, message);
+            log.info("\u2705 Mensaje de WhatsApp enviado correctamente (contrato completo) to={}",
+                    maskPhone(normalizedPhone));
+            return true;
+        } catch (RestClientException ex) {
+            log.error("\u274c Error enviando WhatsApp via endpoint interno (contrato completo) to={}: {}",
+                    maskPhone(normalizedPhone), ex.getMessage(), ex);
+            return false;
+        } catch (Exception ex) {
+            log.error("\u274c Error enviando WhatsApp (contrato completo) to={}: {}",
+                    maskPhone(normalizedPhone), ex.getMessage(), ex);
+            return false;
         }
     }
 
@@ -1188,6 +1230,22 @@ public class VerificationService {
             return logoUrl.replace("\"", "%22");
         }
         return "cid:" + CID;
+    }
+
+    private static String normalizePhone(String value) {
+        String normalized = trim(value).replaceAll("[\\s\\-()]", "");
+        if (normalized.startsWith("+")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized;
+    }
+
+    private static String maskPhone(String phone) {
+        String normalized = normalizePhone(phone);
+        if (!StringUtils.hasText(normalized) || normalized.length() <= 4) {
+            return "****";
+        }
+        return "*".repeat(normalized.length() - 4) + normalized.substring(normalized.length() - 4);
     }
 
     private static String trim(String s) { return s == null ? "" : s.trim(); }

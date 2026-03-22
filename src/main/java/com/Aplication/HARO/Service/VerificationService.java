@@ -8,7 +8,6 @@ import com.Aplication.HARO.Security.OtpHasher;
 import jakarta.annotation.PostConstruct;
 import jakarta.mail.internet.InternetAddress;
 
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -111,6 +110,9 @@ public class VerificationService {
 
     @Value("${app.internal-api-base-url:}")
     private String internalApiBaseUrl;
+
+    @Value("${chatbot.theory.whatsapp-group-link:}")
+    private String theoryWhatsappGroupLink;
 
     private final RestTemplate restTemplate = new RestTemplate();
 
@@ -466,36 +468,37 @@ public class VerificationService {
         final String codeHash = OtpHasher.sha256(code);
         Optional<OtpToken> matchingOpt =
                 repo.findTopByEmailAndPurposeAndOtpHashAndConsumedAtIsNullOrderByIdDesc(email, purpose, codeHash);
-
-        // Importante: /contract/access lo llama el navegador al abrir el link.
-        // No debe gastar intentos ni consumir el codigo (eso solo ocurre en /contract/complete).
-        if (matchingOpt.isEmpty()) {
-            Optional<OtpToken> lastOpt = repo.findTopByEmailAndPurposeAndConsumedAtIsNullOrderByIdDesc(email, purpose);
-            if (lastOpt.isEmpty()) {
-                return new ContractAccessResult(false, "Codigo invalido o vencido", null);
-            }
-
-            OtpToken last = lastOpt.get();
-            if (last.getExpiresAt() == null || now.isAfter(last.getExpiresAt())) {
-                last.setConsumedAt(now);
-                repo.save(last);
-                return new ContractAccessResult(false, "Codigo vencido", null);
-            }
-
-            // Hay un codigo vigente para este email, pero no coincide con el del enlace.
-            // Normalmente pasa cuando el usuario abre un link viejo y ya se genero otro mas reciente.
-            return new ContractAccessResult(
-                    false,
-                    "Este enlace ya no es el mas reciente. Usa el ultimo enlace recibido o solicita uno nuevo.",
-                    last.getExpiresAt()
-            );
+        Optional<OtpToken> lastOpt = matchingOpt.isPresent()
+                ? matchingOpt
+                : repo.findTopByEmailAndPurposeAndConsumedAtIsNullOrderByIdDesc(email, purpose);
+        if (lastOpt.isEmpty()) {
+            return new ContractAccessResult(false, "Codigo invalido o vencido", null);
         }
 
-        OtpToken token = matchingOpt.get();
+        OtpToken token = lastOpt.get();
         if (token.getExpiresAt() == null || now.isAfter(token.getExpiresAt())) {
             token.setConsumedAt(now);
             repo.save(token);
             return new ContractAccessResult(false, "Codigo vencido", null);
+        }
+
+        int attempts = Optional.ofNullable(token.getAttempts())
+                .map(Number::intValue)
+                .orElse(0);
+        if (attempts >= maxAttempts) {
+            token.setConsumedAt(now);
+            repo.save(token);
+            return new ContractAccessResult(false, "Codigo invalido por maximo de intentos", null);
+        }
+
+        boolean ok = codeHash.equals(token.getOtpHash());
+        if (!ok) {
+            token.setAttempts(attempts + 1);
+            if ((attempts + 1) >= maxAttempts) {
+                token.setConsumedAt(now);
+            }
+            repo.save(token);
+            return new ContractAccessResult(false, "Codigo invalido o vencido", null);
         }
 
         return new ContractAccessResult(true, "Codigo valido", token.getExpiresAt());
@@ -877,7 +880,6 @@ public class VerificationService {
                     studentId = contractEnrollmentFinalizeService.forceFinalizeEnrollment(documento);
                     if (studentId != null) {
                         message = "Contrato cargado correctamente. Firma y matricula finalizadas.";
-                        notifyContractCompletionAfterCommit(email, studentId);
                     } else {
                         message = "Contrato cargado correctamente. Firma completada; la matricula queda pendiente.";
                     }
@@ -975,6 +977,7 @@ public class VerificationService {
         }
         return x;
     }
+
     private boolean notifyContractCompletionByWhatsApp(ChatbotMatriculaProceso proceso, Long studentId) {
         if (!autoSendEnrollmentWhatsapp) return false;
         if (proceso == null || studentId == null) return false;
@@ -995,51 +998,75 @@ public class VerificationService {
         }
 
         String normalizedPhone = normalizePhone(phone);
-        String message =
-                "\u2705 \u00a1Listo! Tu contrato fue recibido.\n\n" +
-                "\uD83D\uDCCD Ac\u00e9rcate a la academia para registrar tus datos biom\u00e9tricos.\n\n" +
-                "\uD83D\uDCDD Categor\u00eda: " + safe(proceso.getCategoria()) + "\n" +
-                "\uD83C\uDD94 Documento: " + safe(proceso.getNumeroDocumento()) + "\n" +
-                "Ref estudiante: " + studentId + "\n\n" +
-                "Si necesitas ayuda, escribe *ASESOR*.";
+        String firstMessage = buildContractReceivedWhatsappMessage(proceso, studentId);
+        String secondMessage = buildNewStudentWhatsappMessage();
 
         log.info("\uD83D\uDCF2 Preparando envio de confirmacion de contrato por WhatsApp a {} doc={} email={}",
                 maskPhone(normalizedPhone), safe(proceso.getNumeroDocumento()), safe(proceso.getEmail()));
 
         try {
-            if (StringUtils.hasText(internalApiBaseUrl)) {
-                String base = trim(internalApiBaseUrl);
-                while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
-                String url = base + "/api/whatsapp/text/send";
-                Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("to", normalizedPhone);
-                payload.put("text", message);
-                payload.put("message", message);
-
-                ResponseEntity<Map> response = restTemplate.postForEntity(url, payload, Map.class);
-                if (response.getStatusCode().is2xxSuccessful()) {
-                    log.info("\u2705 Mensaje de WhatsApp enviado correctamente (contrato completo) to={}",
-                            maskPhone(normalizedPhone));
-                    return true;
-                }
-                log.warn("\u26a0\ufe0f WhatsApp endpoint respondio con estado no exitoso (contrato completo). statusCode={} to={}",
-                        response.getStatusCode().value(), maskPhone(normalizedPhone));
-                return false;
-            }
-
-            waService.sendTextMessage(normalizedPhone, message);
-            log.info("\u2705 Mensaje de WhatsApp enviado correctamente (contrato completo) to={}",
+            sendWhatsappText(normalizedPhone, firstMessage);
+            sendWhatsappText(normalizedPhone, secondMessage);
+            log.info("\u2705 Secuencia de WhatsApp enviada correctamente (contrato completo) to={}",
                     maskPhone(normalizedPhone));
             return true;
         } catch (RestClientException ex) {
-            log.error("\u274c Error enviando WhatsApp via endpoint interno (contrato completo) to={}: {}",
+            log.error("\u274c Error enviando secuencia de WhatsApp via endpoint interno (contrato completo) to={}: {}",
                     maskPhone(normalizedPhone), ex.getMessage(), ex);
             return false;
         } catch (Exception ex) {
-            log.error("\u274c Error enviando WhatsApp (contrato completo) to={}: {}",
+            log.error("\u274c Error enviando secuencia de WhatsApp (contrato completo) to={}: {}",
                     maskPhone(normalizedPhone), ex.getMessage(), ex);
             return false;
         }
+    }
+
+    private String buildContractReceivedWhatsappMessage(ChatbotMatriculaProceso proceso, Long studentId) {
+        StringBuilder message = new StringBuilder()
+                .append("\u2705 \u00a1Listo! Tu contrato fue recibido.\n\n")
+                .append("\uD83D\uDCCD Ac\u00e9rcate a la academia para registrar tus datos biom\u00e9tricos.\n\n")
+                .append("\uD83D\uDCDD Categor\u00eda: ").append(safe(proceso.getCategoria())).append("\n")
+                .append("\uD83C\uDD94 Documento: ").append(safe(proceso.getNumeroDocumento())).append("\n")
+                .append("Ref estudiante: ").append(studentId).append("\n\n");
+
+        if (StringUtils.hasText(theoryWhatsappGroupLink)) {
+            message.append("\uD83D\uDC65 Grupo de WhatsApp para programaci\u00f3n de clases te\u00f3ricas:\n")
+                    .append(trim(theoryWhatsappGroupLink))
+                    .append("\n\n");
+        }
+
+        message.append("\uD83D\uDCC5 En este grupo se enviar\u00e1 la programaci\u00f3n de las clases del d\u00eda siguiente.\n\n")
+                .append("Si necesitas ayuda, escribe *ASESOR*.");
+
+        return message.toString();
+    }
+
+    private String buildNewStudentWhatsappMessage() {
+        return "\uD83C\uDF93 \u00a1Ya eres estudiante de HARO!\n\n"
+                + "\u23F0 En tu pr\u00f3xima clase debes llegar 30 minutos antes para la toma de biom\u00e9tricos "
+                + "y finalizar tu proceso de matr\u00edcula.\n\n"
+                + "Gracias por escoger CEA HARO.\n\n"
+                + "Ya puedes escribir MENU para volver al men\u00fa o TERMINAR para salir.";
+    }
+
+    private void sendWhatsappText(String normalizedPhone, String message) {
+        if (StringUtils.hasText(internalApiBaseUrl)) {
+            String base = trim(internalApiBaseUrl);
+            while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+            String url = base + "/api/whatsapp/text/send";
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("to", normalizedPhone);
+            payload.put("text", message);
+            payload.put("message", message);
+
+            ResponseEntity<Map> response = restTemplate.postForEntity(url, payload, Map.class);
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                throw new RestClientException("Estado no exitoso al enviar WhatsApp: " + response.getStatusCode().value());
+            }
+            return;
+        }
+
+        waService.sendTextMessage(normalizedPhone, message);
     }
 
     private boolean hasAllRequiredSignedContracts(String signedContractFilesJson) {

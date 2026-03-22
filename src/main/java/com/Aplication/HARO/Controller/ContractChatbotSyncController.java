@@ -1,7 +1,6 @@
 package com.Aplication.HARO.Controller;
 
 import com.Aplication.HARO.Service.ChatbotProcesoService;
-import com.Aplication.HARO.Service.VerificationService;
 import jakarta.validation.constraints.Email;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +21,7 @@ import java.util.Map;
  * they were surfaced as 500s.
  *
  * This controller provides compatible endpoints (best-effort) and retries the key operation:
- * create/update student + estado de cuenta + pago, then WhatsApp notification.
+ * create/update student + estado de cuenta + pago.
  */
 @RestController
 public class ContractChatbotSyncController {
@@ -30,12 +29,9 @@ public class ContractChatbotSyncController {
   private static final Logger log = LoggerFactory.getLogger(ContractChatbotSyncController.class);
 
   private final ChatbotProcesoService chatbotProcesoService;
-  private final VerificationService verificationService;
 
-  public ContractChatbotSyncController(ChatbotProcesoService chatbotProcesoService,
-                                       VerificationService verificationService) {
+  public ContractChatbotSyncController(ChatbotProcesoService chatbotProcesoService) {
     this.chatbotProcesoService = chatbotProcesoService;
-    this.verificationService = verificationService;
   }
 
   // One handler for all "sync" endpoints used by the contract UI.
@@ -96,15 +92,7 @@ public class ContractChatbotSyncController {
       out.put("message", "Falta documento para finalizar matricula.");
     }
 
-    // WhatsApp notification (best effort).
-    if (studentId != null && StringUtils.hasText(email)) {
-      try {
-        boolean sent = verificationService.notifyContractCompletionAfterCommit(email, studentId);
-        out.put("whatsappNotified", sent);
-      } catch (Exception ex) {
-        out.put("whatsappNotified", false);
-      }
-    }
+    out.put("whatsappNotified", false);
 
     return ResponseEntity.ok(out);
   }

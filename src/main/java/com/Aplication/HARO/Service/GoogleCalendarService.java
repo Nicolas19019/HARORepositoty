@@ -8,6 +8,7 @@ import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.DateTime;
 import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.GoogleCredentials;
+import com.google.auth.oauth2.UserCredentials;
 import com.google.api.services.calendar.Calendar;
 import com.google.api.services.calendar.CalendarScopes;
 import com.google.api.services.calendar.model.ConferenceData;
@@ -43,6 +44,7 @@ public class GoogleCalendarService {
 
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
     private static final String AUTH_MODE_SERVICE_ACCOUNT = "service_account";
+    private static final String AUTH_MODE_OAUTH_REFRESH_TOKEN = "oauth_refresh_token";
     private static final String AUTH_MODE_AUTO = "auto";
 
     private final String authMode;
@@ -53,6 +55,10 @@ public class GoogleCalendarService {
     private final int httpConnectTimeoutMs;
     private final int httpReadTimeoutMs;
 
+    private final String oauthClientId;
+    private final String oauthClientSecret;
+    private final String oauthRefreshToken;
+
     private volatile Calendar calendarClient;
 
     public GoogleCalendarService(
@@ -62,7 +68,10 @@ public class GoogleCalendarService {
             @Value("${google.calendar.application-name:HARO}") String applicationName,
             @Value("${google.calendar.default-timezone:America/Bogota}") String defaultTimezone,
             @Value("${google.calendar.http.connect-timeout-ms:5000}") int httpConnectTimeoutMs,
-            @Value("${google.calendar.http.read-timeout-ms:15000}") int httpReadTimeoutMs
+            @Value("${google.calendar.http.read-timeout-ms:15000}") int httpReadTimeoutMs,
+            @Value("${google.calendar.oauth.client-id:}") String oauthClientId,
+            @Value("${google.calendar.oauth.client-secret:}") String oauthClientSecret,
+            @Value("${google.calendar.oauth.refresh-token:}") String oauthRefreshToken
     ) {
         this.authMode = authMode;
         this.fallbackToTemplateLink = fallbackToTemplateLink;
@@ -71,6 +80,9 @@ public class GoogleCalendarService {
         this.defaultTimezone = defaultTimezone;
         this.httpConnectTimeoutMs = Math.max(1000, httpConnectTimeoutMs);
         this.httpReadTimeoutMs = Math.max(1000, httpReadTimeoutMs);
+        this.oauthClientId = trim(oauthClientId);
+        this.oauthClientSecret = trim(oauthClientSecret);
+        this.oauthRefreshToken = trim(oauthRefreshToken);
     }
 
     public record ReunionCreada(
@@ -114,6 +126,7 @@ public class GoogleCalendarService {
             String calendarId,
             boolean crearMeet
     ) {
+        String mode = resolveAuthMode();
         OffsetDateTime inicio = parseFecha("inicio", inicioIso8601);
         OffsetDateTime fin = parseFecha("fin", finIso8601);
         if (!fin.isAfter(inicio)) {
@@ -143,10 +156,25 @@ public class GoogleCalendarService {
 
         List<EventAttendee> attendees = toAttendees(asistentes);
         if (!attendees.isEmpty()) {
+            // Restriccion real del API: con service accounts sin Domain-Wide Delegation no se pueden enviar invitaciones.
+            if (AUTH_MODE_SERVICE_ACCOUNT.equals(mode)) {
+                throw new IllegalStateException(
+                        "No se pueden invitar asistentes usando service_account sin Domain-Wide Delegation. " +
+                        "Cambia GOOGLE_CALENDAR_AUTH_MODE a oauth_refresh_token (usuario) o configura delegacion en Google Workspace."
+                );
+            }
             event.setAttendees(attendees);
         }
 
         if (crearMeet) {
+            // En nuestra experiencia con calendarios compartidos a service accounts (sin delegacion) esto falla.
+            // Mejor dar un error claro para no ocultar el problema.
+            if (AUTH_MODE_SERVICE_ACCOUNT.equals(mode)) {
+                throw new IllegalStateException(
+                        "No se pudo crear Google Meet en modo service_account. " +
+                        "Usa oauth_refresh_token (usuario) o delegacion de dominio (Google Workspace) para crear Meet automaticamente."
+                );
+            }
             ConferenceData conf = new ConferenceData().setCreateRequest(
                     new CreateConferenceRequest()
                             .setRequestId(UUID.randomUUID().toString())
@@ -157,13 +185,7 @@ public class GoogleCalendarService {
 
         try {
             Calendar client = buildCalendarClient();
-            Calendar.Events.Insert insertRequest = client.events()
-                    .insert(calId, event)
-                    .setSendUpdates("all");
-            if (crearMeet) {
-                insertRequest.setConferenceDataVersion(1);
-            }
-            Event created = insertRequest.execute();
+            Event created = executeInsert(client, calId, event, crearMeet);
 
             String meetLink = crearMeet ? extractMeetLink(created) : null;
             return new ReunionCreada(
@@ -204,6 +226,34 @@ public class GoogleCalendarService {
         }
     }
 
+    private Event executeInsert(Calendar client, String calId, Event event, boolean crearMeet) throws Exception {
+        try {
+            Calendar.Events.Insert insertRequest = client.events()
+                    .insert(calId, event)
+                    .setSendUpdates("all");
+            if (crearMeet) {
+                insertRequest.setConferenceDataVersion(1);
+            }
+            return insertRequest.execute();
+        } catch (GoogleJsonResponseException e) {
+            // Si falla la conferencia, reintentamos sin Meet para no bloquear el agendamiento.
+            String detailMessage = e.getDetails() != null ? e.getDetails().getMessage() : "";
+            boolean conferenceInvalid = e.getStatusCode() == 400 &&
+                    (detailMessage != null && detailMessage.toLowerCase().contains("conference"));
+            if (crearMeet && conferenceInvalid) {
+                log.warn("No se pudo crear Meet automaticamente (calendarId={}). Se crea el evento sin Meet. Detalle: {}",
+                        calId, detailMessage);
+                Event clone = event.clone();
+                clone.setConferenceData(null);
+                Calendar.Events.Insert retry = client.events()
+                        .insert(calId, clone)
+                        .setSendUpdates("all");
+                return retry.execute();
+            }
+            throw e;
+        }
+    }
+
     private ReunionCreada fallbackOrThrow(String calId,
                                           String summary,
                                           String desc,
@@ -239,16 +289,17 @@ public class GoogleCalendarService {
 
             NetHttpTransport transport = GoogleNetHttpTransport.newTrustedTransport();
             String mode = resolveAuthMode();
-            if (!AUTH_MODE_SERVICE_ACCOUNT.equals(mode)) {
-                throw new IllegalStateException(
-                        "OAuth de usuario (oauth_user) no esta soportado en Cloud Run. " +
-                        "Configura GOOGLE_CALENDAR_AUTH_MODE=service_account y comparte el calendario con la cuenta de servicio."
-                );
-            }
             synchronized (this) {
                 cached = calendarClient;
                 if (cached != null) return cached;
-                Calendar built = buildServiceAccountClient(transport);
+                Calendar built;
+                if (AUTH_MODE_SERVICE_ACCOUNT.equals(mode)) {
+                    built = buildServiceAccountClient(transport);
+                } else if (AUTH_MODE_OAUTH_REFRESH_TOKEN.equals(mode)) {
+                    built = buildOAuthRefreshTokenClient(transport);
+                } else {
+                    throw new IllegalStateException("google.calendar.auth.mode invalido. Usa: service_account, oauth_refresh_token o auto.");
+                }
                 calendarClient = built;
                 return built;
             }
@@ -286,6 +337,37 @@ public class GoogleCalendarService {
             );
         }
     }
+
+    private Calendar buildOAuthRefreshTokenClient(NetHttpTransport transport) {
+        if (!StringUtils.hasText(oauthClientId) || !StringUtils.hasText(oauthClientSecret) || !StringUtils.hasText(oauthRefreshToken)) {
+            throw new IllegalStateException(
+                    "Faltan credenciales OAuth para Google Calendar. " +
+                            "Configura GOOGLE_CALENDAR_OAUTH_CLIENT_ID, GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET y GOOGLE_CALENDAR_OAUTH_REFRESH_TOKEN."
+            );
+        }
+        try {
+            GoogleCredentials credentials = UserCredentials.newBuilder()
+                    .setClientId(oauthClientId)
+                    .setClientSecret(oauthClientSecret)
+                    .setRefreshToken(oauthRefreshToken)
+                    .build()
+                    .createScoped(List.of(CalendarScopes.CALENDAR));
+
+            HttpCredentialsAdapter adapter = new HttpCredentialsAdapter(credentials);
+            return new Calendar.Builder(
+                    transport,
+                    JSON_FACTORY,
+                    request -> {
+                        adapter.initialize(request);
+                        request.setConnectTimeout(httpConnectTimeoutMs);
+                        request.setReadTimeout(httpReadTimeoutMs);
+                    }
+            ).setApplicationName(applicationName).build();
+
+        } catch (Exception e) {
+            throw new IllegalStateException("No se pudo inicializar Google Calendar con OAuth refresh token: " + e.getMessage(), e);
+        }
+    }
     private String resolveAuthMode() {
         String mode = trim(authMode).toLowerCase();
         if (mode.isBlank() || AUTH_MODE_AUTO.equals(mode)) {
@@ -295,13 +377,11 @@ public class GoogleCalendarService {
         if (AUTH_MODE_SERVICE_ACCOUNT.equals(mode)) {
             return mode;
         }
-        if ("oauth_user".equals(mode)) {
-            throw new IllegalStateException(
-                    "google.calendar.auth.mode=oauth_user no es soportado en produccion (Cloud Run). " +
-                    "Usa service_account (ADC) y comparte el calendario con la cuenta de servicio."
-            );
+        if (AUTH_MODE_OAUTH_REFRESH_TOKEN.equals(mode) || "oauth_user".equals(mode)) {
+            // "oauth_user" se acepta como alias para migraciones.
+            return AUTH_MODE_OAUTH_REFRESH_TOKEN;
         }
-        throw new IllegalStateException("google.calendar.auth.mode invalido. Usa: service_account o auto.");
+        throw new IllegalStateException("google.calendar.auth.mode invalido. Usa: service_account, oauth_refresh_token o auto.");
     }
 
     private String buildTemplateLink(String summary,

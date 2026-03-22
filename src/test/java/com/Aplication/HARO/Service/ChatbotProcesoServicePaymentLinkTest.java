@@ -5,9 +5,11 @@ import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
 import com.Aplication.HARO.Repository.ClaseRepository;
 import com.Aplication.HARO.Repository.EstadoCuentaRepository;
 import com.Aplication.HARO.Repository.EstudianteRepository;
+import com.Aplication.HARO.Repository.PagoRepository;
 import com.Aplication.HARO.Repository.ProfesorRepository;
 import com.Aplication.HARO.Repository.VehiculoRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.net.URI;
@@ -31,20 +33,24 @@ class ChatbotProcesoServicePaymentLinkTest {
         EstudianteRepository estudianteRepository = mock(EstudianteRepository.class);
         EstudianteService estudianteService = mock(EstudianteService.class);
         EstadoCuentaRepository estadoCuentaRepository = mock(EstadoCuentaRepository.class);
+        PagoRepository pagoRepository = mock(PagoRepository.class);
         ClaseRepository claseRepository = mock(ClaseRepository.class);
         ProfesorRepository profesorRepository = mock(ProfesorRepository.class);
         VehiculoRepository vehiculoRepository = mock(VehiculoRepository.class);
         GoogleCalendarService googleCalendarService = mock(GoogleCalendarService.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
 
         ChatbotProcesoService service = new ChatbotProcesoService(
                 procesoRepository,
                 estudianteRepository,
                 estudianteService,
                 estadoCuentaRepository,
+                pagoRepository,
                 claseRepository,
                 profesorRepository,
                 vehiculoRepository,
-                googleCalendarService
+                googleCalendarService,
+                passwordEncoder
         );
 
         ReflectionTestUtils.setField(service, "defaultPaymentLink", "https://payco.link/f536c9aa-1456-4ce4-b142-6d7417f71c9f");

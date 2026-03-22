@@ -2,6 +2,7 @@
 package com.Aplication.HARO.Controller;
 
 import com.Aplication.HARO.Service.VerificationService;
+import com.Aplication.HARO.Service.EstudianteService;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.MediaType;
@@ -26,6 +27,7 @@ public class VerificationController {
   private static final Logger log = LoggerFactory.getLogger(VerificationController.class);
 
   private final VerificationService svc;
+  private final EstudianteService estudianteService;
 
   // Feature flags (can be overridden via env vars on Cloud Run):
   // - app.contract.complete.use-v2 -> APP_CONTRACT_COMPLETE_USE_V2
@@ -36,8 +38,9 @@ public class VerificationController {
   @Value("${app.contract.complete.enable-recovery:true}")
   private boolean contractCompleteEnableRecovery;
 
-  public VerificationController(VerificationService svc) {
+  public VerificationController(VerificationService svc, EstudianteService estudianteService) {
     this.svc = svc;
+    this.estudianteService = estudianteService;
   }
 
   // El body es un JSON string: "user@example.com"
@@ -79,7 +82,28 @@ public class VerificationController {
     body.put("message", out.message());
     body.put("expiresAt", out.expiresAt());
     if (out.ok()) {
-      body.put("data", svc.buildContractAccessPayload(req.email()));
+      Map<String, Object> payload = svc.buildContractAccessPayload(req.email());
+
+      // Validacion temprana: si el estudiante ya existe por documento o correo,
+      // avisar de inmediato para no hacerle perder tiempo firmando.
+      String documento = payload.get("document") == null ? "" : String.valueOf(payload.get("document")).trim();
+      String contactEmail = payload.get("shared_contact_email") == null ? "" : String.valueOf(payload.get("shared_contact_email")).trim();
+
+      if (!documento.isBlank() && estudianteService.existePorNumeroDocumento(documento)) {
+        body.put("ok", false);
+        body.put("message", "La informacion ya existe: ya hay un estudiante registrado con ese numero de documento.");
+        body.remove("data");
+        return ResponseEntity.badRequest().body(body);
+      }
+
+      if (!contactEmail.isBlank() && estudianteService.existePorCorreo(contactEmail)) {
+        body.put("ok", false);
+        body.put("message", "La informacion ya existe: ya hay un estudiante registrado con ese correo.");
+        body.remove("data");
+        return ResponseEntity.badRequest().body(body);
+      }
+
+      body.put("data", payload);
       return ResponseEntity.ok(body);
     }
     return ResponseEntity.badRequest().body(body);

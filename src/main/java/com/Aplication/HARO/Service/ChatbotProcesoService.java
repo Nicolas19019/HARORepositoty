@@ -159,6 +159,7 @@ private String paymentConfirmationUrl;
                                      BigDecimal valorMulta,
                                      long horasRestantes,
                                      BigDecimal multasAcumuladas) {}
+    public record StudentDuplicateCheckResult(boolean exists, String reason) {}
     private record ContractStudentProfile(String nombre,
                                           String apellido,
                                           String tipoDocumento,
@@ -196,7 +197,7 @@ private String paymentConfirmationUrl;
                                                String categoria,
                                                String email,
                                                String telefono) {
-        return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, "", "");
+        return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, "");
     }
     @Transactional
     public ChatbotMatriculaProceso upsertDraft(String phone,
@@ -205,8 +206,7 @@ private String paymentConfirmationUrl;
                                                String categoria,
                                                String email,
                                                String telefono,
-                                               String direccion,
-                                               String studentPasswordRaw) {
+                                               String direccion) {
         String doc = normalizeDoc(documento);
         String mail = normalizeEmail(email);
         String cat = normalizeCategoria(categoria);
@@ -221,9 +221,6 @@ private String paymentConfirmationUrl;
         proceso.setEmail(mail);
         proceso.setTelefono(normalizePhone(telefono));
         proceso.setDireccion(collapseSpaces(direccion));
-        if (!trim(studentPasswordRaw).isBlank()) {
-            proceso.setStudentPasswordHash(passwordEncoder.encode(studentPasswordRaw));
-        }
         proceso.setExpectedAmount(resolveExpectedAmountByCategory(cat));
         proceso.setFlowStatus("DRAFT");
 
@@ -235,6 +232,23 @@ private String paymentConfirmationUrl;
         }
 
         return procesoRepository.save(proceso);
+    }
+
+    @Transactional(readOnly = true)
+    public StudentDuplicateCheckResult validateStudentUniquenessForEnrollment(String documento, String email) {
+        String doc = normalizeDoc(documento);
+        String mail = normalizeEmail(email);
+
+        boolean byDocumento = !doc.isBlank() && estudianteRepository.existsByNumeroDocumento(doc);
+        boolean byEmail = !mail.isBlank() && estudianteRepository.findByEmailNormalizado(mail).isPresent();
+
+        if (byDocumento) {
+            return new StudentDuplicateCheckResult(true, "DOCUMENTO");
+        }
+        if (byEmail) {
+            return new StudentDuplicateCheckResult(true, "EMAIL");
+        }
+        return new StudentDuplicateCheckResult(false, null);
     }
     @Transactional
     public ChatbotMatriculaProceso markPaymentPending(String documento) {
@@ -468,7 +482,6 @@ private String paymentConfirmationUrl;
         Map<String, Object> incomingFormData = readJsonMap(formDataJson);
         if (!incomingFormData.isEmpty()) {
             mergedFormData.putAll(incomingFormData);
-            captureStudentPasswordFromForm(proceso, mergedFormData);
             proceso.setContractFormData(writeJson(mergedFormData));
             applyContractFormSnapshotToProceso(proceso, mergedFormData);
         }
@@ -829,27 +842,6 @@ private String paymentConfirmationUrl;
         );
         if (!direccion.isBlank()) {
             proceso.setDireccion(collapseSpaces(direccion));
-        }
-    }
-
-    private void captureStudentPasswordFromForm(ChatbotMatriculaProceso proceso, Map<String, Object> formData) {
-        if (proceso == null || formData == null || formData.isEmpty()) {
-            return;
-        }
-
-        String password = firstNotBlank(
-                readValue(formData, "shared_access_password"),
-                readValue(formData, "shared_password"),
-                readValue(formData, "access_password"),
-                readValue(formData, "student_password")
-        );
-        formData.remove("shared_access_password");
-        formData.remove("shared_access_password_confirm");
-        formData.remove("shared_password");
-        formData.remove("access_password");
-        formData.remove("student_password");
-        if (!password.isBlank()) {
-            proceso.setStudentPasswordHash(passwordEncoder.encode(password));
         }
     }
 

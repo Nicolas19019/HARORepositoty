@@ -3,6 +3,8 @@ package com.Aplication.HARO.Service;
 import com.Aplication.HARO.Model.ClaseAprendizaje;
 import com.Aplication.HARO.Model.ContenidoClase;
 import com.Aplication.HARO.Repository.ContenidoClaseRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +32,8 @@ import java.util.UUID;
 @Service
 @Transactional
 public class ContenidoClaseService {
+
+    private static final Logger log = LoggerFactory.getLogger(ContenidoClaseService.class);
 
     private record StoredObject(String url, String ext) {}
 
@@ -183,7 +187,10 @@ public class ContenidoClaseService {
             }
             row.setPreviewTipo("pdf");
             row.setPreviewUrl(preview);
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            // En produccion (Cloud Run) esto puede fallar si el contenedor no trae el conversor (libreoffice).
+            log.warn("No se pudo generar preview PDF para contenido id={} tipo={} ext={}: {}",
+                    row.getId(), row.getTipo(), ext, ex.getMessage());
             clearPreview(row);
         }
     }

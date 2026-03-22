@@ -114,7 +114,7 @@ public class VerificationService {
     @Value("${chatbot.theory.whatsapp-group-link:}")
     private String theoryWhatsappGroupLink;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
 
     public VerificationService(OtpTokenRepository repo,
                                MailService mail,
@@ -124,7 +124,8 @@ public class VerificationService {
                                ContractDocumentStorageService contractDocumentStorageService,
                                ContractEnrollmentFinalizeService contractEnrollmentFinalizeService,
                                ObjectProvider<VerificationService> selfProvider,
-                               PlatformTransactionManager txManager) {
+                               PlatformTransactionManager txManager,
+                               RestTemplate restTemplate) {
         this.repo = repo;
         this.mail = mail;
         this.estudianteService = estudianteService;
@@ -134,6 +135,7 @@ public class VerificationService {
         this.contractEnrollmentFinalizeService = contractEnrollmentFinalizeService;
         this.selfProvider = selfProvider;
         this.txManager = txManager;
+        this.restTemplate = restTemplate;
     }
 
     @PostConstruct

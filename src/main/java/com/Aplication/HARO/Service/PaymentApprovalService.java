@@ -56,12 +56,13 @@ public class PaymentApprovalService {
     public PaymentApprovalService(ChatbotMatriculaProcesoRepository procesoRepository,
                                   VerificationService verificationService,
                                   ChatbotProcesoService chatbotProcesoService,
-                                  WhatsAppTemplateService waService) {
+                                  WhatsAppTemplateService waService,
+                                  RestTemplate restTemplate) {
         this.procesoRepository = procesoRepository;
         this.verificationService = verificationService;
         this.chatbotProcesoService = chatbotProcesoService;
         this.waService = waService;
-        this.restTemplate = new RestTemplate();
+        this.restTemplate = restTemplate;
     }
 
     @Transactional

@@ -12,10 +12,11 @@ import java.util.HexFormat;
 public class EpaycoService {
 
     private final EpaycoProperties props;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
 
-    public EpaycoService(EpaycoProperties props) {
+    public EpaycoService(EpaycoProperties props, RestTemplate restTemplate) {
         this.props = props;
+        this.restTemplate = restTemplate;
     }
 
     public String sha256Hex(String raw) {

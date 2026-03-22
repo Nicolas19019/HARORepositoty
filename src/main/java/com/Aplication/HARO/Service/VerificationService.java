@@ -464,36 +464,37 @@ public class VerificationService {
         final String codeHash = OtpHasher.sha256(code);
         Optional<OtpToken> matchingOpt =
                 repo.findTopByEmailAndPurposeAndOtpHashAndConsumedAtIsNullOrderByIdDesc(email, purpose, codeHash);
-
-        // Importante: /contract/access lo llama el navegador al abrir el link.
-        // No debe gastar intentos ni consumir el codigo (eso solo ocurre en /contract/complete).
-        if (matchingOpt.isEmpty()) {
-            Optional<OtpToken> lastOpt = repo.findTopByEmailAndPurposeAndConsumedAtIsNullOrderByIdDesc(email, purpose);
-            if (lastOpt.isEmpty()) {
-                return new ContractAccessResult(false, "Codigo invalido o vencido", null);
-            }
-
-            OtpToken last = lastOpt.get();
-            if (last.getExpiresAt() == null || now.isAfter(last.getExpiresAt())) {
-                last.setConsumedAt(now);
-                repo.save(last);
-                return new ContractAccessResult(false, "Codigo vencido", null);
-            }
-
-            // Hay un codigo vigente para este email, pero no coincide con el del enlace.
-            // Normalmente pasa cuando el usuario abre un link viejo y ya se genero otro mas reciente.
-            return new ContractAccessResult(
-                    false,
-                    "Este enlace ya no es el mas reciente. Usa el ultimo enlace recibido o solicita uno nuevo.",
-                    last.getExpiresAt()
-            );
+        Optional<OtpToken> lastOpt = matchingOpt.isPresent()
+                ? matchingOpt
+                : repo.findTopByEmailAndPurposeAndConsumedAtIsNullOrderByIdDesc(email, purpose);
+        if (lastOpt.isEmpty()) {
+            return new ContractAccessResult(false, "Codigo invalido o vencido", null);
         }
 
-        OtpToken token = matchingOpt.get();
+        OtpToken token = lastOpt.get();
         if (token.getExpiresAt() == null || now.isAfter(token.getExpiresAt())) {
             token.setConsumedAt(now);
             repo.save(token);
             return new ContractAccessResult(false, "Codigo vencido", null);
+        }
+
+        int attempts = Optional.ofNullable(token.getAttempts())
+                .map(Number::intValue)
+                .orElse(0);
+        if (attempts >= maxAttempts) {
+            token.setConsumedAt(now);
+            repo.save(token);
+            return new ContractAccessResult(false, "Codigo invalido por maximo de intentos", null);
+        }
+
+        boolean ok = codeHash.equals(token.getOtpHash());
+        if (!ok) {
+            token.setAttempts(attempts + 1);
+            if ((attempts + 1) >= maxAttempts) {
+                token.setConsumedAt(now);
+            }
+            repo.save(token);
+            return new ContractAccessResult(false, "Codigo invalido o vencido", null);
         }
 
         return new ContractAccessResult(true, "Codigo valido", token.getExpiresAt());

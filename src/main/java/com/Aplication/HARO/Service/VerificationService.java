@@ -151,6 +151,7 @@ public class VerificationService {
     /** Envía/renueva OTP al correo. Respeta cooldown y persiste el token (hash). */
     @Transactional
     public void sendEmailVerification(String rawEmail) {
+        long t0 = System.nanoTime();
         final String email = normalizeEmail(rawEmail);
         final Instant now = Instant.now();
 
@@ -204,6 +205,9 @@ public class VerificationService {
         } else {
             mail.sendHtml(email, subject, html, plain);
         }
+
+        long ms = Math.max(0, (System.nanoTime() - t0) / 1_000_000);
+        log.info("OTP email send flow done email={} elapsedMs={}", email, ms);
     }
 
     /** Envía OTP SOLO para activación de cuenta de estudiante del módulo de aprendizaje. */

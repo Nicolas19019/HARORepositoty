@@ -4,6 +4,8 @@ package com.Aplication.HARO.Service;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -13,6 +15,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class MailService {
+
+    private static final Logger log = LoggerFactory.getLogger(MailService.class);
 
     private final JavaMailSender sender;
 
@@ -29,6 +33,7 @@ public class MailService {
      */
     public void sendHtml(String to, String subject, String html, String plainFallback) {
         try {
+            long t0 = System.nanoTime();
             MimeMessage msg = sender.createMimeMessage();
 
             // "true" => multipart, nos deja tener texto plano + html
@@ -50,6 +55,8 @@ public class MailService {
             helper.setText(plain, html);
 
             sender.send(msg);
+            long ms = Math.max(0, (System.nanoTime() - t0) / 1_000_000);
+            log.info("SMTP sendHtml ok to={} elapsedMs={}", maskEmail(to), ms);
         } catch (MessagingException e) {
             throw new IllegalStateException(
                 "Error enviando correo (MessagingException). Revisa remitente, destinatario y adjuntos. Detalle: " + e.getMessage(), e
@@ -83,6 +90,7 @@ public class MailService {
             String mimeType
     ) {
         try {
+            long t0 = System.nanoTime();
             MimeMessage msg = sender.createMimeMessage();
 
             // MUY IMPORTANTE:
@@ -112,6 +120,8 @@ public class MailService {
             helper.addInline(contentId, imageResource, mimeType);
 
             sender.send(msg);
+            long ms = Math.max(0, (System.nanoTime() - t0) / 1_000_000);
+            log.info("SMTP sendHtmlWithInlineImage ok to={} elapsedMs={}", maskEmail(to), ms);
         } catch (MessagingException e) {
             throw new IllegalStateException(
                 "Error enviando correo con imagen inline. Detalle: " + e.getMessage(), e
@@ -121,5 +131,16 @@ public class MailService {
                 "Error general enviando correo con imagen inline. Detalle: " + e.getMessage(), e
             );
         }
+    }
+
+    private static String maskEmail(String email) {
+        if (email == null) return "";
+        String e = email.trim();
+        int at = e.indexOf('@');
+        if (at <= 1) return "***";
+        String left = e.substring(0, at);
+        String domain = e.substring(at);
+        String maskedLeft = left.substring(0, 1) + "***" + left.substring(Math.max(1, left.length() - 1));
+        return maskedLeft + domain;
     }
 }

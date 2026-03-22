@@ -102,7 +102,8 @@ public class VerificationService {
     @Value("${app.contract.verify.path:/api/verification/contract/verify}")
     private String contractVerifyPath;
 
-    @Value("${chatbot.auto-send-enrollment-whatsapp:false}")
+    // En el flujo de contratos, se espera notificar al usuario al finalizar.
+    @Value("${chatbot.auto-send-enrollment-whatsapp:true}")
     private boolean autoSendEnrollmentWhatsapp;
 
     public VerificationService(OtpTokenRepository repo,
@@ -965,23 +966,31 @@ public class VerificationService {
     private void notifyContractCompletionByWhatsApp(ChatbotMatriculaProceso proceso, Long studentId) {
         if (!autoSendEnrollmentWhatsapp) return;
         if (proceso == null || studentId == null) return;
-        if (!waService.getConfigStatus().ready()) return;
+        if (!waService.getConfigStatus().ready()) {
+            log.warn("WhatsApp no configurado. Se omite notificacion de contrato. doc={} email={}",
+                    safe(proceso.getNumeroDocumento()), safe(proceso.getEmail()));
+            return;
+        }
 
         String phone = trim(proceso.getPhone());
         if (!StringUtils.hasText(phone)) {
             phone = trim(proceso.getTelefono());
         }
-        if (!StringUtils.hasText(phone)) return;
+        if (!StringUtils.hasText(phone)) {
+            log.warn("No hay telefono para notificar por WhatsApp. doc={} email={}",
+                    safe(proceso.getNumeroDocumento()), safe(proceso.getEmail()));
+            return;
+        }
 
         try {
             waService.sendTextMessage(
                     phone,
-                    "✅ Contrato validado y matricula activada.\n\n" +
-                            "📌 Categoria: " + safe(proceso.getCategoria()) + "\n" +
+                    "✅ ¡Listo! Tu contrato fue recibido.\n\n" +
+                            "📍 Acércate a la academia para registrar tus datos biométricos.\n\n" +
+                            "📝 Categoría: " + safe(proceso.getCategoria()) + "\n" +
                             "🆔 Documento: " + safe(proceso.getNumeroDocumento()) + "\n" +
                             "🧾 Ref estudiante: " + studentId + "\n\n" +
-                            "Tu estado de cuenta y pago quedaron registrados.\n\n" +
-                            "Si deseas consultar o agendar clases, escribe MENU y luego 'Soy estudiante'."
+                            "Si necesitas ayuda, escribe *ASESOR*."
             );
         } catch (Exception ignored) {
             // La activacion no debe fallar por un error de notificacion.

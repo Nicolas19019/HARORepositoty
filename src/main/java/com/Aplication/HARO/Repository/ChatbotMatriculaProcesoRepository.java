@@ -15,6 +15,10 @@ public interface ChatbotMatriculaProcesoRepository extends JpaRepository<Chatbot
     Optional<ChatbotMatriculaProceso> findByNumeroDocumento(String numeroDocumento);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from ChatbotMatriculaProceso p where p.id = :id")
+    Optional<ChatbotMatriculaProceso> findByIdForUpdate(@Param("id") Long id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from ChatbotMatriculaProceso p where p.numeroDocumento = :numeroDocumento")
     Optional<ChatbotMatriculaProceso> findByNumeroDocumentoForUpdate(@Param("numeroDocumento") String numeroDocumento);
 

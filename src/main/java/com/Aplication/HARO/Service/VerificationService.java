@@ -3,11 +3,12 @@ package com.Aplication.HARO.Service;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Model.OtpToken;
+import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
 import com.Aplication.HARO.Repository.OtpTokenRepository;
 import com.Aplication.HARO.Security.OtpHasher;
 import jakarta.annotation.PostConstruct;
 import jakarta.mail.internet.InternetAddress;
-
+import main.java.com.Aplication.HARO.Service.ContractEnrollmentFinalizeService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,6 +52,7 @@ public class VerificationService {
     };
 
     private final OtpTokenRepository repo;
+    private final ChatbotMatriculaProcesoRepository procesoRepository;
     private final MailService mail;
     private final EstudianteService estudianteService;
     private final ChatbotProcesoService chatbotProcesoService;
@@ -112,9 +114,13 @@ public class VerificationService {
     @Value("${app.internal-api-base-url:}")
     private String internalApiBaseUrl;
 
+    @Value("${chatbot.theory.whatsapp-group-link:}")
+    private String theoryWhatsappGroupLink;
+
     private final RestTemplate restTemplate = new RestTemplate();
 
     public VerificationService(OtpTokenRepository repo,
+                               ChatbotMatriculaProcesoRepository procesoRepository,
                                MailService mail,
                                EstudianteService estudianteService,
                                ChatbotProcesoService chatbotProcesoService,
@@ -124,6 +130,7 @@ public class VerificationService {
                                ObjectProvider<VerificationService> selfProvider,
                                PlatformTransactionManager txManager) {
         this.repo = repo;
+        this.procesoRepository = procesoRepository;
         this.mail = mail;
         this.estudianteService = estudianteService;
         this.chatbotProcesoService = chatbotProcesoService;
@@ -780,7 +787,14 @@ public class VerificationService {
         try {
             Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
             if (procesoOpt.isEmpty()) return false;
-            return notifyContractCompletionByWhatsApp(procesoOpt.get(), studentId);
+            Optional<ChatbotMatriculaProceso> claimedOpt =
+                    claimEnrollmentWhatsappNotification(procesoOpt.get().getId());
+            if (claimedOpt.isEmpty()) {
+                log.info("Notificacion de contrato ya enviada previamente. email={} studentId={}",
+                        email, studentId);
+                return false;
+            }
+            return notifyContractCompletionByWhatsApp(claimedOpt.get(), studentId);
         } catch (Exception ex) {
             log.warn("La matricula se activo, pero fallo la notificacion de WhatsApp para email={}: {}", email, ex.getMessage());
             return false;
@@ -971,6 +985,28 @@ public class VerificationService {
         }
         return x;
     }
+
+    private Optional<ChatbotMatriculaProceso> claimEnrollmentWhatsappNotification(Long procesoId) {
+        if (procesoId == null) return Optional.empty();
+
+        ChatbotMatriculaProceso claimed = newTx(TransactionDefinition.PROPAGATION_REQUIRES_NEW).execute(status -> {
+            Optional<ChatbotMatriculaProceso> lockedOpt = procesoRepository.findByIdForUpdate(procesoId);
+            if (lockedOpt.isEmpty()) {
+                return null;
+            }
+
+            ChatbotMatriculaProceso locked = lockedOpt.get();
+            if (locked.getEnrollmentWhatsappSentAt() != null) {
+                return null;
+            }
+
+            locked.setEnrollmentWhatsappSentAt(Instant.now());
+            return procesoRepository.saveAndFlush(locked);
+        });
+
+        return Optional.ofNullable(claimed);
+    }
+
     private boolean notifyContractCompletionByWhatsApp(ChatbotMatriculaProceso proceso, Long studentId) {
         if (!autoSendEnrollmentWhatsapp) return false;
         if (proceso == null || studentId == null) return false;
@@ -991,51 +1027,74 @@ public class VerificationService {
         }
 
         String normalizedPhone = normalizePhone(phone);
-        String message =
-                "\u2705 \u00a1Listo! Tu contrato fue recibido.\n\n" +
-                "\uD83D\uDCCD Ac\u00e9rcate a la academia para registrar tus datos biom\u00e9tricos.\n\n" +
-                "\uD83D\uDCDD Categor\u00eda: " + safe(proceso.getCategoria()) + "\n" +
-                "\uD83C\uDD94 Documento: " + safe(proceso.getNumeroDocumento()) + "\n" +
-                "Ref estudiante: " + studentId + "\n\n" +
-                "Si necesitas ayuda, escribe *ASESOR*.";
+        String firstMessage = buildContractReceivedWhatsappMessage(proceso, studentId);
+        String secondMessage = buildNewStudentWhatsappMessage();
 
         log.info("\uD83D\uDCF2 Preparando envio de confirmacion de contrato por WhatsApp a {} doc={} email={}",
                 maskPhone(normalizedPhone), safe(proceso.getNumeroDocumento()), safe(proceso.getEmail()));
 
         try {
-            if (StringUtils.hasText(internalApiBaseUrl)) {
-                String base = trim(internalApiBaseUrl);
-                while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
-                String url = base + "/api/whatsapp/text/send";
-                Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("to", normalizedPhone);
-                payload.put("text", message);
-                payload.put("message", message);
-
-                ResponseEntity<Map> response = restTemplate.postForEntity(url, payload, Map.class);
-                if (response.getStatusCode().is2xxSuccessful()) {
-                    log.info("\u2705 Mensaje de WhatsApp enviado correctamente (contrato completo) to={}",
-                            maskPhone(normalizedPhone));
-                    return true;
-                }
-                log.warn("\u26a0\ufe0f WhatsApp endpoint respondio con estado no exitoso (contrato completo). statusCode={} to={}",
-                        response.getStatusCode().value(), maskPhone(normalizedPhone));
-                return false;
-            }
-
-            waService.sendTextMessage(normalizedPhone, message);
-            log.info("\u2705 Mensaje de WhatsApp enviado correctamente (contrato completo) to={}",
+            sendWhatsappText(normalizedPhone, firstMessage);
+            sendWhatsappText(normalizedPhone, secondMessage);
+            log.info("\u2705 Secuencia de WhatsApp enviada correctamente (contrato completo) to={}",
                     maskPhone(normalizedPhone));
             return true;
         } catch (RestClientException ex) {
-            log.error("\u274c Error enviando WhatsApp via endpoint interno (contrato completo) to={}: {}",
+            log.error("\u274c Error enviando secuencia de WhatsApp via endpoint interno (contrato completo) to={}: {}",
                     maskPhone(normalizedPhone), ex.getMessage(), ex);
             return false;
         } catch (Exception ex) {
-            log.error("\u274c Error enviando WhatsApp (contrato completo) to={}: {}",
+            log.error("\u274c Error enviando secuencia de WhatsApp (contrato completo) to={}: {}",
                     maskPhone(normalizedPhone), ex.getMessage(), ex);
             return false;
         }
+    }
+
+    private String buildContractReceivedWhatsappMessage(ChatbotMatriculaProceso proceso, Long studentId) {
+        StringBuilder message = new StringBuilder()
+                .append("\u2705 \u00a1Listo! Tu contrato fue recibido.\n\n")
+                .append("\uD83D\uDCDD Categor\u00eda: ").append(safe(proceso.getCategoria())).append("\n")
+                .append("\uD83C\uDD94 Documento: ").append(safe(proceso.getNumeroDocumento())).append("\n")
+                .append("Ref estudiante: ").append(studentId).append("\n\n");
+
+        if (StringUtils.hasText(theoryWhatsappGroupLink)) {
+            message.append("\uD83D\uDC65 Grupo de WhatsApp para programaci\u00f3n de clases te\u00f3ricas:\n")
+                    .append(trim(theoryWhatsappGroupLink))
+                    .append("\n\n");
+        }
+
+        message.append("\uD83D\uDCC5 En este grupo se enviar\u00e1 la programaci\u00f3n de las clases del d\u00eda siguiente.\n\n")
+                .append("Si necesitas ayuda, escribe *ASESOR*.");
+
+        return message.toString();
+    }
+
+    private String buildNewStudentWhatsappMessage() {
+        return "\uD83C\uDF93 \u00a1Ya eres estudiante de HARO!\n\n"
+                + "\u23F0 En tu pr\u00f3xima clase debes llegar 30 minutos antes para la toma de biom\u00e9tricos "
+                + "y finalizar tu proceso de matr\u00edcula.\n\n"
+                + "Gracias por escoger CEA HARO"
+                + "Si necesitas ayuda, escribe *ASESOR* o Terminar.";
+    }
+
+    private void sendWhatsappText(String normalizedPhone, String message) {
+        if (StringUtils.hasText(internalApiBaseUrl)) {
+            String base = trim(internalApiBaseUrl);
+            while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+            String url = base + "/api/whatsapp/text/send";
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("to", normalizedPhone);
+            payload.put("text", message);
+            payload.put("message", message);
+
+            ResponseEntity<Map> response = restTemplate.postForEntity(url, payload, Map.class);
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                throw new RestClientException("Estado no exitoso al enviar WhatsApp: " + response.getStatusCode().value());
+            }
+            return;
+        }
+
+        waService.sendTextMessage(normalizedPhone, message);
     }
 
     private boolean hasAllRequiredSignedContracts(String signedContractFilesJson) {

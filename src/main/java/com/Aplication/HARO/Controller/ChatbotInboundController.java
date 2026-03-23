@@ -154,6 +154,7 @@ public class ChatbotInboundController {
         ENROLLMENT_CONFIRM,
         PAYMENT_WAIT,
         CONTRACT_WAIT,
+        ENROLLMENT_ABORT_CONFIRM,
 
         SEDE_SELECTION,
 
@@ -162,6 +163,7 @@ public class ChatbotInboundController {
         STUDENT_OTP_VERIFY,
         STUDENT_BOOKING_SLOT,
         STUDENT_CANCEL_CLASS_PICK,
+        STUDENT_LOGOUT_CONFIRM,
 
         DONE
     }
@@ -172,6 +174,12 @@ public class ChatbotInboundController {
         VIEW_SCHEDULE,
         BOOK_CLASS,
         CANCEL_CLASS
+    }
+
+    enum EnrollmentAbortAction {
+        NONE,
+        CANCEL_TO_MENU,
+        END_CONVERSATION
     }
 
     static class SessionData {
@@ -196,6 +204,14 @@ public class ChatbotInboundController {
         String studentEmail;
         String studentNombre;
         String studentBookingDate;
+        boolean studentOtpVerified = false;
+
+        // Confirmaciones (matricula)
+        ChatState pendingEnrollmentAbortReturnState;
+        EnrollmentAbortAction pendingEnrollmentAbortAction = EnrollmentAbortAction.NONE;
+
+        // Confirmacion (cerrar sesion estudiante)
+        ChatState pendingStudentLogoutReturnState;
 
         Instant lastSeen = Instant.now();
     }
@@ -242,8 +258,27 @@ public class ChatbotInboundController {
                 return ResponseEntity.ok(new BotResponse(actions));
             }
 
+            // Cerrar sesion de estudiante (sin finalizar conversacion)
+            if (isStudentLogoutCommand(text) && (session.studentId != null || session.studentOtpVerified)) {
+                session.pendingStudentLogoutReturnState = session.state;
+                session.state = ChatState.STUDENT_LOGOUT_CONFIRM;
+                actions.add(textMsg(studentLogoutConfirmText(session.studentNombre)));
+                actions.add(textMsg("Opciones: SI | NO | VOLVER | MENU"));
+                session.lastSeen = now;
+                return ResponseEntity.ok(new BotResponse(actions));
+            }
+
             // Finalizar
             if (isEndCommand(text)) {
+                if (shouldConfirmEnrollmentAbort(session.state)) {
+                    session.pendingEnrollmentAbortReturnState = session.state;
+                    session.pendingEnrollmentAbortAction = EnrollmentAbortAction.END_CONVERSATION;
+                    session.state = ChatState.ENROLLMENT_ABORT_CONFIRM;
+                    actions.add(textMsg(enrollmentAbortConfirmText(true)));
+                    actions.add(textMsg("Opciones: SI | NO | VOLVER | MENU"));
+                    session.lastSeen = now;
+                    return ResponseEntity.ok(new BotResponse(actions));
+                }
                 sessions.remove(from);
                 actions.add(textMsg(conversationEndedText()));
                 return ResponseEntity.ok(new BotResponse(actions));
@@ -274,6 +309,15 @@ public class ChatbotInboundController {
 
             // Cancelar
             if (isCancelCommand(text)) {
+                if (shouldConfirmEnrollmentAbort(session.state)) {
+                    session.pendingEnrollmentAbortReturnState = session.state;
+                    session.pendingEnrollmentAbortAction = EnrollmentAbortAction.CANCEL_TO_MENU;
+                    session.state = ChatState.ENROLLMENT_ABORT_CONFIRM;
+                    actions.add(textMsg(enrollmentAbortConfirmText(false)));
+                    actions.add(textMsg("Opciones: SI | NO | VOLVER | MENU"));
+                    session.lastSeen = now;
+                    return ResponseEntity.ok(new BotResponse(actions));
+                }
                 if (session.state == ChatState.MAIN_MENU) {
                     actions.add(textMsg(mainMenuText()));
                 } else {
@@ -310,6 +354,7 @@ public class ChatbotInboundController {
                 case ENROLLMENT_CONFIRM -> handleEnrollmentConfirm(text, session, actions);
                 case PAYMENT_WAIT -> handlePaymentWait(text, session, actions);
                 case CONTRACT_WAIT -> handleContractWait(from, text, session, actions);
+                case ENROLLMENT_ABORT_CONFIRM -> handleEnrollmentAbortConfirm(from, text, session, actions);
 
                 case SEDE_SELECTION -> handleSedeSelection(from, text, session, actions);
 
@@ -318,6 +363,7 @@ public class ChatbotInboundController {
                 case STUDENT_OTP_VERIFY -> handleStudentOtpVerify(text, session, actions);
                 case STUDENT_BOOKING_SLOT -> handleStudentBookingSlot(rawText, session, actions);
                 case STUDENT_CANCEL_CLASS_PICK -> handleStudentCancelClassPick(text, session, actions);
+                case STUDENT_LOGOUT_CONFIRM -> handleStudentLogoutConfirm(text, session, actions);
 
                 case DONE -> {
                 sessions.remove(from);
@@ -358,11 +404,33 @@ public class ChatbotInboundController {
                 actions.add(textMsg("Opciones: MENU"));
             }
             case "4", "estudiante", "soy estudiante" -> {
+                if (session.studentOtpVerified && session.studentId != null) {
+                    session.state = ChatState.STUDENT_MENU;
+                    actions.add(textMsg("🎓 Ya tienes una sesion de estudiante activa."));
+                    actions.add(textMsg(studentGreetingText(session.studentNombre)));
+                    actions.add(textMsg(studentMenuText()));
+                    actions.add(textMsg(studentNavigationOptionsText()));
+                    return;
+                }
+
+                if (session.studentId != null && !session.studentOtpVerified && !trim(session.studentEmail).isBlank()) {
+                    session.state = ChatState.STUDENT_OTP_VERIFY;
+                    actions.add(textMsg(
+                            "🔐 Ya iniciamos tu verificacion como estudiante.\n\n" +
+                                    "Escribe el codigo OTP que enviamos al correo " + maskEmail(session.studentEmail) + ".\n\n" +
+                                    "Si no lo encuentras, revisa Spam/No deseado o escribe tu documento nuevamente para solicitar otro codigo."
+                    ));
+                    actions.add(textMsg("Opciones: MENU | CERRAR SESION"));
+                    return;
+                }
+
                 clearStudentAccessData(session);
                 session.state = ChatState.STUDENT_DOC_CAPTURE;
                 actions.add(textMsg(
                         "🎓 ¡Perfecto! Vamos a validar tu acceso como estudiante.\n\n" +
-                                "Primero escribe tu número de documento (solo números) y te enviaremos un OTP a tu correo.\n\n" +
+                                "1) Escribe tu numero de documento (solo numeros).\n" +
+                                "2) Te enviaremos un OTP al correo registrado.\n" +
+                                "3) Con una sola validacion podras navegar por el menu de estudiante hasta que cierres sesion o expire por inactividad.\n\n" +
                                 "Ejemplo: 12345678"
                 ));
                 actions.add(textMsg("Opciones: MENU"));
@@ -1110,11 +1178,21 @@ public class ChatbotInboundController {
             return;
         }
 
+        if (!session.studentOtpVerified) {
+            session.state = ChatState.STUDENT_OTP_VERIFY;
+            actions.add(textMsg(
+                    "🔐 Aun falta validar tu OTP para ingresar al menu de estudiante.\n\n" +
+                            "Escribe el codigo OTP enviado al correo " + maskEmail(session.studentEmail) + "."
+            ));
+            actions.add(textMsg("Opciones: MENU | CERRAR SESION"));
+            return;
+        }
+
         switch (text) {
             case "1", "calendario" -> {
                 List<Clase> agenda = procesoService.listAgendaByStudentId(session.studentId);
                 actions.add(textMsg(formatAgenda(session.studentDocumento, agenda)));
-                actions.add(textMsg("Opciones: MENU"));
+                actions.add(textMsg(studentNavigationOptionsText()));
             }
             case "2", "reservar" -> {
                 session.pendingStudentAction = StudentAction.NONE;
@@ -1127,23 +1205,23 @@ public class ChatbotInboundController {
                                 "1️⃣ Escribe la fecha de la clase.\n" +
                                 "2️⃣ Puedes escribir: hoy, mañana o YYYY-MM-DD.\n" +
                                 "3️⃣ Después te mostraré opciones de hora para elegir.\n\n" +
-                                "Ejemplos de fecha: hoy | mañana | 2026-03-15"
+                                 "Ejemplos de fecha: hoy | mañana | 2026-03-15"
                 ));
-                actions.add(textMsg("Opciones: MENU"));
+                actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
             }
             case "3", "horario" -> {
                 List<Clase> agenda = procesoService.listAgendaByStudentId(session.studentId);
                 actions.add(textMsg(formatAgenda(session.studentDocumento, agenda)));
-                actions.add(textMsg("Opciones: MENU"));
+                actions.add(textMsg(studentNavigationOptionsText()));
             }
             case "4", "cancelar clase", "cancelar" -> {
                 List<Clase> agenda = procesoService.listUpcomingClassesForCancellationByStudentId(session.studentId);
                 if (agenda.isEmpty()) {
                     actions.add(textMsg(
                             "ℹ️ No tienes clases futuras para cancelar.\n\n" +
-                                    "Si agendas una nueva clase, podrás verla aquí."
+                                     "Si agendas una nueva clase, podrás verla aquí."
                     ));
-                    actions.add(textMsg("Opciones: MENU"));
+                    actions.add(textMsg(studentNavigationOptionsText()));
                     return;
                 }
 
@@ -1152,18 +1230,29 @@ public class ChatbotInboundController {
                 actions.add(textMsg(
                         "🛑 Estas son tus clases futuras:\n\n" +
                                 formatCancelableClasses(agenda) + "\n\n" +
-                                "Escribe el ID de la clase que deseas cancelar.\n" +
-                                "Regla: con menos de 48 horas se aplica multa."
+                                 "Escribe el ID de la clase que deseas cancelar.\n" +
+                                 "Regla: con menos de 48 horas se aplica multa."
                 ));
-                actions.add(textMsg("Opciones: MENU"));
+                actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
             }
-            case "5", "volver" -> {
-                resetToMain(session);
+            case "5", "menu principal", "principal", "inicio" -> {
+                resetToMain(session); // no cierra sesion de estudiante
                 actions.add(textMsg(mainMenuText()));
+                actions.add(textMsg("ℹ️ Tu sesion de estudiante sigue activa. Para volver, escribe: SOY ESTUDIANTE."));
+            }
+            case "6" -> {
+                session.pendingStudentLogoutReturnState = ChatState.STUDENT_MENU;
+                session.state = ChatState.STUDENT_LOGOUT_CONFIRM;
+                actions.add(textMsg(studentLogoutConfirmText(session.studentNombre)));
+                actions.add(textMsg("Opciones: SI | NO | VOLVER | MENU"));
+            }
+            case "volver", "atras", "atrás" -> {
+                actions.add(textMsg(studentMenuText()));
+                actions.add(textMsg(studentNavigationOptionsText()));
             }
             default -> {
                 actions.add(textMsg(studentMenuText()));
-                actions.add(textMsg("Opciones: MENU"));
+                actions.add(textMsg(studentNavigationOptionsText()));
             }
         }
     }
@@ -1179,7 +1268,7 @@ public class ChatbotInboundController {
                             "3️⃣ Envíalo de nuevo en un solo mensaje.\n\n" +
                             "Ejemplo: 12345678"
             ));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg("Opciones: MENU | CERRAR SESION"));
             return;
         }
 
@@ -1211,7 +1300,7 @@ public class ChatbotInboundController {
                                     "Intenta nuevamente en unos minutos o contacta un asesor si el problema persiste.\n\n" +
                                     "Detalle: " + firstNotBlank(msg, e.getClass().getSimpleName())
                     ));
-                    actions.add(textMsg("Opciones: MENU"));
+                    actions.add(textMsg("Opciones: MENU | CERRAR SESION"));
                     return;
                 }
             }
@@ -1220,6 +1309,7 @@ public class ChatbotInboundController {
             session.studentDocumento = access.documento();
             session.studentEmail = access.email();
             session.studentNombre = access.nombreCompleto();
+            session.studentOtpVerified = false;
             session.state = ChatState.STUDENT_OTP_VERIFY;
 
             String otpIntro = cooldown
@@ -1236,12 +1326,12 @@ public class ChatbotInboundController {
                             "2️⃣ Busca el mensaje con tu código OTP.\n" +
                             "3️⃣ Copia solo los números del código.\n" +
                             "4️⃣ Escríbelo aquí en el chat.\n\n" +
-                            "⏱️ Si no llega de inmediato, espera hasta 1 minuto."
+                             "⏱️ Si no llega de inmediato, espera hasta 1 minuto."
             ));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg("Opciones: MENU | CERRAR SESION"));
         } catch (Exception e) {
             actions.add(textMsg("⚠️ No pude iniciar verificación OTP: " + e.getMessage()));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg("Opciones: MENU | CERRAR SESION"));
         }
     }
 
@@ -1256,7 +1346,7 @@ public class ChatbotInboundController {
                             "3️⃣ No agregues puntos ni símbolos.\n\n" +
                             "Ejemplo: 123456"
             ));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg("Opciones: MENU | CERRAR SESION"));
             return;
         }
 
@@ -1266,36 +1356,46 @@ public class ChatbotInboundController {
                 actions.add(textMsg(
                         "❌ El código es incorrecto o ya venció.\n\n" +
                                 "Pasos para pedir uno nuevo:\n" +
-                                "1️⃣ Escribe MENU\n" +
-                                "2️⃣ Escribe Soy estudiante\n" +
-                                "3️⃣ Ingresa tu documento nuevamente"
+                                "1️⃣ Escribe tu documento nuevamente\n" +
+                                "2️⃣ Te enviaremos un nuevo OTP (si aplica cooldown, espera unos segundos)\n" +
+                                "3️⃣ Escribe el nuevo OTP aquí"
                 ));
-                actions.add(textMsg("Opciones: MENU"));
+                actions.add(textMsg("Opciones: MENU | CERRAR SESION"));
                 return;
             }
 
             actions.add(textMsg(studentGreetingText(session.studentNombre)));
             session.state = ChatState.STUDENT_MENU;
             session.pendingStudentAction = StudentAction.NONE;
+            session.studentOtpVerified = true;
             actions.add(textMsg(studentMenuText()));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg(studentNavigationOptionsText()));
         } catch (Exception e) {
             actions.add(textMsg("⚠️ No pude validar OTP: " + e.getMessage()));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg("Opciones: MENU | CERRAR SESION"));
         }
     }
 
     private void handleStudentBookingSlot(String rawText, SessionData session, List<BotAction> actions) {
-        if (session.studentId == null) {
+        if (session.studentId == null || !session.studentOtpVerified) {
             session.state = ChatState.STUDENT_DOC_CAPTURE;
             actions.add(textMsg(
-                    "🔐 Tu sesión de estudiante expiró. Escribe tu documento para validar OTP nuevamente."
+                    "🔐 Tu sesion de estudiante expiró o no esta verificada.\n\n" +
+                            "Escribe tu documento para validar OTP nuevamente."
             ));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg("Opciones: MENU | CERRAR SESION"));
             return;
         }
 
         String trimmed = trim(rawText);
+        if (isStudentBackCommand(trimmed)) {
+            session.state = ChatState.STUDENT_MENU;
+            session.pendingStudentAction = StudentAction.NONE;
+            session.studentBookingDate = null;
+            actions.add(textMsg(studentMenuText()));
+            actions.add(textMsg(studentNavigationOptionsText()));
+            return;
+        }
 
         if (session.studentBookingDate == null) {
             // Compatibilidad: si el usuario envía fecha y hora juntas, también se procesa.
@@ -1308,7 +1408,7 @@ public class ChatbotInboundController {
                     return;
                 } catch (Exception e) {
                     actions.add(textMsg("⚠️ No pude agendar la clase: " + e.getMessage()));
-                    actions.add(textMsg("Opciones: MENU"));
+                    actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
                     return;
                 }
             }
@@ -1323,7 +1423,7 @@ public class ChatbotInboundController {
                                 "3️⃣ Envíala en un solo mensaje.\n\n" +
                                 "Ejemplos: hoy | mañana | 2026-03-15"
                 ));
-                actions.add(textMsg("Opciones: MENU"));
+                actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
                 return;
             }
 
@@ -1332,7 +1432,7 @@ public class ChatbotInboundController {
                         "⚠️ La fecha no puede ser pasada.\n\n" +
                                 "Escribe hoy, mañana o una fecha futura."
                 ));
-                actions.add(textMsg("Opciones: MENU"));
+                actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
                 return;
             }
 
@@ -1341,7 +1441,7 @@ public class ChatbotInboundController {
                     "📅 Fecha registrada: " + fecha + "\n\n" +
                             bookingSlotsAvailabilityText(session.studentId, fecha)
             ));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
             return;
         }
 
@@ -1356,7 +1456,7 @@ public class ChatbotInboundController {
                             "Ejemplos: 2 | 08:30"
             ));
             actions.add(textMsg(bookingSlotsAvailabilityText(session.studentId, fecha)));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
             return;
         }
 
@@ -1367,17 +1467,26 @@ public class ChatbotInboundController {
                     "⚠️ No pude agendar la clase: " + e.getMessage() + "\n\n" +
                             bookingSlotsAvailabilityText(session.studentId, fecha)
             ));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
         }
     }
 
     private void handleStudentCancelClassPick(String text, SessionData session, List<BotAction> actions) {
-        if (session.studentId == null) {
+        if (session.studentId == null || !session.studentOtpVerified) {
             session.state = ChatState.STUDENT_DOC_CAPTURE;
             actions.add(textMsg(
-                    "🔐 Tu sesión de estudiante expiró. Escribe tu documento para validar OTP nuevamente."
+                    "🔐 Tu sesion de estudiante expiró o no esta verificada.\n\n" +
+                            "Escribe tu documento para validar OTP nuevamente."
             ));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg("Opciones: MENU | CERRAR SESION"));
+            return;
+        }
+
+        if (isStudentBackCommand(text)) {
+            session.state = ChatState.STUDENT_MENU;
+            session.pendingStudentAction = StudentAction.NONE;
+            actions.add(textMsg(studentMenuText()));
+            actions.add(textMsg(studentNavigationOptionsText()));
             return;
         }
 
@@ -1388,7 +1497,7 @@ public class ChatbotInboundController {
                 session.state = ChatState.STUDENT_MENU;
                 session.pendingStudentAction = StudentAction.NONE;
                 actions.add(textMsg("ℹ️ Ya no hay clases futuras para cancelar."));
-                actions.add(textMsg("Opciones: MENU"));
+                actions.add(textMsg(studentNavigationOptionsText()));
                 return;
             }
 
@@ -1398,7 +1507,7 @@ public class ChatbotInboundController {
                             formatCancelableClasses(agenda) + "\n\n" +
                             "Ejemplo: 123"
             ));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
             return;
         }
 
@@ -1426,10 +1535,200 @@ public class ChatbotInboundController {
             }
 
             actions.add(textMsg(out.toString()));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg(studentNavigationOptionsText()));
         } catch (Exception e) {
             actions.add(textMsg("⚠️ No pude cancelar la clase: " + e.getMessage()));
-            actions.add(textMsg("Opciones: MENU"));
+            actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
+        }
+    }
+
+    private void handleStudentLogoutConfirm(String text, SessionData session, List<BotAction> actions) {
+        String cmd = normalizeCommandText(text);
+        if ("si".equals(cmd) || "1".equals(cmd) || "confirmar".equals(cmd)) {
+            ChatState returnState = session.pendingStudentLogoutReturnState;
+            session.pendingStudentLogoutReturnState = null;
+
+            clearStudentAccessData(session);
+
+            // Si el usuario estaba en el subflujo de estudiante, lo llevamos al menu principal.
+            if (isStudentState(returnState)) {
+                resetToMain(session);
+                actions.add(textMsg("✅ Sesion de estudiante cerrada."));
+                actions.add(textMsg(mainMenuText()));
+                return;
+            }
+
+            // Si estaba en otro flujo, solo cerramos sesion y continuamos donde iba.
+            if (returnState != null) {
+                session.state = returnState;
+            } else {
+                resetToMain(session);
+            }
+            actions.add(textMsg("✅ Sesion de estudiante cerrada."));
+            if (session.state == ChatState.MAIN_MENU) {
+                actions.add(textMsg(mainMenuText()));
+            } else {
+                actions.add(textMsg("ℹ️ Continuemos con el paso actual."));
+            }
+            return;
+        }
+
+        if ("no".equals(cmd) || "2".equals(cmd) || isStudentBackCommand(cmd)) {
+            ChatState returnState = session.pendingStudentLogoutReturnState;
+            session.pendingStudentLogoutReturnState = null;
+
+            if (returnState != null) {
+                session.state = returnState;
+            }
+
+            // Re-render minimo (no cambia logica)
+            if (session.state == ChatState.STUDENT_MENU && session.studentOtpVerified) {
+                actions.add(textMsg(studentMenuText()));
+                actions.add(textMsg(studentNavigationOptionsText()));
+            } else if (session.state == ChatState.STUDENT_BOOKING_SLOT && session.studentOtpVerified) {
+                actions.add(textMsg("✅ Listo. Sigamos con tu reserva.\n\nEscribe la fecha: hoy | mañana | YYYY-MM-DD"));
+                actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
+            } else if (session.state == ChatState.STUDENT_CANCEL_CLASS_PICK && session.studentOtpVerified) {
+                actions.add(textMsg("✅ Listo. Sigamos con la cancelacion.\n\nEscribe el ID de la clase que deseas cancelar."));
+                actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
+            } else {
+                actions.add(textMsg("✅ Perfecto. Continuemos."));
+            }
+            return;
+        }
+
+        actions.add(textMsg(studentLogoutConfirmText(session.studentNombre)));
+        actions.add(textMsg("Opciones: SI | NO | VOLVER | MENU"));
+    }
+
+    private void handleEnrollmentAbortConfirm(String from, String text, SessionData session, List<BotAction> actions) {
+        EnrollmentAbortAction action = session.pendingEnrollmentAbortAction;
+        ChatState returnState = session.pendingEnrollmentAbortReturnState;
+
+        String cmd = normalizeCommandText(text);
+        if ("si".equals(cmd) || "1".equals(cmd) || "confirmar".equals(cmd)) {
+            session.pendingEnrollmentAbortAction = EnrollmentAbortAction.NONE;
+            session.pendingEnrollmentAbortReturnState = null;
+
+            if (action == EnrollmentAbortAction.END_CONVERSATION) {
+                sessions.remove(from);
+                actions.add(textMsg(conversationEndedText()));
+                return;
+            }
+
+            resetToMain(session);
+            actions.add(textMsg(
+                    "✅ Proceso de matricula terminado.\n\n" +
+                            "Si deseas iniciar de nuevo, escribe MATRICULA o MENU.\n\n" +
+                            mainMenuText()
+            ));
+            return;
+        }
+
+        if ("no".equals(cmd) || "2".equals(cmd) || isStudentBackCommand(cmd)) {
+            session.pendingEnrollmentAbortAction = EnrollmentAbortAction.NONE;
+            session.pendingEnrollmentAbortReturnState = null;
+
+            ChatState resume = returnState != null ? returnState : ChatState.MAIN_MENU;
+            session.state = resume;
+            actions.add(textMsg("✅ Perfecto. Continuemos con tu matricula."));
+            renderEnrollmentResumePrompt(resume, session, actions);
+            return;
+        }
+
+        actions.add(textMsg(enrollmentAbortConfirmText(action == EnrollmentAbortAction.END_CONVERSATION)));
+        actions.add(textMsg("Opciones: SI | NO | VOLVER | MENU"));
+    }
+
+    private void renderEnrollmentResumePrompt(ChatState state, SessionData session, List<BotAction> actions) {
+        if (state == null) {
+            actions.add(textMsg(mainMenuText()));
+            return;
+        }
+
+        switch (state) {
+            case ENROLLMENT_DATA_AUTH_WAIT -> {
+                addEnrollmentIntro(actions);
+                actions.add(textMsg("Opciones: SI | NO | MENU | CANCELAR | TERMINAR"));
+            }
+            case ENROLLMENT_CAPTURE -> {
+                actions.add(textMsg(enrollmentInitialPromptText()));
+                actions.add(textMsg("Despues de ese primer mensaje te pedire correo, telefono, direccion y la sede."));
+                actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
+            }
+            case ENROLLMENT_EMAIL_CAPTURE -> {
+                actions.add(textMsg(
+                        "Paso 2 de 7: envia tu correo electronico.\n" +
+                                "Ejemplo: usuario@correo.com"
+                ));
+                actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
+            }
+            case ENROLLMENT_PHONE_CAPTURE -> {
+                actions.add(textMsg(
+                        "Paso 3 de 7: envia tu telefono de contacto.\n" +
+                                "Ejemplo: 573001112233"
+                ));
+                actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
+            }
+            case ENROLLMENT_ADDRESS_CAPTURE -> {
+                actions.add(textMsg(
+                        "Paso 4 de 7: envia tu direccion de residencia.\n\n" +
+                                "Escribela completa con barrio, nomenclatura o apartamento si aplica.\n\n" +
+                                "Ejemplo: Cra 80 #12-45 Apto 302, Kennedy, Bogota"
+                ));
+                actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
+            }
+            case ENROLLMENT_SEDE_CAPTURE -> {
+                actions.add(textMsg(
+                        "Paso 5 de 7: selecciona tu sede.\n\n" +
+                                "1) Kennedy - Av. 1 de Mayo #68D-23 Piso 2\n" +
+                                "2) CC El Eden - Local L2-094A\n\n" +
+                                "Responde con 1 o 2."
+                ));
+                actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
+            }
+            case ENROLLMENT_CONFIRM -> {
+                actions.add(textMsg(
+                        "Paso 6 de 7: revisa tus datos y confirma.\n\n" +
+                                "Nombre: " + safe(session.nombre) + "\n" +
+                                "Documento: " + safe(session.documento) + "\n" +
+                                "Categoria: " + safe(session.categoria) + "\n" +
+                                "Correo: " + safe(session.email) + "\n" +
+                                "Telefono: " + safe(session.telefono) + "\n" +
+                                "Direccion: " + safe(session.direccion) + "\n" +
+                                "Sede: " + safe(session.sedeSeleccionada) + "\n\n" +
+                                "Responde:\n" +
+                                "1) Confirmar y continuar\n" +
+                                "2) Corregir datos\n" +
+                                "3) Cancelar"
+                ));
+                actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
+            }
+            case PAYMENT_WAIT -> {
+                actions.add(textMsg(
+                        "💳 Estamos esperando la confirmacion de tu pago.\n\n" +
+                                "Puedes escribir:\n" +
+                                "🔹 LINK para ver el enlace de pago\n" +
+                                "🔹 YA PAGUE si ya realizaste el pago"
+                ));
+                actions.add(textMsg("Opciones: MENU | TERMINAR"));
+            }
+            case CONTRACT_WAIT -> {
+                actions.add(textMsg(
+                        "📝 Estamos esperando que firmes tus contratos.\n\n" +
+                                "Cuando termines, responde *LISTO* para continuar."
+                ));
+                actions.add(textMsg("Opciones: MENU | TERMINAR"));
+            }
+            case SEDE_SELECTION -> {
+                actions.add(textMsg(
+                        "📍 Selecciona tu sede:\n\n" +
+                                "1️⃣ Kennedy\n" +
+                                "2️⃣ CC El Edén"
+                ));
+                actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
+            }
+            default -> actions.add(textMsg("ℹ️ Continuemos. Responde con la informacion solicitada en este paso."));
         }
     }
 
@@ -1754,6 +2053,12 @@ public class ChatbotInboundController {
         session.state = ChatState.MAIN_MENU;
         session.courseOptionsExpanded = false;
         clearEnrollmentData(session);
+        session.pendingEnrollmentAbortReturnState = null;
+        session.pendingEnrollmentAbortAction = EnrollmentAbortAction.NONE;
+    }
+
+    private void resetToMainAndClearStudent(SessionData session) {
+        resetToMain(session);
         clearStudentAccessData(session);
     }
 
@@ -1774,6 +2079,8 @@ public class ChatbotInboundController {
         session.studentEmail = null;
         session.studentNombre = null;
         session.studentBookingDate = null;
+        session.studentOtpVerified = false;
+        session.pendingStudentLogoutReturnState = null;
     }
     private String practicalProcessText() {
         return "Proceso practico:\n" +
@@ -1805,6 +2112,57 @@ public class ChatbotInboundController {
     private boolean isCancelCommand(String text) {
         String cmd = normalizeCommandText(text);
         return "cancelar".equals(cmd) || "salir".equals(cmd);
+    }
+
+    private boolean isStudentLogoutCommand(String text) {
+        String cmd = normalizeCommandText(text);
+        if (cmd.isBlank()) return false;
+        return "cerrar sesion".equals(cmd)
+                || "cerrar sesion estudiante".equals(cmd)
+                || "cerrar sesion de estudiante".equals(cmd)
+                || "cerrar mi sesion".equals(cmd)
+                || "logout".equals(cmd)
+                || "salir de estudiante".equals(cmd);
+    }
+
+    private boolean isStudentBackCommand(String text) {
+        String cmd = normalizeCommandText(text);
+        if (cmd.isBlank()) return false;
+        return "volver".equals(cmd)
+                || "atras".equals(cmd)
+                || "regresar".equals(cmd)
+                || "menu estudiante".equals(cmd)
+                || "volver al menu estudiante".equals(cmd);
+    }
+
+    private boolean isStudentState(ChatState state) {
+        if (state == null) return false;
+        return switch (state) {
+            case STUDENT_MENU,
+                    STUDENT_DOC_CAPTURE,
+                    STUDENT_OTP_VERIFY,
+                    STUDENT_BOOKING_SLOT,
+                    STUDENT_CANCEL_CLASS_PICK,
+                    STUDENT_LOGOUT_CONFIRM -> true;
+            default -> false;
+        };
+    }
+
+    private boolean shouldConfirmEnrollmentAbort(ChatState state) {
+        if (state == null) return false;
+        return switch (state) {
+            case ENROLLMENT_DATA_AUTH_WAIT,
+                    ENROLLMENT_CAPTURE,
+                    ENROLLMENT_EMAIL_CAPTURE,
+                    ENROLLMENT_PHONE_CAPTURE,
+                    ENROLLMENT_ADDRESS_CAPTURE,
+                    ENROLLMENT_SEDE_CAPTURE,
+                    ENROLLMENT_CONFIRM,
+                    PAYMENT_WAIT,
+                    CONTRACT_WAIT,
+                    SEDE_SELECTION -> true;
+            default -> false;
+        };
     }
 
     private boolean isEnrollmentCommand(String cmd) {
@@ -1886,6 +2244,33 @@ public class ChatbotInboundController {
             displayName = "estudiante";
         }
         return "👋 Hola " + displayName + ", ¿qué quieres hacer hoy?";
+    }
+
+    private String studentNavigationOptionsText() {
+        return "Opciones: VOLVER | MENU | CERRAR SESION";
+    }
+
+    private String studentLogoutConfirmText(String studentName) {
+        String displayName = collapseSpaces(trim(studentName));
+        if (displayName.isBlank()) {
+            displayName = "estudiante";
+        }
+        return "🔒 Cerrar sesion de estudiante\n\n" +
+                "Sesion activa: " + displayName + "\n\n" +
+                "¿Seguro que desea cerrar su sesion?\n" +
+                "Si confirma, debera validar OTP nuevamente para ingresar como estudiante.\n\n" +
+                "Responda: SI o NO.";
+    }
+
+    private String enrollmentAbortConfirmText(boolean endsConversation) {
+        if (endsConversation) {
+            return "⚠️ ¿Seguro que desea terminar su proceso de matricula y finalizar la conversacion?\n\n" +
+                    "Su progreso no se guardara.\n\n" +
+                    "Responda SI para confirmar o NO para continuar.";
+        }
+        return "⚠️ ¿Seguro que desea terminar su proceso de matricula?\n\n" +
+                "Su progreso no se guardara.\n\n" +
+                "Responda SI para confirmar o NO para continuar.";
     }
 
     private String advisorContactText() {
@@ -2170,8 +2555,10 @@ public class ChatbotInboundController {
                 "2️⃣ Agendar clase práctica\n" +
                 "3️⃣ Consultar mi horario\n" +
                 "4️⃣ Cancelar clase práctica\n" +
-                "5️⃣ ⬅️ Volver al menú\n\n" +
-                "✍️ Responde con un número del 1 al 5.";
+                "5️⃣ ⬅️ Volver al menú principal\n" +
+                "6️⃣ 🔒 Cerrar sesión de estudiante\n\n" +
+                "✍️ Responde con un número del 1 al 6.\n" +
+                "Tip: escribe VOLVER para ver este menú en cualquier momento.";
     }
 
     private String helpText(ChatState state) {

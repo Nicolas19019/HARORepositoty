@@ -119,5 +119,83 @@ class ChatbotInboundControllerStudentOtpTest {
         assertTrue(joined.contains("OTP"), "Response should still mention OTP");
         assertTrue(joined.contains("15s"), "Response should include cooldown seconds hint when present");
     }
-}
 
+    @Test
+    void studentFlow_shouldAllowReturningToStudentMenuWithoutRevalidatingOtp_untilLogout() {
+        ChatbotProcesoService procesoService = mock(ChatbotProcesoService.class);
+        PaymentSyncContextService paymentSyncContextService = mock(PaymentSyncContextService.class);
+        VerificationService verificationService = mock(VerificationService.class);
+        WhatsAppTemplateService waService = mock(WhatsAppTemplateService.class);
+
+        ChatbotInboundController controller = new ChatbotInboundController(
+                procesoService,
+                paymentSyncContextService,
+                verificationService,
+                waService
+        );
+
+        when(procesoService.requireStudentAccessData("12345678"))
+                .thenReturn(new ChatbotProcesoService.StudentAccessData(
+                        "12345678",
+                        "student@example.com",
+                        "s***@example.com",
+                        "Alumno Prueba",
+                        200L
+                ));
+        when(verificationService.verifyEmailOtp("student@example.com", "123456"))
+                .thenReturn(true);
+
+        // Start student flow
+        controller.inbound(new ChatbotInboundController.InboundMessage("573000000001", "4", null, null, null, false));
+        controller.inbound(new ChatbotInboundController.InboundMessage("573000000001", "12345678", null, null, null, false));
+        ChatbotInboundController.BotResponse afterOtp = controller.inbound(
+                new ChatbotInboundController.InboundMessage("573000000001", "123456", null, null, null, false)
+        ).getBody();
+
+        String joinedOtp = afterOtp.actions().stream()
+                .map(ChatbotInboundController.BotAction::body)
+                .reduce("", (a, b) -> a + "\n" + b);
+        assertTrue(joinedOtp.contains("Soy estudiante CEA HARO"), "Should show student menu after OTP verification");
+
+        // Go back to main menu (should NOT clear verified student session)
+        ChatbotInboundController.BotResponse mainMenu = controller.inbound(
+                new ChatbotInboundController.InboundMessage("573000000001", "menu", null, null, null, false)
+        ).getBody();
+        String joinedMain = mainMenu.actions().stream()
+                .map(ChatbotInboundController.BotAction::body)
+                .reduce("", (a, b) -> a + "\n" + b);
+        assertTrue(joinedMain.contains("Hola, soy Ha-Rot"), "Should return to main menu");
+
+        // Re-enter student menu without OTP
+        ChatbotInboundController.BotResponse backToStudent = controller.inbound(
+                new ChatbotInboundController.InboundMessage("573000000001", "soy estudiante", null, null, null, false)
+        ).getBody();
+        String joinedBack = backToStudent.actions().stream()
+                .map(ChatbotInboundController.BotAction::body)
+                .reduce("", (a, b) -> a + "\n" + b);
+        assertTrue(joinedBack.contains("sesion de estudiante activa") || joinedBack.contains("sesion de estudiante"),
+                "Should detect active student session");
+        assertTrue(joinedBack.contains("Soy estudiante CEA HARO"), "Should show student menu again without OTP");
+
+        // Logout via option 6 -> confirm -> yes
+        ChatbotInboundController.BotResponse askLogout = controller.inbound(
+                new ChatbotInboundController.InboundMessage("573000000001", "6", null, null, null, false)
+        ).getBody();
+        String joinedLogoutAsk = askLogout.actions().stream()
+                .map(ChatbotInboundController.BotAction::body)
+                .reduce("", (a, b) -> a + "\n" + b);
+        assertTrue(joinedLogoutAsk.toLowerCase().contains("cerrar sesion"), "Should ask logout confirmation");
+
+        controller.inbound(new ChatbotInboundController.InboundMessage("573000000001", "si", null, null, null, false));
+
+        // Now student should be forced to provide document again
+        ChatbotInboundController.BotResponse afterLogout = controller.inbound(
+                new ChatbotInboundController.InboundMessage("573000000001", "soy estudiante", null, null, null, false)
+        ).getBody();
+        String joinedAfterLogout = afterLogout.actions().stream()
+                .map(ChatbotInboundController.BotAction::body)
+                .reduce("", (a, b) -> a + "\n" + b);
+        assertTrue(joinedAfterLogout.toLowerCase().contains("documento"), "Should ask for document again after logout");
+        assertTrue(joinedAfterLogout.toLowerCase().contains("otp"), "Should mention OTP again after logout");
+    }
+}

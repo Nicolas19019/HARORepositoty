@@ -1713,12 +1713,11 @@ private String paymentConfirmationUrl;
         ZonedDateTime fin = ZonedDateTime.of(clase.getFecha(), clase.getHoraFin(), zone);
 
         String titulo = "Clase practica HARO - " + safe(estudiante.getNombre()) + " " + safe(estudiante.getApellido());
+        // Nota: este "description" se envia tal cual en el correo de invitacion de Calendar a los asistentes.
+        // Evitamos exponer datos internos (vehiculo / profesor / IDs / documento) en correos externos.
         String descripcion =
-                "Clase practica agendada desde chatbot.\n" +
-                        "Documento estudiante: " + safe(estudiante.getNumeroDocumento()) + "\n" +
-                        "Profesor ID: " + profesor.getId() + "\n" +
-                        "Vehiculo: " + safe(clase.getPlaca_vehiculo()) + "\n" +
-                        "Clase ID: " + clase.getId();
+                "Clase practica agendada desde chatbot.\n\n" +
+                        "Si tiene alguna novedad, por favor comuniquese con la academia y llegue puntual a las clases.";
 
         List<String> asistentes = new ArrayList<>();
         if (!trim(estudiante.getEmail()).isBlank()) {

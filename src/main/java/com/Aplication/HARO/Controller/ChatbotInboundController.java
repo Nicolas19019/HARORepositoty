@@ -35,7 +35,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
@@ -83,6 +82,7 @@ public class ChatbotInboundController {
     );
 
     private static final Pattern OTP_PATTERN = Pattern.compile("^\\d{4,10}$");
+    private static final Pattern OTP_COOLDOWN_SECONDS_PATTERN = Pattern.compile("(?i)\\bespera\\s+(\\d+)s\\b");
     private static final Pattern DOCUMENT_PATTERN = Pattern.compile("^\\d{5,20}$");
 
     private final ChatbotProcesoService procesoService;
@@ -1185,7 +1185,36 @@ public class ChatbotInboundController {
 
         try {
             ChatbotProcesoService.StudentAccessData access = procesoService.requireStudentAccessData(doc);
-            sendVerificationEmailAsync(access.email());
+            boolean cooldown = false;
+            Integer cooldownSeconds = null;
+            try {
+                // Importante: en Cloud Run el CPU puede no estar disponible post-response;
+                // por eso el OTP debe enviarse dentro del request para garantizar entrega.
+                verificationService.sendEmailVerification(access.email());
+            } catch (Exception e) {
+                String msg = trim(e.getMessage());
+                if (msg.toLowerCase(Locale.ROOT).startsWith("espera") && msg.toLowerCase(Locale.ROOT).contains("reenviar")) {
+                    cooldown = true;
+                    Matcher m = OTP_COOLDOWN_SECONDS_PATTERN.matcher(msg);
+                    if (m.find()) {
+                        try {
+                            cooldownSeconds = Integer.parseInt(m.group(1));
+                        } catch (NumberFormatException ignored) {
+                            // ignore parsing
+                        }
+                    }
+                    log.info("OTP resend cooldown email={} msg={}", maskEmail(access.email()), msg);
+                } else {
+                    log.error("OTP send failed email={}", maskEmail(access.email()), e);
+                    actions.add(textMsg(
+                            "⚠️ No pude enviar el código OTP al correo " + access.emailMasked() + ".\n\n" +
+                                    "Intenta nuevamente en unos minutos o contacta un asesor si el problema persiste.\n\n" +
+                                    "Detalle: " + firstNotBlank(msg, e.getClass().getSimpleName())
+                    ));
+                    actions.add(textMsg("Opciones: MENU"));
+                    return;
+                }
+            }
 
             session.studentId = access.studentId();
             session.studentDocumento = access.documento();
@@ -1193,8 +1222,15 @@ public class ChatbotInboundController {
             session.studentNombre = access.nombreCompleto();
             session.state = ChatState.STUDENT_OTP_VERIFY;
 
+            String otpIntro = cooldown
+                    ? ("🔐 Ya existe un código OTP reciente enviado al correo " + access.emailMasked() + ".\n\n" +
+                       (cooldownSeconds != null
+                               ? ("Espera " + cooldownSeconds + "s para solicitar otro código si lo necesitas.\n\n")
+                               : "Espera un momento antes de solicitar otro código.\n\n"))
+                    : ("🔐 Listo. Te enviamos un código OTP al correo " + access.emailMasked() + ".\n\n");
+
             actions.add(textMsg(
-                    "🔐 Listo. Te enviamos un código OTP al correo " + access.emailMasked() + ".\n\n" +
+                    otpIntro +
                             "Pasos a seguir:\n" +
                             "1️⃣ Abre tu correo (revisa también Spam o No deseado).\n" +
                             "2️⃣ Busca el mensaje con tu código OTP.\n" +
@@ -1924,16 +1960,6 @@ public class ChatbotInboundController {
         String digits = trim(phone).replaceAll("\\D+", "");
         if (digits.length() <= 4) return "****";
         return "*".repeat(digits.length() - 4) + digits.substring(digits.length() - 4);
-    }
-
-    private void sendVerificationEmailAsync(String email) {
-        CompletableFuture.runAsync(() -> {
-            try {
-                verificationService.sendEmailVerification(email);
-            } catch (Exception e) {
-                log.error("Async OTP send failed email={}", maskEmail(email), e);
-            }
-        });
     }
 
     private String maskEmail(String email) {

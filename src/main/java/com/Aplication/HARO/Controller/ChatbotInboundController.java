@@ -1997,7 +1997,17 @@ public class ChatbotInboundController {
         session.studentBookingDate = null;
 
         actions.add(textMsg(out.toString()));
-        actions.add(textMsg("Opciones: MENU"));
+
+        String verifyHint = "✅ Para verificar que tu clase quedó agendada:\n"
+                + "1️⃣ Responde 1️⃣ para consultar tu calendario de prácticas.\n"
+                + "3️⃣ Responde 3️⃣ para consultar tu horario.\n\n"
+                + (manualCalendar
+                ? "ℹ️ Nota: la cita en Google Calendar quedó pendiente. Si necesitas ayuda, escribe ASESOR."
+                : "📩 Revisa tu correo: te llegará la invitación de Google Calendar.");
+
+        actions.add(textMsg(verifyHint));
+        actions.add(textMsg(studentMenuText()));
+        actions.add(textMsg(studentNavigationOptionsText()));
     }
 
     private String formatAgenda(String documento, List<Clase> agenda) {

@@ -161,6 +161,7 @@ public class ChatbotInboundController {
         STUDENT_MENU,
         STUDENT_DOC_CAPTURE,
         STUDENT_OTP_VERIFY,
+        STUDENT_BOOKING_TYPE,
         STUDENT_BOOKING_SLOT,
         STUDENT_CANCEL_CLASS_PICK,
         STUDENT_LOGOUT_CONFIRM,
@@ -203,7 +204,11 @@ public class ChatbotInboundController {
         String studentDocumento;
         String studentEmail;
         String studentNombre;
+        String studentCategoria;
+        String studentTipoPase; // carro | moto | carro,moto
+        String studentSede;
         String studentBookingDate;
+        String studentBookingTipoPase; // carro | moto (solo para agendar)
         boolean studentOtpVerified = false;
 
         // Confirmaciones (matricula)
@@ -361,6 +366,7 @@ public class ChatbotInboundController {
                 case STUDENT_MENU -> handleStudentMenu(text, session, actions);
                 case STUDENT_DOC_CAPTURE -> handleStudentDocCapture(text, session, actions);
                 case STUDENT_OTP_VERIFY -> handleStudentOtpVerify(text, session, actions);
+                case STUDENT_BOOKING_TYPE -> handleStudentBookingType(text, session, actions);
                 case STUDENT_BOOKING_SLOT -> handleStudentBookingSlot(rawText, session, actions);
                 case STUDENT_CANCEL_CLASS_PICK -> handleStudentCancelClassPick(text, session, actions);
                 case STUDENT_LOGOUT_CONFIRM -> handleStudentLogoutConfirm(text, session, actions);
@@ -676,7 +682,8 @@ public class ChatbotInboundController {
                     session.categoria,
                     session.email,
                     session.telefono,
-                    session.direccion
+                    session.direccion,
+                    session.sedeSeleccionada
             );
         } catch (Exception e) {
             log.error("No se pudo guardar pre-registro from={} doc={}",
@@ -1197,16 +1204,43 @@ public class ChatbotInboundController {
             case "2", "reservar" -> {
                 session.pendingStudentAction = StudentAction.NONE;
                 session.studentBookingDate = null;
-                session.state = ChatState.STUDENT_BOOKING_SLOT;
+                session.studentBookingTipoPase = null;
+
+                String categoria = firstNotBlank(trim(session.studentCategoria), "No registrada");
+                String sede = firstNotBlank(trim(session.studentSede), "No asignada");
+                String tipoPase = trim(session.studentTipoPase).toLowerCase(Locale.ROOT);
+                boolean dual = tipoPase.contains("carro") && tipoPase.contains("moto");
+
                 actions.add(textMsg(practicalProcessText()));
-                actions.add(textMsg(
-                        "🚘 Vamos a reservar tu práctica.\n\n" +
-                                "Pasos a seguir:\n" +
-                                "1️⃣ Escribe la fecha de la clase.\n" +
-                                "2️⃣ Puedes escribir: hoy, mañana o YYYY-MM-DD.\n" +
-                                "3️⃣ Después te mostraré opciones de hora para elegir.\n\n" +
-                                 "Ejemplos de fecha: hoy | mañana | 2026-03-15"
-                ));
+                if (dual) {
+                    session.state = ChatState.STUDENT_BOOKING_TYPE;
+                    actions.add(textMsg(
+                            "🚘 Vamos a reservar tu práctica.\n\n" +
+                                    "📌 Datos registrados:\n" +
+                                    "🪪 Categoría: " + categoria + "\n" +
+                                    "🏫 Sede asignada: " + sede + "\n\n" +
+                                    "✅ Como tienes prácticas para *carro* y *moto*, elige qué deseas agendar:\n" +
+                                    "1️⃣ Carro\n" +
+                                    "2️⃣ Moto\n\n" +
+                                    "✍️ Responde 1 o 2."
+                    ));
+                } else {
+                    session.state = ChatState.STUDENT_BOOKING_SLOT;
+                    if ("carro".equals(tipoPase) || "moto".equals(tipoPase)) {
+                        session.studentBookingTipoPase = tipoPase;
+                    }
+                    actions.add(textMsg(
+                            "🚘 Vamos a reservar tu práctica.\n\n" +
+                                    "📌 Datos registrados:\n" +
+                                    "🪪 Categoría: " + categoria + "\n" +
+                                    "🏫 Sede asignada: " + sede + "\n\n" +
+                                    "Pasos a seguir:\n" +
+                                    "1️⃣ Escribe la fecha de la clase.\n" +
+                                    "2️⃣ Puedes escribir: hoy, mañana o YYYY-MM-DD.\n" +
+                                    "3️⃣ Después te mostraré opciones de hora para elegir.\n\n" +
+                                    "Ejemplos de fecha: hoy | mañana | 2026-03-15"
+                    ));
+                }
                 actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
             }
             case "3", "horario" -> {
@@ -1309,6 +1343,10 @@ public class ChatbotInboundController {
             session.studentDocumento = access.documento();
             session.studentEmail = access.email();
             session.studentNombre = access.nombreCompleto();
+            session.studentCategoria = access.categoria();
+            session.studentTipoPase = access.tipoPase();
+            session.studentSede = access.sede();
+            session.studentBookingTipoPase = null;
             session.studentOtpVerified = false;
             session.state = ChatState.STUDENT_OTP_VERIFY;
 
@@ -1376,6 +1414,72 @@ public class ChatbotInboundController {
         }
     }
 
+    private void handleStudentBookingType(String text, SessionData session, List<BotAction> actions) {
+        if (session.studentId == null || !session.studentOtpVerified) {
+            session.state = ChatState.STUDENT_DOC_CAPTURE;
+            actions.add(textMsg(
+                    "🔐 Tu sesion de estudiante expiró o no esta verificada.\n\n" +
+                            "Escribe tu documento para validar OTP nuevamente."
+            ));
+            actions.add(textMsg("Opciones: MENU | CERRAR SESION"));
+            return;
+        }
+
+        String trimmed = trim(text);
+        if (isStudentBackCommand(trimmed)) {
+            session.state = ChatState.STUDENT_MENU;
+            session.pendingStudentAction = StudentAction.NONE;
+            session.studentBookingDate = null;
+            session.studentBookingTipoPase = null;
+            actions.add(textMsg(studentMenuText()));
+            actions.add(textMsg(studentNavigationOptionsText()));
+            return;
+        }
+
+        String cmd = normalizeCommandText(trimmed);
+        String choice = "";
+        if ("1".equals(cmd) || cmd.contains("carro") || cmd.contains("auto")) {
+            choice = "carro";
+        } else if ("2".equals(cmd) || cmd.contains("moto") || cmd.contains("motoc")) {
+            choice = "moto";
+        }
+
+        if (choice.isBlank()) {
+            String categoria = firstNotBlank(trim(session.studentCategoria), "No registrada");
+            String sede = firstNotBlank(trim(session.studentSede), "No asignada");
+            actions.add(textMsg(
+                    "⚠️ No entendí tu elección.\n\n" +
+                            "📌 Datos registrados:\n" +
+                            "🪪 Categoría: " + categoria + "\n" +
+                            "🏫 Sede asignada: " + sede + "\n\n" +
+                            "Elige qué deseas agendar:\n" +
+                            "1️⃣ Carro\n" +
+                            "2️⃣ Moto\n\n" +
+                            "✍️ Responde 1 o 2."
+            ));
+            actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
+            return;
+        }
+
+        session.studentBookingTipoPase = choice;
+        session.studentBookingDate = null;
+        session.state = ChatState.STUDENT_BOOKING_SLOT;
+
+        String categoria = firstNotBlank(trim(session.studentCategoria), "No registrada");
+        String sede = firstNotBlank(trim(session.studentSede), "No asignada");
+        String choiceLabel = "carro".equals(choice) ? "CARRO" : "MOTO";
+        actions.add(textMsg(
+                "✅ Listo. Agendaremos práctica de *" + choiceLabel + "*.\n\n" +
+                        "📌 Datos registrados:\n" +
+                        "🪪 Categoría: " + categoria + "\n" +
+                        "🏫 Sede asignada: " + sede + "\n\n" +
+                        "Ahora escribe la fecha de la clase.\n" +
+                        "Puedes escribir: hoy, mañana o YYYY-MM-DD.\n\n" +
+                        "Ejemplos: hoy | mañana | 2026-03-15"
+        ));
+        actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
+    }
+
     private void handleStudentBookingSlot(String rawText, SessionData session, List<BotAction> actions) {
         if (session.studentId == null || !session.studentOtpVerified) {
             session.state = ChatState.STUDENT_DOC_CAPTURE;
@@ -1392,6 +1496,7 @@ public class ChatbotInboundController {
             session.state = ChatState.STUDENT_MENU;
             session.pendingStudentAction = StudentAction.NONE;
             session.studentBookingDate = null;
+            session.studentBookingTipoPase = null;
             actions.add(textMsg(studentMenuText()));
             actions.add(textMsg(studentNavigationOptionsText()));
             return;
@@ -1439,7 +1544,7 @@ public class ChatbotInboundController {
             session.studentBookingDate = fecha.toString();
             actions.add(textMsg(
                     "📅 Fecha registrada: " + fecha + "\n\n" +
-                            bookingSlotsAvailabilityText(session.studentId, fecha)
+                            bookingSlotsAvailabilityText(session, fecha)
             ));
             actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
             return;
@@ -1455,7 +1560,7 @@ public class ChatbotInboundController {
                             "2️⃣ O escribe la hora en formato HH:mm.\n\n" +
                             "Ejemplos: 2 | 08:30"
             ));
-            actions.add(textMsg(bookingSlotsAvailabilityText(session.studentId, fecha)));
+            actions.add(textMsg(bookingSlotsAvailabilityText(session, fecha)));
             actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
             return;
         }
@@ -1465,7 +1570,7 @@ public class ChatbotInboundController {
         } catch (Exception e) {
             actions.add(textMsg(
                     "⚠️ No pude agendar la clase: " + e.getMessage() + "\n\n" +
-                            bookingSlotsAvailabilityText(session.studentId, fecha)
+                            bookingSlotsAvailabilityText(session, fecha)
             ));
             actions.add(textMsg("Opciones: VOLVER | MENU | CERRAR SESION"));
         }
@@ -1900,10 +2005,15 @@ public class ChatbotInboundController {
         }
     }
 
-    private String bookingSlotsAvailabilityText(Long studentId, LocalDate fecha) {
+    private String bookingSlotsAvailabilityText(SessionData session, LocalDate fecha) {
         try {
+            Long studentId = session == null ? null : session.studentId;
+            String tipoPase = session == null ? null : session.studentBookingTipoPase;
+            if (studentId == null) {
+                return "⚠️ No pude identificar el estudiante para consultar disponibilidad. Escribe MENU e ingresa de nuevo como estudiante.";
+            }
             List<ChatbotProcesoService.SlotAvailability> slots =
-                    procesoService.listPracticalSlotAvailabilityByStudentId(studentId, fecha);
+                    procesoService.listPracticalSlotAvailabilityByStudentId(studentId, fecha, tipoPase);
             if (slots.isEmpty()) {
                 return "No hay horarios disponibles para esa fecha.\nEscribe otra fecha para consultar.";
             }
@@ -1968,7 +2078,7 @@ public class ChatbotInboundController {
                                         SessionData session,
                                         List<BotAction> actions) {
         ChatbotProcesoService.BookingResult booking =
-                procesoService.bookPracticalClassByStudentId(session.studentId, fecha, hora);
+                procesoService.bookPracticalClassByStudentId(session.studentId, fecha, hora, session.studentBookingTipoPase);
         Clase clase = booking.clase();
         String calendarLink = booking.reunionCalendario() == null ? "" : trim(booking.reunionCalendario().htmlLink());
         String meetLink = booking.reunionCalendario() == null ? "" : trim(booking.reunionCalendario().meetLink());
@@ -1995,6 +2105,7 @@ public class ChatbotInboundController {
         session.state = ChatState.STUDENT_MENU;
         session.pendingStudentAction = StudentAction.NONE;
         session.studentBookingDate = null;
+        session.studentBookingTipoPase = null;
 
         actions.add(textMsg(out.toString()));
 
@@ -2088,7 +2199,11 @@ public class ChatbotInboundController {
         session.studentDocumento = null;
         session.studentEmail = null;
         session.studentNombre = null;
+        session.studentCategoria = null;
+        session.studentTipoPase = null;
+        session.studentSede = null;
         session.studentBookingDate = null;
+        session.studentBookingTipoPase = null;
         session.studentOtpVerified = false;
         session.pendingStudentLogoutReturnState = null;
     }
@@ -2151,6 +2266,7 @@ public class ChatbotInboundController {
             case STUDENT_MENU,
                     STUDENT_DOC_CAPTURE,
                     STUDENT_OTP_VERIFY,
+                    STUDENT_BOOKING_TYPE,
                     STUDENT_BOOKING_SLOT,
                     STUDENT_CANCEL_CLASS_PICK,
                     STUDENT_LOGOUT_CONFIRM -> true;

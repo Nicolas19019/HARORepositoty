@@ -47,6 +47,9 @@ public class ChatbotMatriculaProceso {
     @Column(name = "direccion", length = 220)
     private String direccion;
 
+    @Column(name = "sede", length = 120)
+    private String sede;
+
     @Column(name = "student_password_hash", length = 100)
     private String studentPasswordHash;
 
@@ -168,6 +171,14 @@ public class ChatbotMatriculaProceso {
 
     public void setDireccion(String direccion) {
         this.direccion = direccion;
+    }
+
+    public String getSede() {
+        return sede;
+    }
+
+    public void setSede(String sede) {
+        this.sede = sede;
     }
 
     public String getStudentPasswordHash() {

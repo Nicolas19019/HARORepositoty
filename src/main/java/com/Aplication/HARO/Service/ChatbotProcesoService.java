@@ -151,7 +151,10 @@ private String paymentConfirmationUrl;
                                     String email,
                                     String emailMasked,
                                     String nombreCompleto,
-                                    Long studentId) {}
+                                    Long studentId,
+                                    String categoria,
+                                    String tipoPase,
+                                    String sede) {}
     public record BookingResult(Clase clase, GoogleCalendarService.ReunionCreada reunionCalendario) {}
     public record SlotAvailability(int opcion, String hora, boolean disponible) {}
     public record CancellationResult(Clase clase,
@@ -197,7 +200,7 @@ private String paymentConfirmationUrl;
                                                String categoria,
                                                String email,
                                                String telefono) {
-        return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, "");
+        return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, "", "");
     }
     @Transactional
     public ChatbotMatriculaProceso upsertDraft(String phone,
@@ -207,6 +210,18 @@ private String paymentConfirmationUrl;
                                                String email,
                                                String telefono,
                                                String direccion) {
+        return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, direccion, "");
+    }
+
+    @Transactional
+    public ChatbotMatriculaProceso upsertDraft(String phone,
+                                               String nombreCompleto,
+                                               String documento,
+                                               String categoria,
+                                               String email,
+                                               String telefono,
+                                               String direccion,
+                                               String sede) {
         String doc = normalizeDoc(documento);
         String mail = normalizeEmail(email);
         String cat = normalizeCategoria(categoria);
@@ -221,6 +236,10 @@ private String paymentConfirmationUrl;
         proceso.setEmail(mail);
         proceso.setTelefono(normalizePhone(telefono));
         proceso.setDireccion(collapseSpaces(direccion));
+        String sedeValue = collapseSpaces(sede);
+        if (!sedeValue.isBlank()) {
+            proceso.setSede(sedeValue);
+        }
         proceso.setExpectedAmount(resolveExpectedAmountByCategory(cat));
         proceso.setFlowStatus("DRAFT");
 
@@ -844,6 +863,11 @@ private String paymentConfirmationUrl;
         if (!direccion.isBlank()) {
             proceso.setDireccion(collapseSpaces(direccion));
         }
+
+        String sede = trim(readValue(formData, "shared_sede"));
+        if (!sede.isBlank()) {
+            proceso.setSede(collapseSpaces(sede));
+        }
     }
 
     private ContractStudentProfile extractStudentProfile(ChatbotMatriculaProceso proceso) {
@@ -882,7 +906,7 @@ private String paymentConfirmationUrl;
                 readValue(formData, "c2_categoria"),
                 proceso.getCategoria()
         ));
-        String sede = firstNotBlank(readValue(formData, "shared_sede"));
+        String sede = firstNotBlank(readValue(formData, "shared_sede"), proceso.getSede());
 
         return new ContractStudentProfile(
                 nameParts[0],
@@ -1118,13 +1142,22 @@ private String paymentConfirmationUrl;
         }
 
         String nombreCompleto = buildStudentDisplayName(estudiante);
+        String categoria = trim(estudiante.getCategoria());
+        String tipoPase = trim(estudiante.getTipoPase()).toLowerCase(Locale.ROOT);
+        if (tipoPase.isBlank() && !categoria.isBlank()) {
+            tipoPase = toTipoPase(categoria);
+        }
+        String sede = trim(estudiante.getSede());
 
         return new StudentAccessData(
                 estudiante.getNumeroDocumento(),
                 email,
                 maskEmail(email),
                 nombreCompleto,
-                estudiante.getId()
+                estudiante.getId(),
+                categoria,
+                tipoPase,
+                sede
         );
     }
 
@@ -1160,6 +1193,13 @@ private String paymentConfirmationUrl;
     }
 
     public BookingResult bookPracticalClassByStudentId(Long studentId, LocalDate fecha, LocalTime horaInicio) {
+        return bookPracticalClassByStudentId(studentId, fecha, horaInicio, null);
+    }
+
+    public BookingResult bookPracticalClassByStudentId(Long studentId,
+                                                       LocalDate fecha,
+                                                       LocalTime horaInicio,
+                                                       String tipoPasePreferido) {
         if (fecha == null || horaInicio == null) {
             throw new IllegalArgumentException("Fecha y hora son requeridas");
         }
@@ -1180,10 +1220,13 @@ private String paymentConfirmationUrl;
             throw new IllegalStateException("El estudiante ya tiene una clase en ese horario");
         }
 
-        Profesor profesor = pickAvailableProfesor(fecha, horaInicio, horaFin)
+        String desiredTipo = resolveDesiredTipoPase(tipoPasePreferido, estudiante);
+        String desiredSede = trim(estudiante.getSede());
+
+        Profesor profesor = pickAvailableProfesor(fecha, horaInicio, horaFin, desiredTipo)
                 .orElseThrow(() -> new IllegalStateException("Ese horario esta ocupado. Elige otra hora."));
 
-        Vehiculo vehiculo = pickAvailableVehiculo(fecha, horaInicio, horaFin)
+        Vehiculo vehiculo = pickAvailableVehiculo(fecha, horaInicio, horaFin, desiredSede)
                 .orElseThrow(() -> new IllegalStateException("Ese horario esta ocupado. Elige otra hora."));
 
         Clase clase = new Clase();
@@ -1262,6 +1305,13 @@ private String paymentConfirmationUrl;
 
     @Transactional(readOnly = true)
     public List<SlotAvailability> listPracticalSlotAvailabilityByStudentId(Long studentId, LocalDate fecha) {
+        return listPracticalSlotAvailabilityByStudentId(studentId, fecha, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SlotAvailability> listPracticalSlotAvailabilityByStudentId(Long studentId,
+                                                                           LocalDate fecha,
+                                                                           String tipoPasePreferido) {
         if (fecha == null) {
             throw new IllegalArgumentException("Fecha requerida para consultar disponibilidad");
         }
@@ -1272,12 +1322,19 @@ private String paymentConfirmationUrl;
         Long id = requireStudentId(studentId);
         validatePracticalClassEligibility(id);
 
+        Estudiante estudiante = estudianteRepository.findById(id)
+                .filter(e -> !Boolean.FALSE.equals(e.getVisible()))
+                .orElseThrow(() -> new NoSuchElementException("No existe un estudiante activo con ese ID"));
+
+        String desiredTipo = resolveDesiredTipoPase(tipoPasePreferido, estudiante);
+        String desiredSede = trim(estudiante.getSede());
+
         List<LocalTime> slots = defaultPracticalSlots();
         List<SlotAvailability> out = new ArrayList<>();
         int idx = 1;
         for (LocalTime slot : slots) {
             LocalTime fin = slot.plusMinutes(Math.max(30, bookingDurationMinutes));
-            boolean disponible = isPracticalSlotAvailable(id, fecha, slot, fin);
+            boolean disponible = isPracticalSlotAvailable(id, fecha, slot, fin, desiredTipo, desiredSede);
             out.add(new SlotAvailability(idx, formatHour(slot), disponible));
             idx++;
         }
@@ -1305,13 +1362,22 @@ private String paymentConfirmationUrl;
                                              LocalDate fecha,
                                              LocalTime horaInicio,
                                              LocalTime horaFin) {
+        return isPracticalSlotAvailable(studentId, fecha, horaInicio, horaFin, "", "");
+    }
+
+    private boolean isPracticalSlotAvailable(Long studentId,
+                                             LocalDate fecha,
+                                             LocalTime horaInicio,
+                                             LocalTime horaFin,
+                                             String desiredTipoPase,
+                                             String desiredSede) {
         if (claseRepository.existsStudentOverlap(studentId, fecha, horaInicio, horaFin)) {
             return false;
         }
-        if (pickAvailableProfesor(fecha, horaInicio, horaFin).isEmpty()) {
+        if (pickAvailableProfesor(fecha, horaInicio, horaFin, desiredTipoPase).isEmpty()) {
             return false;
         }
-        return pickAvailableVehiculo(fecha, horaInicio, horaFin).isPresent();
+        return pickAvailableVehiculo(fecha, horaInicio, horaFin, desiredSede).isPresent();
     }
 
     private void validatePracticalClassEligibility(Long studentId) {
@@ -1640,13 +1706,49 @@ private String paymentConfirmationUrl;
         return key;
     }
 
+    private String normalizeSingleTipoPase(String raw) {
+        String v = trim(raw).toLowerCase(Locale.ROOT);
+        if ("carro".equals(v) || "moto".equals(v)) {
+            return v;
+        }
+        return "";
+    }
+
+    private String resolveDesiredTipoPase(String explicitTipoPase, Estudiante estudiante) {
+        String desired = normalizeSingleTipoPase(explicitTipoPase);
+        if (!desired.isBlank()) {
+            return desired;
+        }
+        String studentTipo = trim(estudiante == null ? null : estudiante.getTipoPase()).toLowerCase(Locale.ROOT);
+        return ("carro".equals(studentTipo) || "moto".equals(studentTipo)) ? studentTipo : "";
+    }
+
     private Optional<Profesor> pickAvailableProfesor(LocalDate fecha, LocalTime horaInicio, LocalTime horaFin) {
+        return pickAvailableProfesor(fecha, horaInicio, horaFin, "");
+    }
+
+    private Optional<Profesor> pickAvailableProfesor(LocalDate fecha,
+                                                     LocalTime horaInicio,
+                                                     LocalTime horaFin,
+                                                     String desiredTipoPase) {
         List<Profesor> activos = profesorRepository.findByVisibleTrueOrderByIdAsc();
         if (activos.isEmpty()) {
             return Optional.empty();
         }
 
         Set<Long> ocupados = new HashSet<>(claseRepository.findBusyProfesorIds(fecha, horaInicio, horaFin));
+        String desired = normalizeSingleTipoPase(desiredTipoPase);
+        if (!desired.isBlank()) {
+            for (Profesor profesor : activos) {
+                if (ocupados.contains(profesor.getId())) {
+                    continue;
+                }
+                String categoria = trim(profesor.getCategoria()).toLowerCase(Locale.ROOT);
+                if (desired.equals(categoria)) {
+                    return Optional.of(profesor);
+                }
+            }
+        }
         for (Profesor profesor : activos) {
             if (!ocupados.contains(profesor.getId())) {
                 return Optional.of(profesor);
@@ -1656,8 +1758,27 @@ private String paymentConfirmationUrl;
     }
 
     private Optional<Vehiculo> pickAvailableVehiculo(LocalDate fecha, LocalTime horaInicio, LocalTime horaFin) {
+        return pickAvailableVehiculo(fecha, horaInicio, horaFin, "");
+    }
+
+    private Optional<Vehiculo> pickAvailableVehiculo(LocalDate fecha,
+                                                     LocalTime horaInicio,
+                                                     LocalTime horaFin,
+                                                     String desiredSede) {
         Set<String> ocupados = new HashSet<>(claseRepository.findBusyVehiculoPlacas(fecha, horaInicio, horaFin));
+        String sede = trim(desiredSede).toLowerCase(Locale.ROOT);
         List<Vehiculo> disponibles = vehiculoRepository.findByVisibleTrueAndEstadoIgnoreCaseOrderByPlacaAsc("Disponible");
+        if (!sede.isBlank()) {
+            for (Vehiculo v : disponibles) {
+                if (ocupados.contains(v.getPlaca())) {
+                    continue;
+                }
+                String vehiculoSede = trim(v.getSede()).toLowerCase(Locale.ROOT);
+                if (sede.equals(vehiculoSede)) {
+                    return Optional.of(v);
+                }
+            }
+        }
         for (Vehiculo v : disponibles) {
             if (!ocupados.contains(v.getPlaca())) {
                 return Optional.of(v);
@@ -1665,6 +1786,17 @@ private String paymentConfirmationUrl;
         }
 
         List<Vehiculo> activos = vehiculoRepository.findByVisibleTrueOrderByPlacaAsc();
+        if (!sede.isBlank()) {
+            for (Vehiculo v : activos) {
+                if (ocupados.contains(v.getPlaca())) {
+                    continue;
+                }
+                String vehiculoSede = trim(v.getSede()).toLowerCase(Locale.ROOT);
+                if (sede.equals(vehiculoSede)) {
+                    return Optional.of(v);
+                }
+            }
+        }
         for (Vehiculo v : activos) {
             if (!ocupados.contains(v.getPlaca())) {
                 return Optional.of(v);

@@ -45,7 +45,10 @@ class ChatbotInboundControllerStudentOtpTest {
                         "test@example.com",
                         "t***@example.com",
                         "Test User",
-                        99L
+                        99L,
+                        "",
+                        "",
+                        ""
                 ));
 
         ChatbotInboundController.InboundMessage docMsg = new ChatbotInboundController.InboundMessage(
@@ -97,7 +100,10 @@ class ChatbotInboundControllerStudentOtpTest {
                         "cooldown@example.com",
                         "c***@example.com",
                         "Cooldown User",
-                        100L
+                        100L,
+                        "",
+                        "",
+                        ""
                 ));
 
         doThrow(new IllegalStateException("Espera 15s para reenviar el código."))
@@ -140,7 +146,10 @@ class ChatbotInboundControllerStudentOtpTest {
                         "student@example.com",
                         "s***@example.com",
                         "Alumno Prueba",
-                        200L
+                        200L,
+                        "",
+                        "",
+                        ""
                 ));
         when(verificationService.verifyEmailOtp("student@example.com", "123456"))
                 .thenReturn(true);

@@ -1148,6 +1148,14 @@ private String paymentConfirmationUrl;
             tipoPase = toTipoPase(categoria);
         }
         String sede = trim(estudiante.getSede());
+        if (sede.isBlank()) {
+            String doc = trim(estudiante.getNumeroDocumento());
+            if (!doc.isBlank()) {
+                sede = trim(procesoRepository.findByNumeroDocumento(doc)
+                        .map(ChatbotMatriculaProceso::getSede)
+                        .orElse(""));
+            }
+        }
 
         return new StudentAccessData(
                 estudiante.getNumeroDocumento(),
@@ -1221,13 +1229,27 @@ private String paymentConfirmationUrl;
         }
 
         String desiredTipo = resolveDesiredTipoPase(tipoPasePreferido, estudiante);
-        String desiredSede = trim(estudiante.getSede());
+        String desiredSede = resolveStudentSedeForBooking(estudiante);
+        if (desiredSede.isBlank()) {
+            throw new IllegalStateException("No tienes sede asignada. Comunicate con la academia para actualizarla antes de agendar.");
+        }
+        if (trim(estudiante.getSede()).isBlank()) {
+            // Curacion suave: si la sede existe en el proceso de matricula, la persistimos en el estudiante.
+            estudiante.setSede(desiredSede);
+            estudianteRepository.save(estudiante);
+        }
 
         Profesor profesor = pickAvailableProfesor(fecha, horaInicio, horaFin, desiredTipo)
-                .orElseThrow(() -> new IllegalStateException("Ese horario esta ocupado. Elige otra hora."));
+                .orElseThrow(() -> new IllegalStateException(
+                        desiredTipo.isBlank()
+                                ? "Ese horario esta ocupado. Elige otra hora."
+                                : ("No hay profesor disponible para practica de " + desiredTipo + " en ese horario. Elige otra hora.")
+                ));
 
         Vehiculo vehiculo = pickAvailableVehiculo(fecha, horaInicio, horaFin, desiredSede)
-                .orElseThrow(() -> new IllegalStateException("Ese horario esta ocupado. Elige otra hora."));
+                .orElseThrow(() -> new IllegalStateException(
+                        "No hay vehiculo disponible en la sede '" + desiredSede + "' para ese horario. Elige otra hora."
+                ));
 
         Clase clase = new Clase();
         clase.setId_estudiante(id);
@@ -1327,7 +1349,10 @@ private String paymentConfirmationUrl;
                 .orElseThrow(() -> new NoSuchElementException("No existe un estudiante activo con ese ID"));
 
         String desiredTipo = resolveDesiredTipoPase(tipoPasePreferido, estudiante);
-        String desiredSede = trim(estudiante.getSede());
+        String desiredSede = resolveStudentSedeForBooking(estudiante);
+        if (desiredSede.isBlank()) {
+            throw new IllegalStateException("No tienes sede asignada. Comunicate con la academia para actualizarla antes de consultar disponibilidad.");
+        }
 
         List<LocalTime> slots = defaultPracticalSlots();
         List<SlotAvailability> out = new ArrayList<>();
@@ -1714,13 +1739,75 @@ private String paymentConfirmationUrl;
         return "";
     }
 
+    private String normalizeSedeKey(String raw) {
+        String base = trim(raw);
+        if (base.isBlank()) return "";
+        String normalized = Normalizer.normalize(base, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .toLowerCase(Locale.ROOT);
+        return collapseSpaces(normalized);
+    }
+
+    private Set<String> resolveAllowedTipoPases(Estudiante estudiante) {
+        if (estudiante == null) {
+            return Set.of();
+        }
+        String raw = trim(estudiante.getTipoPase()).toLowerCase(Locale.ROOT);
+        if (raw.isBlank()) {
+            raw = toTipoPase(trim(estudiante.getCategoria()));
+        }
+        if (raw.isBlank()) {
+            return Set.of();
+        }
+
+        Set<String> out = new LinkedHashSet<>();
+        for (String part : raw.split(",")) {
+            String v = normalizeSingleTipoPase(part);
+            if (!v.isBlank()) {
+                out.add(v);
+            }
+        }
+        return out;
+    }
+
     private String resolveDesiredTipoPase(String explicitTipoPase, Estudiante estudiante) {
+        Set<String> allowed = resolveAllowedTipoPases(estudiante);
+
         String desired = normalizeSingleTipoPase(explicitTipoPase);
         if (!desired.isBlank()) {
+            if (!allowed.isEmpty() && !allowed.contains(desired)) {
+                throw new IllegalStateException("Tu categoria no permite agendar practica de " + desired + ".");
+            }
             return desired;
         }
-        String studentTipo = trim(estudiante == null ? null : estudiante.getTipoPase()).toLowerCase(Locale.ROOT);
-        return ("carro".equals(studentTipo) || "moto".equals(studentTipo)) ? studentTipo : "";
+
+        if (allowed.size() == 1) {
+            return allowed.iterator().next();
+        }
+        if (allowed.size() > 1) {
+            throw new IllegalStateException("Debes elegir si deseas agendar practica de carro o de moto.");
+        }
+        return "";
+    }
+
+    private String resolveStudentSedeForBooking(Estudiante estudiante) {
+        if (estudiante == null) {
+            return "";
+        }
+
+        String sede = trim(estudiante.getSede());
+        if (!sede.isBlank()) {
+            return sede;
+        }
+
+        String doc = normalizeDoc(estudiante.getNumeroDocumento());
+        if (doc.isBlank()) {
+            return "";
+        }
+
+        return trim(procesoRepository.findByNumeroDocumento(doc)
+                .map(ChatbotMatriculaProceso::getSede)
+                .orElse(""));
     }
 
     private Optional<Profesor> pickAvailableProfesor(LocalDate fecha, LocalTime horaInicio, LocalTime horaFin) {
@@ -1748,6 +1835,8 @@ private String paymentConfirmationUrl;
                     return Optional.of(profesor);
                 }
             }
+            // Si el estudiante eligio (o se detecto) un tipo de pase, no debemos asignar un profesor de otro tipo.
+            return Optional.empty();
         }
         for (Profesor profesor : activos) {
             if (!ocupados.contains(profesor.getId())) {
@@ -1766,19 +1855,32 @@ private String paymentConfirmationUrl;
                                                      LocalTime horaFin,
                                                      String desiredSede) {
         Set<String> ocupados = new HashSet<>(claseRepository.findBusyVehiculoPlacas(fecha, horaInicio, horaFin));
-        String sede = trim(desiredSede).toLowerCase(Locale.ROOT);
+        String sede = normalizeSedeKey(desiredSede);
         List<Vehiculo> disponibles = vehiculoRepository.findByVisibleTrueAndEstadoIgnoreCaseOrderByPlacaAsc("Disponible");
         if (!sede.isBlank()) {
             for (Vehiculo v : disponibles) {
                 if (ocupados.contains(v.getPlaca())) {
                     continue;
                 }
-                String vehiculoSede = trim(v.getSede()).toLowerCase(Locale.ROOT);
+                String vehiculoSede = normalizeSedeKey(v.getSede());
                 if (sede.equals(vehiculoSede)) {
                     return Optional.of(v);
                 }
             }
+            List<Vehiculo> activos = vehiculoRepository.findByVisibleTrueOrderByPlacaAsc();
+            for (Vehiculo v : activos) {
+                if (ocupados.contains(v.getPlaca())) {
+                    continue;
+                }
+                String vehiculoSede = normalizeSedeKey(v.getSede());
+                if (sede.equals(vehiculoSede)) {
+                    return Optional.of(v);
+                }
+            }
+            // Si hay sede objetivo, no debemos usar vehiculos de otra sede.
+            return Optional.empty();
         }
+
         for (Vehiculo v : disponibles) {
             if (!ocupados.contains(v.getPlaca())) {
                 return Optional.of(v);
@@ -1786,17 +1888,6 @@ private String paymentConfirmationUrl;
         }
 
         List<Vehiculo> activos = vehiculoRepository.findByVisibleTrueOrderByPlacaAsc();
-        if (!sede.isBlank()) {
-            for (Vehiculo v : activos) {
-                if (ocupados.contains(v.getPlaca())) {
-                    continue;
-                }
-                String vehiculoSede = trim(v.getSede()).toLowerCase(Locale.ROOT);
-                if (sede.equals(vehiculoSede)) {
-                    return Optional.of(v);
-                }
-            }
-        }
         for (Vehiculo v : activos) {
             if (!ocupados.contains(v.getPlaca())) {
                 return Optional.of(v);

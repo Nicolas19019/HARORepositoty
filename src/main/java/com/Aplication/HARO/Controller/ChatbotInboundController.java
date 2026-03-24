@@ -1207,9 +1207,22 @@ public class ChatbotInboundController {
                 session.studentBookingTipoPase = null;
 
                 String categoria = firstNotBlank(trim(session.studentCategoria), "No registrada");
-                String sede = firstNotBlank(trim(session.studentSede), "No asignada");
+                String rawSede = trim(session.studentSede);
+                String sede = firstNotBlank(rawSede, "No asignada");
                 String tipoPase = trim(session.studentTipoPase).toLowerCase(Locale.ROOT);
                 boolean dual = tipoPase.contains("carro") && tipoPase.contains("moto");
+
+                if (rawSede.isBlank()) {
+                    actions.add(textMsg(
+                            "⚠️ No encuentro una sede asignada para tu matrícula, por lo que no puedo agendar prácticas.\n\n" +
+                                    "Comunícate con la academia para registrar tu sede y vuelve a intentarlo.\n\n" +
+                                    "📌 Datos registrados:\n" +
+                                    "🪪 Categoría: " + categoria + "\n" +
+                                    "🏫 Sede asignada: " + sede
+                    ));
+                    actions.add(textMsg(studentNavigationOptionsText()));
+                    return;
+                }
 
                 actions.add(textMsg(practicalProcessText()));
                 if (dual) {
@@ -2095,6 +2108,15 @@ public class ChatbotInboundController {
                 .append("Fecha: ").append(clase.getFecha()).append("\n")
                 .append("Inicio: ").append(clase.getHoraInicio()).append("\n")
                 .append("Fin: ").append(clase.getHoraFin());
+
+        String sede = firstNotBlank(trim(session.studentSede), "No asignada");
+        String categoria = firstNotBlank(trim(session.studentCategoria), "No registrada");
+        out.append("\nSede: ").append(sede)
+                .append("\nCategoria: ").append(categoria);
+        String tipo = trim(session.studentBookingTipoPase).toLowerCase(Locale.ROOT);
+        if ("carro".equals(tipo) || "moto".equals(tipo)) {
+            out.append("\nTipo practica: ").append("carro".equals(tipo) ? "CARRO" : "MOTO");
+        }
         if (!calendarLink.isBlank()) {
             out.append(manualCalendar ? "\nAgregar al calendario: " : "\nEvento: ").append(calendarLink);
         }

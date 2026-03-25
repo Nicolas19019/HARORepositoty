@@ -41,6 +41,7 @@ this.encoder = encoder;
     if (rawOrHash == null || rawOrHash.isBlank()) rawOrHash = "Cambiar123*";
     if (!esBcrypt(rawOrHash)) in.setContrasenaHash(encoder.encode(rawOrHash));
     if (in.getActivo() == null) in.setActivo(true);
+    in.setSede(normalizarSede(in.getSede()));
 
     return repo.save(in);
   }
@@ -58,6 +59,7 @@ this.encoder = encoder;
       actual.setCorreo(in.getCorreo());
     }
     if (in.getNombre() != null) actual.setNombre(in.getNombre());
+    if (in.getSede() != null) actual.setSede(normalizarSede(in.getSede()));
     if (in.getActivo() != null) actual.setActivo(in.getActivo());
 
     if (in.getContrasenaHash() != null && !in.getContrasenaHash().isBlank()) {
@@ -88,6 +90,12 @@ this.encoder = encoder;
     } catch (EmptyResultDataAccessException ex) {
       throw new IllegalArgumentException("No existe");
     }
+  }
+
+  private String normalizarSede(String raw) {
+    if (raw == null) return null;
+    String sede = raw.trim().replaceAll("\\s+", " ");
+    return sede.isBlank() ? null : sede;
   }
 
   private boolean esBcrypt(String s) { return s != null && (s.startsWith("$2a$") || s.startsWith("$2b$") || s.startsWith("$2y$")); }

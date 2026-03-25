@@ -36,6 +36,9 @@ public class Administrador {
   @Column(length = 100)
   private String nombre;
 
+  @Column(name = "sede", length = 120)
+  private String sede;
+
   @Column(nullable = false)
   private Boolean activo = true;
 
@@ -86,6 +89,14 @@ public class Administrador {
 
   public void setNombre(String nombre) {
 	this.nombre = nombre;
+  }
+
+  public String getSede() {
+    return sede;
+  }
+
+  public void setSede(String sede) {
+    this.sede = sede;
   }
 
   public Boolean getActivo() {

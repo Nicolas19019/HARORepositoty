@@ -4,6 +4,7 @@ import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Model.Clase;
 import com.Aplication.HARO.Service.ChatbotProcesoService;
 import com.Aplication.HARO.Service.PaymentSyncContextService;
+import com.Aplication.HARO.Service.ProspectoService;
 import com.Aplication.HARO.Service.VerificationService;
 import com.Aplication.HARO.Service.WhatsAppTemplateService;
 import org.slf4j.Logger;
@@ -87,6 +88,7 @@ public class ChatbotInboundController {
 
     private final ChatbotProcesoService procesoService;
     private final PaymentSyncContextService paymentSyncContextService;
+    private final ProspectoService prospectoService;
     private final VerificationService verificationService;
     private final WhatsAppTemplateService waService;
 
@@ -112,10 +114,12 @@ public class ChatbotInboundController {
 
     public ChatbotInboundController(ChatbotProcesoService procesoService,
                                     PaymentSyncContextService paymentSyncContextService,
+                                    ProspectoService prospectoService,
                                     VerificationService verificationService,
                                     WhatsAppTemplateService waService) {
         this.procesoService = procesoService;
         this.paymentSyncContextService = paymentSyncContextService;
+        this.prospectoService = prospectoService;
         this.verificationService = verificationService;
         this.waService = waService;
     }
@@ -351,7 +355,7 @@ public class ChatbotInboundController {
                 case COURSES_MENU -> handleCoursesMenu(text, from, session, actions);
 
                 case ENROLLMENT_DATA_AUTH_WAIT -> handleEnrollmentDataAuthWait(text, session, actions);
-                case ENROLLMENT_CAPTURE -> handleEnrollmentCapture(rawText, session, actions);
+                case ENROLLMENT_CAPTURE -> handleEnrollmentCapture(from, rawText, session, actions);
                 case ENROLLMENT_EMAIL_CAPTURE -> handleEnrollmentEmailCapture(text, session, actions);
                 case ENROLLMENT_PHONE_CAPTURE -> handleEnrollmentPhoneCapture(text, session, actions);
                 case ENROLLMENT_ADDRESS_CAPTURE -> handleEnrollmentAddressCapture(rawText, session, actions);
@@ -396,15 +400,18 @@ public class ChatbotInboundController {
 
         switch (cmd) {
             case "1", "cursos", "curso", "categorias", "categoria" -> {
+                trackProspectServiceSafe(from, session, "SERVICIOS_MENU");
                 session.state = ChatState.COURSES_MENU;
                 session.courseOptionsExpanded = false;
                 actions.add(textMsg(coursesMenuText()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
             case "2" -> {
+                trackProspectServiceSafe(from, session, "INICIAR_MATRICULA");
                 startEnrollmentAuthorization(session, actions);
             }
             case "3", "informacion", "info", "horarios" -> {
+                trackProspectServiceSafe(from, session, "HORARIOS_Y_SEDES");
                 actions.add(textMsg(infoText()));
                 actions.add(textMsg(practicalProcessText()));
                 actions.add(textMsg("Opciones: MENU"));
@@ -442,6 +449,7 @@ public class ChatbotInboundController {
                 actions.add(textMsg("Opciones: MENU"));
             }
             case "5", "asesor", "contactar asesor", "contactar un asesor", "hablar con asesor" -> {
+                trackProspectServiceSafe(from, session, "CONTACTAR_ASESOR");
                 actions.add(textMsg(advisorContactText()));
                 actions.add(textMsg("Opciones: MENU"));
             }
@@ -472,36 +480,44 @@ public class ChatbotInboundController {
         if (session.courseOptionsExpanded) {
             switch (cmd) {
                 case "1", "a2" -> {
+                    trackProspectServiceSafe(from, session, "LICENCIA_A2");
                     actions.add(textMsg(courseA2Text()));
                     actions.add(textMsg("Opciones: MATRICULA | MENU"));
                 }
                 case "2", "b1" -> {
+                    trackProspectServiceSafe(from, session, "LICENCIA_B1");
                     actions.add(textMsg(courseB1Text()));
                     actions.add(textMsg("Opciones: MATRICULA | MENU"));
                 }
                 case "3", "c1" -> {
+                    trackProspectServiceSafe(from, session, "LICENCIA_C1");
                     actions.add(textMsg(courseC1Text()));
                     actions.add(textMsg("Opciones: MATRICULA | MENU"));
                 }
                 case "4", "a2 y b1", "a2+b1", "a2/b1", "a2,b1" -> {
+                    trackProspectServiceSafe(from, session, "LICENCIA_A2_B1");
                     actions.add(textMsg(courseA2B1Text()));
                     actions.add(textMsg("Opciones: MATRICULA | MENU"));
                 }
                 case "5", "a2, b1 y c1", "a2 b1 y c1", "a2+b1+c1", "a2/b1/c1", "a2,b1,c1" -> {
+                    trackProspectServiceSafe(from, session, "LICENCIA_A2_B1_C1");
                     actions.add(textMsg(courseA2B1C1Text()));
                     actions.add(textMsg("Opciones: MATRICULA | MENU"));
                 }
                 case "6", "refuerzo carro", "clase de refuerzo carro", "clases de refuerzo carro" -> {
+                    trackProspectServiceSafe(from, session, "REFUERZO_CARRO");
                     actions.add(textMsg(serviceRefuerzoCarroText()));
                     actions.add(textMsg(advisorContactText("Hola, quiero mas informacion de las clases de refuerzo de carro por favor.")));
                     actions.add(textMsg("Opciones: MENU"));
                 }
                 case "7", "refuerzo moto", "clase de refuerzo moto", "clases de refuerzo moto" -> {
+                    trackProspectServiceSafe(from, session, "REFUERZO_MOTO");
                     actions.add(textMsg(serviceRefuerzoMotoText()));
                     actions.add(textMsg(advisorContactText("Hola, quiero mas informacion de las clases de refuerzo de moto por favor.")));
                     actions.add(textMsg("Opciones: MENU"));
                 }
                 case "8", "recategorizacion", "recategorización", "b1 a c1", "b1->c1" -> {
+                    trackProspectServiceSafe(from, session, "RECATEGORIZACION_B1_C1");
                     actions.add(textMsg(courseRecategorizacionText()));
                     actions.add(textMsg(advisorContactText("Hola, quiero mas informacion de la recategorizacion B1 a C1 por favor.")));
                     actions.add(textMsg("Opciones: MENU"));
@@ -518,36 +534,44 @@ public class ChatbotInboundController {
         // Menú principal de cursos (1..8)
         switch (cmd) {
             case "1", "a2" -> {
+                trackProspectServiceSafe(from, session, "LICENCIA_A2");
                 actions.add(textMsg(courseA2Text()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
             case "2", "b1" -> {
+                trackProspectServiceSafe(from, session, "LICENCIA_B1");
                 actions.add(textMsg(courseB1Text()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
             case "3", "c1" -> {
+                trackProspectServiceSafe(from, session, "LICENCIA_C1");
                 actions.add(textMsg(courseC1Text()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
             case "4", "a2 y b1", "a2+b1", "a2/b1", "a2,b1" -> {
+                trackProspectServiceSafe(from, session, "LICENCIA_A2_B1");
                 actions.add(textMsg(courseA2B1Text()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
             case "5", "a2, b1 y c1", "a2 b1 y c1", "a2+b1+c1", "a2/b1/c1", "a2,b1,c1" -> {
+                trackProspectServiceSafe(from, session, "LICENCIA_A2_B1_C1");
                 actions.add(textMsg(courseA2B1C1Text()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
             case "6", "refuerzo carro", "clase de refuerzo carro", "clases de refuerzo carro" -> {
+                trackProspectServiceSafe(from, session, "REFUERZO_CARRO");
                 actions.add(textMsg(serviceRefuerzoCarroText()));
                 actions.add(textMsg(advisorContactText("Hola, quiero mas informacion de las clases de refuerzo de carro por favor.")));
                 actions.add(textMsg("Opciones: MENU"));
             }
             case "7", "refuerzo moto", "clase de refuerzo moto", "clases de refuerzo moto" -> {
+                trackProspectServiceSafe(from, session, "REFUERZO_MOTO");
                 actions.add(textMsg(serviceRefuerzoMotoText()));
                 actions.add(textMsg(advisorContactText("Hola, quiero mas informacion de las clases de refuerzo de moto por favor.")));
                 actions.add(textMsg("Opciones: MENU"));
             }
             case "8", "recategorizacion", "recategorización", "b1 a c1", "b1->c1" -> {
+                trackProspectServiceSafe(from, session, "RECATEGORIZACION_B1_C1");
                 actions.add(textMsg(courseRecategorizacionText()));
                 actions.add(textMsg(advisorContactText("Hola, quiero mas informacion de la recategorizacion B1 a C1 por favor.")));
                 actions.add(textMsg("Opciones: MENU"));
@@ -589,7 +613,7 @@ public class ChatbotInboundController {
         actions.add(textMsg("Opciones: SI | NO | MENU | CANCELAR"));
     }
 
-    private void handleEnrollmentCapture(String rawText, SessionData session, List<BotAction> actions) {
+    private void handleEnrollmentCapture(String from, String rawText, SessionData session, List<BotAction> actions) {
         EnrollmentBasic basic = parseEnrollmentBasic(rawText);
         if (basic == null) {
             actions.add(textMsg(
@@ -607,6 +631,8 @@ public class ChatbotInboundController {
         session.documento = basic.documento();
         session.categoria = basic.categoria();
         session.state = ChatState.ENROLLMENT_EMAIL_CAPTURE;
+
+        trackProspectServiceSafe(from, session, prospectServiceFromCategoria(session.categoria));
 
         actions.add(textMsg(
                 "Paso 2 de 7: envia tu correo electronico.\n" +
@@ -2462,6 +2488,41 @@ public class ChatbotInboundController {
             return ADVISOR_WHATSAPP_LINK;
         }
         return ADVISOR_WHATSAPP_LINK + "?text=" + URLEncoder.encode(normalized, StandardCharsets.UTF_8);
+    }
+
+    // =========================
+    // PROSPECTOS (NO ESTUDIANTE)
+    // =========================
+
+    private void trackProspectServiceSafe(String from, SessionData session, String servicio) {
+        if (from == null || from.isBlank()) return;
+        String srv = servicio == null ? "" : servicio.trim();
+        if (srv.isBlank()) return;
+
+        // Si esta en sesion de estudiante verificada, no lo contamos como prospecto.
+        if (session != null && session.studentOtpVerified) {
+            return;
+        }
+
+        try {
+            prospectoService.registrarConsulta(from, srv);
+        } catch (Exception e) {
+            log.warn("No se pudo guardar prospecto from={} servicio={}", maskPhone(from), srv, e);
+        }
+    }
+
+    private String prospectServiceFromCategoria(String categoria) {
+        String cat = normalizeCategory(categoria);
+        return switch (cat) {
+            case "A2" -> "LICENCIA_A2";
+            case "B1" -> "LICENCIA_B1";
+            case "C1" -> "LICENCIA_C1";
+            case "A2 y B1" -> "LICENCIA_A2_B1";
+            case "A2, B1 y C1" -> "LICENCIA_A2_B1_C1";
+            case "A2 y C1" -> "LICENCIA_A2_C1";
+            case "B1 y C1" -> "LICENCIA_B1_C1";
+            default -> "LICENCIA_" + cat.replaceAll("[^A-Z0-9]+", "_");
+        };
     }
 
     // =========================

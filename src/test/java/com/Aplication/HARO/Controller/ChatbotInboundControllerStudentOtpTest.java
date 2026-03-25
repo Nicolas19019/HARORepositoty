@@ -2,6 +2,7 @@ package com.Aplication.HARO.Controller;
 
 import com.Aplication.HARO.Service.ChatbotProcesoService;
 import com.Aplication.HARO.Service.PaymentSyncContextService;
+import com.Aplication.HARO.Service.ProspectoService;
 import com.Aplication.HARO.Service.VerificationService;
 import com.Aplication.HARO.Service.WhatsAppTemplateService;
 import org.junit.jupiter.api.Test;
@@ -17,12 +18,14 @@ class ChatbotInboundControllerStudentOtpTest {
     void studentFlow_shouldSendOtpSynchronously_andPromptForOtpCode() {
         ChatbotProcesoService procesoService = mock(ChatbotProcesoService.class);
         PaymentSyncContextService paymentSyncContextService = mock(PaymentSyncContextService.class);
+        ProspectoService prospectoService = mock(ProspectoService.class);
         VerificationService verificationService = mock(VerificationService.class);
         WhatsAppTemplateService waService = mock(WhatsAppTemplateService.class);
 
         ChatbotInboundController controller = new ChatbotInboundController(
                 procesoService,
                 paymentSyncContextService,
+                prospectoService,
                 verificationService,
                 waService
         );
@@ -75,12 +78,14 @@ class ChatbotInboundControllerStudentOtpTest {
     void studentFlow_shouldHandleOtpCooldown_andStillPromptForOtpCode() {
         ChatbotProcesoService procesoService = mock(ChatbotProcesoService.class);
         PaymentSyncContextService paymentSyncContextService = mock(PaymentSyncContextService.class);
+        ProspectoService prospectoService = mock(ProspectoService.class);
         VerificationService verificationService = mock(VerificationService.class);
         WhatsAppTemplateService waService = mock(WhatsAppTemplateService.class);
 
         ChatbotInboundController controller = new ChatbotInboundController(
                 procesoService,
                 paymentSyncContextService,
+                prospectoService,
                 verificationService,
                 waService
         );
@@ -130,12 +135,14 @@ class ChatbotInboundControllerStudentOtpTest {
     void studentFlow_shouldAllowReturningToStudentMenuWithoutRevalidatingOtp_untilLogout() {
         ChatbotProcesoService procesoService = mock(ChatbotProcesoService.class);
         PaymentSyncContextService paymentSyncContextService = mock(PaymentSyncContextService.class);
+        ProspectoService prospectoService = mock(ProspectoService.class);
         VerificationService verificationService = mock(VerificationService.class);
         WhatsAppTemplateService waService = mock(WhatsAppTemplateService.class);
 
         ChatbotInboundController controller = new ChatbotInboundController(
                 procesoService,
                 paymentSyncContextService,
+                prospectoService,
                 verificationService,
                 waService
         );
@@ -212,12 +219,14 @@ class ChatbotInboundControllerStudentOtpTest {
     void coursesMenu_shouldRedirectRefuerzoAndRecategorizacionToAdvisor() {
         ChatbotProcesoService procesoService = mock(ChatbotProcesoService.class);
         PaymentSyncContextService paymentSyncContextService = mock(PaymentSyncContextService.class);
+        ProspectoService prospectoService = mock(ProspectoService.class);
         VerificationService verificationService = mock(VerificationService.class);
         WhatsAppTemplateService waService = mock(WhatsAppTemplateService.class);
 
         ChatbotInboundController controller = new ChatbotInboundController(
                 procesoService,
                 paymentSyncContextService,
+                prospectoService,
                 verificationService,
                 waService
         );

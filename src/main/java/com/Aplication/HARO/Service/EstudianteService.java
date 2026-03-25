@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.time.LocalDate;
 import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -31,6 +32,17 @@ public class EstudianteService {
   private String normalizeEmail(String email) {
     if (email == null) return "";
     return email.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private boolean esMatriculado(String tipoEstudiante) {
+    return "matriculado".equalsIgnoreCase(tipoEstudiante == null ? "" : tipoEstudiante.trim());
+  }
+
+  private String normalizarOrigenMatricula(String origen) {
+    String value = origen == null ? "" : origen.trim().toUpperCase(Locale.ROOT);
+    if (value.isBlank()) return "";
+    if ("CHATBOT".equals(value) || "PRESENCIAL".equals(value)) return value;
+    throw new IllegalArgumentException("origenMatricula solo permite: CHATBOT o PRESENCIAL");
   }
 
   /* ==========================
@@ -125,6 +137,14 @@ public class EstudianteService {
     // En API, todo registro nuevo nace visible.
     in.setVisible(true);
     in.setFotoPerfil(normalizarFotoPerfil(in.getFotoPerfil()));
+    in.setOrigenMatricula(normalizarOrigenMatricula(in.getOrigenMatricula()));
+
+    if (esMatriculado(in.getTipoEstudiante()) && in.getFechaMatricula() == null) {
+      in.setFechaMatricula(LocalDate.now());
+    }
+    if (esMatriculado(in.getTipoEstudiante()) && in.getOrigenMatricula().isBlank()) {
+      in.setOrigenMatricula("PRESENCIAL");
+    }
 
     String rawOrHash = in.getContrasena();
     if (rawOrHash == null || rawOrHash.isBlank()) {
@@ -196,6 +216,12 @@ public class EstudianteService {
     if (incoming.getFotoPerfil() != null) db.setFotoPerfil(normalizarFotoPerfil(incoming.getFotoPerfil()));
     if (incoming.getCategoria() != null) db.setCategoria(incoming.getCategoria());
     if (incoming.getTipoEstudiante() != null) db.setTipoEstudiante(incoming.getTipoEstudiante());
+    if (incoming.getFechaMatricula() != null) {
+      db.setFechaMatricula(incoming.getFechaMatricula());
+    }
+    if (incoming.getOrigenMatricula() != null) {
+      db.setOrigenMatricula(normalizarOrigenMatricula(incoming.getOrigenMatricula()));
+    }
     if (incoming.getEstado() != null) db.setEstado(incoming.getEstado());
     if (incoming.getSede() != null) db.setSede(incoming.getSede());
     if (incoming.getHoras() != null) {
@@ -219,6 +245,13 @@ public class EstudianteService {
       db.setContrasena(esBcrypt(incoming.getContrasena())
           ? incoming.getContrasena()
           : encoder.encode(incoming.getContrasena()));
+    }
+
+    if (esMatriculado(db.getTipoEstudiante()) && db.getFechaMatricula() == null) {
+      db.setFechaMatricula(LocalDate.now());
+    }
+    if (esMatriculado(db.getTipoEstudiante()) && normalizarOrigenMatricula(db.getOrigenMatricula()).isBlank()) {
+      db.setOrigenMatricula("PRESENCIAL");
     }
 
     return repo.save(db);

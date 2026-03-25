@@ -31,6 +31,8 @@ public class Profesor {
     private String categoria;
     @Column(name = "telefono")
     private String telefono;
+    @Column(name = "sede", length = 120)
+    private String sede;
     @Column(name = "email")
     private String email;
     @Column(name = "usuario")
@@ -89,6 +91,14 @@ public class Profesor {
 
 	public void setTelefono(String telefono) {
 		this.telefono = telefono;
+	}
+
+	public String getSede() {
+		return sede;
+	}
+
+	public void setSede(String sede) {
+		this.sede = sede;
 	}
 
 	public String getEmail() {

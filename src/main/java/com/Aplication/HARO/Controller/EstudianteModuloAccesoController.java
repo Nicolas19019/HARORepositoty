@@ -1,0 +1,59 @@
+package com.Aplication.HARO.Controller;
+
+import com.Aplication.HARO.Service.EstudianteModuloAccesoService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/modulos-aprendizaje/acceso")
+@CrossOrigin(origins = "*")
+public class EstudianteModuloAccesoController {
+
+    public record RegistroModuloRequest(
+            Long idEstudiante,
+            String email,
+            String usuario,
+            String documento,
+            String origen
+    ) {}
+
+    private final EstudianteModuloAccesoService service;
+
+    public EstudianteModuloAccesoController(EstudianteModuloAccesoService service) {
+        this.service = service;
+    }
+
+    @PostMapping("/registro")
+    public ResponseEntity<EstudianteModuloAccesoService.RegistroResponse> registrarModulo(
+            @RequestBody RegistroModuloRequest req) {
+        EstudianteModuloAccesoService.RegistroResponse out = service.registrarModulo(
+                new EstudianteModuloAccesoService.RegistroRequest(
+                        req == null ? null : req.idEstudiante(),
+                        req == null ? null : req.email(),
+                        req == null ? null : req.usuario(),
+                        req == null ? null : req.documento(),
+                        req == null ? null : req.origen()
+                )
+        );
+        return ResponseEntity.ok(out);
+    }
+
+    @GetMapping("/admin/estudiantes")
+    public List<EstudianteModuloAccesoService.EstudianteModuloAdminRow> getEstudiantesRegistrados() {
+        return service.getEstudiantesRegistradosModulo();
+    }
+
+    @GetMapping("/admin/resumen")
+    public EstudianteModuloAccesoService.ResumenAdmin getResumen() {
+        return service.getResumenAdmin();
+    }
+
+    @GetMapping("/estudiante/{idEstudiante}")
+    public ResponseEntity<?> getRegistroByEstudiante(@PathVariable Long idEstudiante) {
+        return service.getRegistroByEstudiante(idEstudiante)
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+}

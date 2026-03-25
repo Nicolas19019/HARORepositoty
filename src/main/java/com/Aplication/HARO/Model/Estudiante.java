@@ -60,6 +60,12 @@ public class Estudiante {
 	@Column(name = "fecha_creacion", updatable = false)
 	private LocalDate fechaCreacion;
 
+	@Column(name = "fecha_matricula")
+	private LocalDate fechaMatricula;
+
+	@Column(name = "origen_matricula", length = 20)
+	private String origenMatricula;
+
 
 	public Long getId() {
 		return id;
@@ -171,6 +177,22 @@ public class Estudiante {
 
 	public void setFechaCreacion(LocalDate fechaCreacion) {
 		this.fechaCreacion = fechaCreacion;
+	}
+
+	public LocalDate getFechaMatricula() {
+		return fechaMatricula;
+	}
+
+	public void setFechaMatricula(LocalDate fechaMatricula) {
+		this.fechaMatricula = fechaMatricula;
+	}
+
+	public String getOrigenMatricula() {
+		return origenMatricula;
+	}
+
+	public void setOrigenMatricula(String origenMatricula) {
+		this.origenMatricula = origenMatricula;
 	}
 
 	public String getTipoEstudiante() {

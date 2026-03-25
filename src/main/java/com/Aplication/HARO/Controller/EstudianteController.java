@@ -130,7 +130,7 @@ public class EstudianteController {
 				"direccion", "usuario"));
 		out.put("opcionales", List.of(
 				"tipoEstudiante", "horas", "tipoPase",
-				"aproboExamenTeorico", "estado", "visible", "fotoPerfil"));
+				"aproboExamenTeorico", "estado", "visible", "fotoPerfil", "fechaMatricula", "origenMatricula"));
 		out.put("soloLectura", List.of("id", "fechaCreacion"));
 
 		Map<String, String> reglas = new LinkedHashMap<>();
@@ -140,6 +140,8 @@ public class EstudianteController {
 		reglas.put("contrasena", "No se recibe por este endpoint; se gestiona por un flujo dedicado.");
 		reglas.put("tipoPase", "Solo permite: carro, moto, carro,moto");
 		reglas.put("horas", "No puede ser negativo");
+		reglas.put("fechaMatricula", "Si el estudiante queda matriculado y no se envia, el backend la asigna automaticamente.");
+		reglas.put("origenMatricula", "Solo permite CHATBOT o PRESENCIAL. Si el estudiante queda matriculado y no se envia, el backend asigna PRESENCIAL en el flujo generico.");
 		out.put("reglas", reglas);
 		return out;
 	}

@@ -207,4 +207,64 @@ class ChatbotInboundControllerStudentOtpTest {
         assertTrue(joinedAfterLogout.toLowerCase().contains("documento"), "Should ask for document again after logout");
         assertTrue(joinedAfterLogout.toLowerCase().contains("otp"), "Should mention OTP again after logout");
     }
+
+    @Test
+    void coursesMenu_shouldRedirectRefuerzoAndRecategorizacionToAdvisor() {
+        ChatbotProcesoService procesoService = mock(ChatbotProcesoService.class);
+        PaymentSyncContextService paymentSyncContextService = mock(PaymentSyncContextService.class);
+        VerificationService verificationService = mock(VerificationService.class);
+        WhatsAppTemplateService waService = mock(WhatsAppTemplateService.class);
+
+        ChatbotInboundController controller = new ChatbotInboundController(
+                procesoService,
+                paymentSyncContextService,
+                verificationService,
+                waService
+        );
+
+        controller.inbound(new ChatbotInboundController.InboundMessage(
+                "573001110000",
+                "1",
+                null,
+                null,
+                null,
+                false
+        ));
+
+        ChatbotInboundController.BotResponse refuerzoResp = controller.inbound(new ChatbotInboundController.InboundMessage(
+                "573001110000",
+                "6",
+                null,
+                null,
+                null,
+                false
+        )).getBody();
+
+        String refuerzo = refuerzoResp.actions().stream()
+                .map(ChatbotInboundController.BotAction::body)
+                .reduce("", (a, b) -> a + "\n" + b);
+
+        assertTrue(refuerzo.contains("Clase de refuerzo - Carro"));
+        assertTrue(refuerzo.contains("https://wa.me/573202114876?text="));
+        assertTrue(refuerzo.contains("quiero mas informacion de las clases de refuerzo de carro"));
+        assertTrue(!refuerzo.contains("MATRICULA"), "Refuerzo should not send the user to enrollment");
+
+        ChatbotInboundController.BotResponse recatResp = controller.inbound(new ChatbotInboundController.InboundMessage(
+                "573001110000",
+                "8",
+                null,
+                null,
+                null,
+                false
+        )).getBody();
+
+        String recat = recatResp.actions().stream()
+                .map(ChatbotInboundController.BotAction::body)
+                .reduce("", (a, b) -> a + "\n" + b);
+
+        assertTrue(recat.contains("Recategorización B1 a C1"));
+        assertTrue(recat.contains("quiero mas informacion de la recategorizacion B1 a C1"));
+        assertTrue(recat.contains("📌 Valor curso: $950.000"));
+        assertTrue(!recat.contains("MATRICULA"), "Recategorization should not send the user to enrollment");
+    }
 }

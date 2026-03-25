@@ -491,9 +491,20 @@ public class ChatbotInboundController {
                     actions.add(textMsg(courseA2B1C1Text()));
                     actions.add(textMsg("Opciones: MATRICULA | MENU"));
                 }
-                case "6", "recategorizacion", "recategorización", "b1 a c1", "b1->c1" -> {
+                case "6", "refuerzo carro", "clase de refuerzo carro", "clases de refuerzo carro" -> {
+                    actions.add(textMsg(serviceRefuerzoCarroText()));
+                    actions.add(textMsg(advisorContactText("Hola, quiero mas informacion de las clases de refuerzo de carro por favor.")));
+                    actions.add(textMsg("Opciones: MENU"));
+                }
+                case "7", "refuerzo moto", "clase de refuerzo moto", "clases de refuerzo moto" -> {
+                    actions.add(textMsg(serviceRefuerzoMotoText()));
+                    actions.add(textMsg(advisorContactText("Hola, quiero mas informacion de las clases de refuerzo de moto por favor.")));
+                    actions.add(textMsg("Opciones: MENU"));
+                }
+                case "8", "recategorizacion", "recategorización", "b1 a c1", "b1->c1" -> {
                     actions.add(textMsg(courseRecategorizacionText()));
-                    actions.add(textMsg("Opciones: MATRICULA | MENU"));
+                    actions.add(textMsg(advisorContactText("Hola, quiero mas informacion de la recategorizacion B1 a C1 por favor.")));
+                    actions.add(textMsg("Opciones: MENU"));
                 }
             default -> {
                 actions.add(textMsg("⚠️ Opción no reconocida para este listado de cursos."));
@@ -504,7 +515,7 @@ public class ChatbotInboundController {
             return;
         }
 
-        // Menú principal de cursos (1..6)
+        // Menú principal de cursos (1..8)
         switch (cmd) {
             case "1", "a2" -> {
                 actions.add(textMsg(courseA2Text()));
@@ -526,12 +537,23 @@ public class ChatbotInboundController {
                 actions.add(textMsg(courseA2B1C1Text()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
-            case "6", "recategorizacion", "recategorización", "b1 a c1", "b1->c1" -> {
+            case "6", "refuerzo carro", "clase de refuerzo carro", "clases de refuerzo carro" -> {
+                actions.add(textMsg(serviceRefuerzoCarroText()));
+                actions.add(textMsg(advisorContactText("Hola, quiero mas informacion de las clases de refuerzo de carro por favor.")));
+                actions.add(textMsg("Opciones: MENU"));
+            }
+            case "7", "refuerzo moto", "clase de refuerzo moto", "clases de refuerzo moto" -> {
+                actions.add(textMsg(serviceRefuerzoMotoText()));
+                actions.add(textMsg(advisorContactText("Hola, quiero mas informacion de las clases de refuerzo de moto por favor.")));
+                actions.add(textMsg("Opciones: MENU"));
+            }
+            case "8", "recategorizacion", "recategorización", "b1 a c1", "b1->c1" -> {
                 actions.add(textMsg(courseRecategorizacionText()));
-                actions.add(textMsg("Opciones: MATRICULA | MENU"));
+                actions.add(textMsg(advisorContactText("Hola, quiero mas informacion de la recategorizacion B1 a C1 por favor.")));
+                actions.add(textMsg("Opciones: MENU"));
             }
             default -> {
-                actions.add(textMsg("⚠️ Opción no reconocida para este menú. Escoge 1 a 6, MATRICULA o MENU."));
+                actions.add(textMsg("⚠️ Opción no reconocida para este menú. Escoge 1 a 8, MATRICULA o MENU."));
                 actions.add(textMsg(coursesMenuText()));
                 actions.add(textMsg("Opciones: MATRICULA | MENU"));
             }
@@ -2422,7 +2444,24 @@ public class ChatbotInboundController {
     }
 
     private String advisorContactText() {
-        return "🤝 Para contactar un asesor, escribe aquí:\n" + ADVISOR_WHATSAPP_LINK;
+        return advisorContactText(null);
+    }
+
+    private String advisorContactText(String predefinedMessage) {
+        String link = buildAdvisorLink(predefinedMessage);
+        if (trim(predefinedMessage).isBlank()) {
+            return "🤝 Para contactar un asesor, escribe aquí:\n" + link;
+        }
+        return "🤝 Para contactar un asesor, escribe aquí:\n" + link + "\n\n" +
+                "Mensaje sugerido:\n" + trim(predefinedMessage);
+    }
+
+    private String buildAdvisorLink(String predefinedMessage) {
+        String normalized = collapseSpaces(predefinedMessage);
+        if (normalized.isBlank()) {
+            return ADVISOR_WHATSAPP_LINK;
+        }
+        return ADVISOR_WHATSAPP_LINK + "?text=" + URLEncoder.encode(normalized, StandardCharsets.UTF_8);
     }
 
     // =========================
@@ -2551,7 +2590,7 @@ public class ChatbotInboundController {
     private String mainMenuText() {
         return "👋 Hola, soy Ha-Rot, asistente virtual de CEA HARO.\n\n" +
                 "¿Qué deseas hacer hoy?\n\n" +
-                "1️⃣ Nuestros servicios (cursos y recategorización)\n" +
+                "1️⃣ Nuestros servicios (cursos, refuerzos y recategorización)\n" +
                 "2️⃣ Iniciar matrícula\n" +
                 "3️⃣ Horarios de atención y sedes\n" +
                 "4️⃣ Soy un estudiante (consultas y reservas)\n" +
@@ -2562,26 +2601,30 @@ public class ChatbotInboundController {
 
     private String coursesMenuText() {
         return "🧾 Nuestros Servicios\n" +
-                "Selecciona el servicio que deseas solicitar y agrégalo a tu carrito. 🛒\n\n" +
+                "Selecciona el servicio que deseas conocer o solicitar.\n\n" +
                 "1) 🏍️ Licencia A2\n" +
                 "2) 🚗 Licencia B1\n" +
                 "3) 🚕 Licencia C1\n" +
                 "4) 🏍️🚗 A2 y B1\n" +
                 "5) 🏍️🚗🚕 A2, B1 y C1\n" +
-                "6) 🔄 Recategorización B1 a C1\n\n" +
-                "✍️ Responde con un número del 1 al 6.";
+                "6) 🚘 Clase de refuerzo - Carro\n" +
+                "7) 🏍️ Clase de refuerzo - Moto\n" +
+                "8) 🔄 Recategorización B1 a C1\n\n" +
+                "✍️ Responde con un número del 1 al 8.";
     }
 
     private String allCategoriesMenuText() {
         return "🧾 Nuestros Servicios\n" +
-                "Selecciona el servicio que deseas solicitar y agrégalo a tu carrito. 🛒\n\n" +
+                "Selecciona el servicio que deseas conocer o solicitar.\n\n" +
                 "1) 🏍️ Categoría A2\n" +
                 "2) 🚗 Categoría B1\n" +
                 "3) 🚕 Categoría C1\n" +
                 "4) 🏍️🚗 Categoría A2 y B1\n" +
                 "5) 🏍️🚗🚕 Categoría A2, B1 y C1\n" +
-                "6) 🔄 Recategorización B1 a C1\n\n" +
-                "✍️ Responde con un número del 1 al 6.";
+                "6) 🚘 Clase de refuerzo - Carro\n" +
+                "7) 🏍️ Clase de refuerzo - Moto\n" +
+                "8) 🔄 Recategorización B1 a C1\n\n" +
+                "✍️ Responde con un número del 1 al 8.";
     }
 
     // Quitado: "Categoría A2"
@@ -2654,13 +2697,31 @@ public class ChatbotInboundController {
     // Quitado: título duplicado ("Recategorización..." dos veces)
     private String courseRecategorizacionText() {
         return "🔄 *Recategorización B1 a C1*\n\n" +
-                "🚗➡️🚕 Para pasar de servicio particular B1 a servicio público C1.\n\n" +
-                "💰 *Valor curso:* $950.000 (incluye examen médico)\n" +
-                "🪪 *Valor licencia:* $329.900 en ventanilla única\n\n" +
-                "✅ *Incluye:*\n" +
-                "• 5 horas de teoría 👩‍🏫\n" +
-                "• 10 horas de práctica 🚘\n" +
-                "• Certificado 👨🏻‍🎓";
+                "Es para servicio particular B1 a servicio público C1\n\n" +
+                "📌 Valor curso: $950.000 (incluye examen médico)\n" +
+                "📌 Valor licencia: $329.900 en ventanilla única\n\n" +
+                "INCLUYE:\n" +
+                "⏰ 5 horas de Teoría 👩‍🏫\n" +
+                "⏰ 10 horas de práctica. 🚘\n" +
+                "⏰ + Certificado 👨🏻‍🎓";
+    }
+
+    private String serviceRefuerzoCarroText() {
+        return "🚘 *Clase de refuerzo - Carro*\n\n" +
+                "Refuerza tus habilidades al volante 🚘\n\n" +
+                "📌 Duración: 45 minutos\n" +
+                "📌 Valor por hora: $45.000\n\n" +
+                "Importante:\n" +
+                "✅ Al solicitar, dirígete al carrito para agregar la cantidad de clases que desees.";
+    }
+
+    private String serviceRefuerzoMotoText() {
+        return "🏍️ *Clase de refuerzo - Moto*\n\n" +
+                "Refuerza tus habilidades de conducción 🏍\n\n" +
+                "📌 Duración: 40 minutos\n" +
+                "📌 Valor por hora: $40.000\n\n" +
+                "Importante:\n" +
+                "✅ Al solicitar, dirígete al carrito para agregar la cantidad de clases que desees.";
     }
 
     private String enrollmentInitialPromptText() {

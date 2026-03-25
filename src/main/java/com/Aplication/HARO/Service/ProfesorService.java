@@ -49,6 +49,7 @@ public class ProfesorService {
       throw new IllegalStateException("El usuario ya existe: " + p.getUsuario());
     }
     p.setCategoria(normalizarCategoria(p.getCategoria()));
+    p.setSede(normalizarSede(p.getSede()));
     // En API, todo registro nuevo nace visible.
     p.setVisible(true);
     // setea otros defaults si aplica (activo, estado, etc.)
@@ -86,6 +87,7 @@ public class ProfesorService {
     if (incoming.getNombre() != null) db.setNombre(incoming.getNombre());
     if (incoming.getApellido() != null) db.setApellido(incoming.getApellido());
     if (incoming.getTelefono() != null) db.setTelefono(incoming.getTelefono());
+    if (incoming.getSede() != null) db.setSede(normalizarSede(incoming.getSede()));
     if (incoming.getEspecialidad() != null) db.setEspecialidad(incoming.getEspecialidad());
     if (incoming.getCategoria() != null) db.setCategoria(normalizarCategoria(incoming.getCategoria()));
     if (incoming.getVisible() != null) db.setVisible(incoming.getVisible());
@@ -143,6 +145,12 @@ public class ProfesorService {
       throw new IllegalArgumentException("La categoria del instructor solo permite: carro o moto.");
     }
     return c;
+  }
+
+  private String normalizarSede(String raw) {
+    if (raw == null) return null;
+    String sede = raw.trim().replaceAll("\\s+", " ");
+    return sede.isBlank() ? null : sede;
   }
 
 }

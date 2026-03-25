@@ -3,10 +3,13 @@ package com.Aplication.HARO.Controller;
 import com.Aplication.HARO.Security.DetallesUsuarioAplicacion;
 import com.Aplication.HARO.Security.ServicioJwt;
 import com.Aplication.HARO.Security.ServicioUsuariosCombinado;
+import com.Aplication.HARO.Service.EstudianteModuloAccesoService;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import io.jsonwebtoken.Claims;
 import java.util.Locale;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
@@ -35,19 +38,23 @@ record RespuestaTokens(String tokenAcceso, String tokenRefresco, String rol, Lon
 @RequestMapping("/api/auth")
 @CrossOrigin(origins = "*")
 public class AutenticacionController {
+  private static final Logger log = LoggerFactory.getLogger(AutenticacionController.class);
   private static final Pattern EMAIL_REGEX =
       Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
   private final AuthenticationManager authManager;
   private final ServicioUsuariosCombinado usuarios;
   private final ServicioJwt jwt;
+  private final EstudianteModuloAccesoService estudianteModuloAccesoService;
 
   public AutenticacionController(AuthenticationManager authManager,
                                  ServicioUsuariosCombinado usuarios,
-                                 ServicioJwt jwt) {
+                                 ServicioJwt jwt,
+                                 EstudianteModuloAccesoService estudianteModuloAccesoService) {
     this.authManager = authManager;
     this.usuarios = usuarios;
     this.jwt = jwt;
+    this.estudianteModuloAccesoService = estudianteModuloAccesoService;
   }
 
   private boolean rolPermitido(String rol) {
@@ -77,6 +84,14 @@ public class AutenticacionController {
       var ud = (DetallesUsuarioAplicacion) usuarios.loadUserByUsername(login);
       if (!rolPermitido(ud.getRol())) {
         return ResponseEntity.status(403).body("Solo esta habilitado el acceso para estudiantes y administrativos");
+      }
+
+      if ("ESTUDIANTE".equalsIgnoreCase(ud.getRol()) && ud.getId() != null) {
+        try {
+          estudianteModuloAccesoService.registrarIngresoPorEstudiante(ud.getId());
+        } catch (Exception ex) {
+          log.warn("No se pudo registrar ingreso al modulo para estudiante {}: {}", ud.getId(), ex.getMessage());
+        }
       }
 
       String at = jwt.emitirTokenAcceso(ud.getUsername(), ud.getRol(), ud.getId(), null);

@@ -682,6 +682,8 @@ private String paymentConfirmationUrl;
         nuevo.setDireccion(profile.direccion());
         nuevo.setSede(profile.sede());
         nuevo.setTipoEstudiante("matriculado");
+        nuevo.setFechaMatricula(resolveEnrollmentDate(proceso));
+        nuevo.setOrigenMatricula("CHATBOT");
         nuevo.setEstado("Activo");
         nuevo.setVisible(true);
         nuevo.setUsuario(generateUniqueUsername(profile.email(), doc));
@@ -793,6 +795,8 @@ private String paymentConfirmationUrl;
             nuevo.setDireccion(profile.direccion());
             nuevo.setSede(profile.sede());
             nuevo.setTipoEstudiante("matriculado");
+            nuevo.setFechaMatricula(resolveEnrollmentDate(proceso));
+            nuevo.setOrigenMatricula("CHATBOT");
             nuevo.setEstado("Activo");
             nuevo.setVisible(true);
             nuevo.setUsuario(generateUniqueUsername(profile.email(), doc));
@@ -956,6 +960,10 @@ private String paymentConfirmationUrl;
         if (estudiante.getTipoEstudiante() == null || estudiante.getTipoEstudiante().isBlank()) {
             estudiante.setTipoEstudiante("matriculado");
         }
+        if (estudiante.getFechaMatricula() == null) {
+            estudiante.setFechaMatricula(resolveEnrollmentDate(proceso));
+        }
+        estudiante.setOrigenMatricula("CHATBOT");
         if (estudiante.getEstado() == null || estudiante.getEstado().isBlank()) {
             estudiante.setEstado("Activo");
         }
@@ -1240,11 +1248,11 @@ private String paymentConfirmationUrl;
             estudianteRepository.save(estudiante);
         }
 
-        Profesor profesor = pickAvailableProfesor(fecha, horaInicio, horaFin, desiredTipo)
+        Profesor profesor = pickAvailableProfesor(fecha, horaInicio, horaFin, desiredTipo, desiredSede)
                 .orElseThrow(() -> new IllegalStateException(
                         desiredTipo.isBlank()
-                                ? "Ese horario esta ocupado. Elige otra hora."
-                                : ("No hay profesor disponible para practica de " + desiredTipo + " en ese horario. Elige otra hora.")
+                                ? "No hay instructor disponible en la sede '" + desiredSede + "' para ese horario. Elige otra hora."
+                                : ("No hay instructor disponible para practica de " + desiredTipo + " en la sede '" + desiredSede + "' para ese horario. Elige otra hora.")
                 ));
 
         Vehiculo vehiculo = pickAvailableVehiculo(fecha, horaInicio, horaFin, desiredSede)
@@ -1400,7 +1408,7 @@ private String paymentConfirmationUrl;
         if (claseRepository.existsStudentOverlap(studentId, fecha, horaInicio, horaFin)) {
             return false;
         }
-        if (pickAvailableProfesor(fecha, horaInicio, horaFin, desiredTipoPase).isEmpty()) {
+        if (pickAvailableProfesor(fecha, horaInicio, horaFin, desiredTipoPase, desiredSede).isEmpty()) {
             return false;
         }
         return pickAvailableVehiculo(fecha, horaInicio, horaFin, desiredSede).isPresent();
@@ -1812,13 +1820,14 @@ private String paymentConfirmationUrl;
     }
 
     private Optional<Profesor> pickAvailableProfesor(LocalDate fecha, LocalTime horaInicio, LocalTime horaFin) {
-        return pickAvailableProfesor(fecha, horaInicio, horaFin, "");
+        return pickAvailableProfesor(fecha, horaInicio, horaFin, "", "");
     }
 
     private Optional<Profesor> pickAvailableProfesor(LocalDate fecha,
                                                      LocalTime horaInicio,
                                                      LocalTime horaFin,
-                                                     String desiredTipoPase) {
+                                                     String desiredTipoPase,
+                                                     String desiredSede) {
         List<Profesor> activos = profesorRepository.findByVisibleTrueOrderByIdAsc();
         if (activos.isEmpty()) {
             return Optional.empty();
@@ -1826,23 +1835,28 @@ private String paymentConfirmationUrl;
 
         Set<Long> ocupados = new HashSet<>(claseRepository.findBusyProfesorIds(fecha, horaInicio, horaFin));
         String desired = normalizeSingleTipoPase(desiredTipoPase);
-        if (!desired.isBlank()) {
-            for (Profesor profesor : activos) {
-                if (ocupados.contains(profesor.getId())) {
+        String sede = normalizeSedeKey(desiredSede);
+        for (Profesor profesor : activos) {
+            if (ocupados.contains(profesor.getId())) {
+                continue;
+            }
+            if (!sede.isBlank()) {
+                String profesorSede = normalizeSedeKey(profesor.getSede());
+                if (!sede.equals(profesorSede)) {
                     continue;
                 }
+            }
+            if (!desired.isBlank()) {
                 String categoria = trim(profesor.getCategoria()).toLowerCase(Locale.ROOT);
-                if (desired.equals(categoria)) {
-                    return Optional.of(profesor);
+                if (!desired.equals(categoria)) {
+                    continue;
                 }
             }
-            // Si el estudiante eligio (o se detecto) un tipo de pase, no debemos asignar un profesor de otro tipo.
-            return Optional.empty();
+            return Optional.of(profesor);
         }
-        for (Profesor profesor : activos) {
-            if (!ocupados.contains(profesor.getId())) {
-                return Optional.of(profesor);
-            }
+        // Si hay sede o tipo objetivo, no debemos asignar un instructor de otra sede o categoria.
+        if (!sede.isBlank() || !desired.isBlank()) {
+            return Optional.empty();
         }
         return Optional.empty();
     }
@@ -2262,6 +2276,14 @@ private String paymentConfirmationUrl;
 
         String user = trim(estudiante.getUsuario());
         return user.isBlank() ? "estudiante" : user;
+    }
+
+    private LocalDate resolveEnrollmentDate(ChatbotMatriculaProceso proceso) {
+        Instant enrolledAt = proceso == null ? null : proceso.getEnrolledAt();
+        if (enrolledAt != null) {
+            return enrolledAt.atZone(ZoneId.of("America/Bogota")).toLocalDate();
+        }
+        return LocalDate.now(ZoneId.of("America/Bogota"));
     }
 
     private String maskEmail(String email) {

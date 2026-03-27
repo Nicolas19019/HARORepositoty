@@ -4,6 +4,7 @@ import com.Aplication.HARO.Config.SoporteTicketSchemaInitializer;
 import com.Aplication.HARO.Model.SoporteTicket;
 import com.Aplication.HARO.Repository.SoporteTicketRepository;
 import org.springframework.data.domain.Sort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,14 +51,11 @@ public class SoporteTicketService {
     private final SoporteTicketRepository repository;
     private final SoporteTicketSchemaInitializer schemaInitializer;
 
+    @Autowired
     public SoporteTicketService(SoporteTicketRepository repository,
                                 SoporteTicketSchemaInitializer schemaInitializer) {
         this.repository = repository;
         this.schemaInitializer = schemaInitializer;
-    }
-
-    public SoporteTicketService(SoporteTicketRepository repository) {
-        this(repository, null);
     }
 
     public SoporteTicket crear(CreateRequest request) {

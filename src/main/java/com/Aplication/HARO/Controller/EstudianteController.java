@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.*;
 import com.Aplication.HARO.Security.DetallesUsuarioAplicacion;
 import com.Aplication.HARO.Model.Estudiante;
 import com.Aplication.HARO.Service.EstudianteService;
+import com.Aplication.HARO.Service.EstudianteModuloAccesoService;
+import com.Aplication.HARO.Service.VerificationService;
 
 import java.net.URI;
 import java.util.LinkedHashMap;
@@ -20,10 +22,18 @@ import java.util.Map;
 public class EstudianteController {
 
 	private final EstudianteService service;
+	private final VerificationService verificationService;
+	private final EstudianteModuloAccesoService estudianteModuloAccesoService;
 
-	public EstudianteController(EstudianteService service) {
+	public EstudianteController(EstudianteService service,
+			VerificationService verificationService,
+			EstudianteModuloAccesoService estudianteModuloAccesoService) {
 		this.service = service;
+		this.verificationService = verificationService;
+		this.estudianteModuloAccesoService = estudianteModuloAccesoService;
 	}
+
+	public record RegistroModuloRequest(String email, String code, String password, String usuario, String origen) {}
 
 	@GetMapping
 	public List<Estudiante> getAll() {
@@ -39,18 +49,45 @@ public class EstudianteController {
 	@PostMapping
 	public ResponseEntity<Estudiante> create(@RequestBody Estudiante e) {
 		e.setId(null); // <-- CLAVE: garantiza INSERT
-		// La contrasena no debe venir desde el cliente por este endpoint.
-		// El servidor la gestiona (default o flujo dedicado de cambio de clave).
-		e.setContrasena(null);
 		Estudiante created = service.createEstudiante(e);
 		return ResponseEntity.created(URI.create("/api/estudiantes/" + created.getId())).body(created);
 	}
 
+	@PostMapping("/registro-modulo")
+	public ResponseEntity<?> registroModulo(@RequestBody RegistroModuloRequest req) {
+		String email = req == null ? null : req.email();
+		String code = req == null ? null : req.code();
+		if (!verificationService.verifyEmailOtp(email, code)) {
+			return ResponseEntity.badRequest().body("Codigo invalido o vencido");
+		}
+
+		Estudiante updated = service.activarCuentaModulo(
+				email,
+				req.password(),
+				req.usuario());
+
+		EstudianteModuloAccesoService.RegistroResponse acceso = estudianteModuloAccesoService.registrarModulo(
+				new EstudianteModuloAccesoService.RegistroRequest(
+						updated.getId(),
+						updated.getEmail(),
+						updated.getUsuario(),
+						updated.getNumeroDocumento(),
+						req.origen()
+				)
+		);
+
+		Map<String, Object> body = new LinkedHashMap<>();
+		body.put("ok", true);
+		body.put("message", "Cuenta del modulo activada correctamente");
+		body.put("idEstudiante", updated.getId());
+		body.put("email", updated.getEmail());
+		body.put("usuario", updated.getUsuario());
+		body.put("registroModulo", acceso);
+		return ResponseEntity.ok(body);
+	}
+
 	@PutMapping("/{id}")
 	public Estudiante update(@PathVariable long id, @RequestBody Estudiante e) {
-		// No permitir cambio de contrasena por este endpoint generico.
-		e.setContrasena(null);
-		// Mejor flujo: leer y aplicar cambios (ver service abajo)
 		return service.updateEstudiante(id, e);
 	}
 
@@ -130,14 +167,14 @@ public class EstudianteController {
 				"direccion", "usuario"));
 		out.put("opcionales", List.of(
 				"tipoEstudiante", "horas", "tipoPase",
-				"aproboExamenTeorico", "estado", "visible", "fotoPerfil", "fechaMatricula", "origenMatricula"));
+				"aproboExamenTeorico", "estado", "visible", "fotoPerfil", "fechaMatricula", "origenMatricula", "contrasena"));
 		out.put("soloLectura", List.of("id", "fechaCreacion"));
 
 		Map<String, String> reglas = new LinkedHashMap<>();
 		reglas.put("numeroDocumento", "Debe ser único");
 		reglas.put("email", "Debe ser único");
 		reglas.put("usuario", "Debe ser único");
-		reglas.put("contrasena", "No se recibe por este endpoint; se gestiona por un flujo dedicado.");
+		reglas.put("contrasena", "Opcional. Si se envia en texto plano, el backend la hashea. Si no se envia al crear, usa un valor por defecto.");
 		reglas.put("tipoPase", "Solo permite: carro, moto, carro,moto");
 		reglas.put("horas", "No puede ser negativo");
 		reglas.put("fechaMatricula", "Si el estudiante queda matriculado y no se envia, el backend la asigna automaticamente.");

@@ -59,7 +59,10 @@ public class ModuloAprendizajeService {
             int totalPreguntas,
             int intento,
             String estado,
-            LocalDate fecha
+            LocalDate fecha,
+            Integer tiempoTotalMinutos,
+            Integer tiempoCompletadoModuloMinutos,
+            Integer porcentajeCompletadoModulo
     ) {}
 
     private final ModuloAprendizajeRepository repository;
@@ -462,7 +465,10 @@ public class ModuloAprendizajeService {
                     totalPreguntas,
                     intento,
                     aprobado ? "Aprobado" : "No aprobado",
-                    fecha
+                    fecha,
+                    row.getTiempoTotalMinutos(),
+                    row.getTiempoCompletadoModuloMinutos(),
+                    row.getPorcentajeCompletadoModulo()
             ));
         }
 

@@ -257,6 +257,34 @@ public class EstudianteService {
     return repo.save(db);
   }
 
+  public Estudiante activarCuentaModulo(String email, String password, String usuario) {
+    String normalizedEmail = normalizeEmail(email);
+    if (normalizedEmail.isBlank()) {
+      throw new IllegalArgumentException("email requerido");
+    }
+    if (password == null || password.isBlank()) {
+      throw new IllegalArgumentException("contrasena requerida");
+    }
+
+    Estudiante estudiante = repo.findByEmailNormalizadoVisible(normalizedEmail)
+        .orElseThrow(() -> new NoSuchElementException("No existe estudiante visible con el correo: " + normalizedEmail));
+
+    String nuevoUsuario = usuario == null ? "" : usuario.trim();
+    if (!nuevoUsuario.isBlank()
+        && (estudiante.getUsuario() == null || !nuevoUsuario.equalsIgnoreCase(estudiante.getUsuario()))) {
+      if (repo.existsByUsuarioIgnoreCase(nuevoUsuario)) {
+        throw new IllegalStateException("El usuario ya existe: " + nuevoUsuario);
+      }
+      estudiante.setUsuario(nuevoUsuario);
+    }
+
+    estudiante.setContrasena(esBcrypt(password) ? password : encoder.encode(password));
+    if (estudiante.getVisible() == null) {
+      estudiante.setVisible(true);
+    }
+    return repo.save(estudiante);
+  }
+
   /* ==========================
      Eliminación
      ========================== */

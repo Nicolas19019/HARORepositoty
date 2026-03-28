@@ -17,8 +17,8 @@ import java.time.Instant;
         name = "prospecto",
         uniqueConstraints = {
                 @UniqueConstraint(
-                        name = "uk_prospecto_telefono_servicio",
-                        columnNames = {"telefono", "servicio"}
+                        name = "uk_prospecto_telefono",
+                        columnNames = {"telefono"}
                 )
         }
 )
@@ -112,4 +112,3 @@ public class Prospecto {
         this.actualizadoEn = actualizadoEn;
     }
 }
-

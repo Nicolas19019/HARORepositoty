@@ -156,6 +156,7 @@ public class ChatbotInboundController {
         ENROLLMENT_ADDRESS_CAPTURE,
         ENROLLMENT_SEDE_CAPTURE,
         ENROLLMENT_CONFIRM,
+        PAYMENT_PLAN_SELECT,
         PAYMENT_WAIT,
         CONTRACT_WAIT,
         ENROLLMENT_ABORT_CONFIRM,
@@ -358,12 +359,13 @@ public class ChatbotInboundController {
                 case ENROLLMENT_CAPTURE -> handleEnrollmentCapture(from, rawText, session, actions);
                 case ENROLLMENT_EMAIL_CAPTURE -> handleEnrollmentEmailCapture(text, session, actions);
                 case ENROLLMENT_PHONE_CAPTURE -> handleEnrollmentPhoneCapture(text, session, actions);
-                case ENROLLMENT_ADDRESS_CAPTURE -> handleEnrollmentAddressCapture(rawText, session, actions);
-                case ENROLLMENT_SEDE_CAPTURE -> handleEnrollmentSedeCapture(from, text, session, actions);
-                case ENROLLMENT_CONFIRM -> handleEnrollmentConfirm(text, session, actions);
-                case PAYMENT_WAIT -> handlePaymentWait(text, session, actions);
-                case CONTRACT_WAIT -> handleContractWait(from, text, session, actions);
-                case ENROLLMENT_ABORT_CONFIRM -> handleEnrollmentAbortConfirm(from, text, session, actions);
+                 case ENROLLMENT_ADDRESS_CAPTURE -> handleEnrollmentAddressCapture(rawText, session, actions);
+                 case ENROLLMENT_SEDE_CAPTURE -> handleEnrollmentSedeCapture(from, text, session, actions);
+                 case ENROLLMENT_CONFIRM -> handleEnrollmentConfirm(text, session, actions);
+                 case PAYMENT_PLAN_SELECT -> handlePaymentPlanSelect(text, session, actions);
+                 case PAYMENT_WAIT -> handlePaymentWait(text, session, actions);
+                 case CONTRACT_WAIT -> handleContractWait(from, text, session, actions);
+                 case ENROLLMENT_ABORT_CONFIRM -> handleEnrollmentAbortConfirm(from, text, session, actions);
 
                 case SEDE_SELECTION -> handleSedeSelection(from, text, session, actions);
 
@@ -779,17 +781,13 @@ public class ChatbotInboundController {
                         return;
                     }
 
-                    procesoService.markPaymentPending(session.documento);
-                    String link = procesoService.getPaymentLink(session.documento);
-                    capturePaymentContextFromChat(link, session, "chatbot_inbound_confirm");
-                    session.state = ChatState.PAYMENT_WAIT;
+                    session.state = ChatState.PAYMENT_PLAN_SELECT;
 
                     actions.add(textMsg(
-                            "Paso 7 de 7: realiza el pago para continuar.\n\n" +
-                                    "Enlace de pago:\n" + link + "\n\n" +
-                                    "Cuando lo realices, vuelve a este chat.\n" +
-                                    "Si necesitas el enlace otra vez escribe: LINK\n\n" +
-                                    paymentFlowInfo()
+                            "Paso 7 de 7: elige como deseas pagar.\n\n" +
+                                    "1) Pagar completo (100%)\n" +
+                                    "2) Pagar por la mitad (50%)\n\n" +
+                                    "Responde 1 o 2."
                     ));
                     actions.add(textMsg("Opciones: MENU | TERMINAR"));
                 } catch (Exception e) {
@@ -817,6 +815,65 @@ public class ChatbotInboundController {
                 actions.add(textMsg("Responde 1, 2 o 3."));
                 actions.add(textMsg("Opciones: MENU"));
             }
+        }
+    }
+
+    private void handlePaymentPlanSelect(String text, SessionData session, List<BotAction> actions) {
+        String cmd = normalizeCommandText(text);
+        final String plan;
+        final String planLabel;
+
+        if ("1".equals(cmd) || cmd.contains("completo") || "full".equals(cmd) || "100".equals(cmd) || "100%".equals(cmd)) {
+            plan = "FULL";
+            planLabel = "completo (100%)";
+        } else if ("2".equals(cmd) || cmd.contains("mitad") || cmd.contains("abono") || "half".equals(cmd) || "50".equals(cmd) || "50%".equals(cmd)) {
+            plan = "HALF";
+            planLabel = "por la mitad (50%)";
+        } else {
+            actions.add(textMsg(
+                    "Responde 1 o 2 para continuar con el pago.\n\n" +
+                            "1) Pagar completo (100%)\n" +
+                            "2) Pagar por la mitad (50%)"
+            ));
+            actions.add(textMsg("Opciones: MENU | TERMINAR"));
+            return;
+        }
+
+        try {
+            procesoService.markPaymentPending(session.documento, plan);
+            String link = procesoService.getPaymentLink(session.documento);
+            capturePaymentContextFromChat(link, session,
+                    "HALF".equals(plan) ? "chatbot_inbound_payment_half" : "chatbot_inbound_payment_full");
+
+            session.state = ChatState.PAYMENT_WAIT;
+
+            actions.add(textMsg(
+                    "Paso 7 de 7: realiza el pago para continuar (" + planLabel + ").\n\n" +
+                            "Enlace de pago:\n" + link + "\n\n" +
+                            "Cuando lo realices, vuelve a este chat.\n" +
+                            "Si necesitas el enlace otra vez escribe: LINK\n\n" +
+                            paymentFlowInfo()
+            ));
+            actions.add(textMsg("Opciones: MENU | TERMINAR"));
+        } catch (Exception e) {
+            log.error("No se pudo iniciar pago plan={} from={} doc={} email={}",
+                    plan,
+                    maskPhone(session.telefono),
+                    safe(session.documento),
+                    maskEmail(session.email),
+                    e);
+
+            if ("HALF".equals(plan)) {
+                actions.add(textMsg(
+                        "No pude iniciar el pago por la mitad (50%) en este momento.\n\n" +
+                                "Puedes pagar completo respondiendo 1, o escribir MENU."
+                ));
+                actions.add(textMsg("Opciones: 1 | MENU | TERMINAR"));
+                return;
+            }
+
+            actions.add(textMsg("âš ï¸ No pude iniciar el pago en este momento. Intenta de nuevo en 1 minuto."));
+            actions.add(textMsg("Opciones: MENU"));
         }
     }
 
@@ -2354,6 +2411,7 @@ public class ChatbotInboundController {
                     ENROLLMENT_ADDRESS_CAPTURE,
                     ENROLLMENT_SEDE_CAPTURE,
                     ENROLLMENT_CONFIRM,
+                    PAYMENT_PLAN_SELECT,
                     PAYMENT_WAIT,
                     CONTRACT_WAIT,
                     SEDE_SELECTION -> true;

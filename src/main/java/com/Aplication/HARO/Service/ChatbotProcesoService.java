@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URLEncoder;
 import java.text.Normalizer;
 import java.time.Duration;
@@ -70,26 +71,50 @@ public class ChatbotProcesoService {
     @Value("${chatbot.payment.link:https://epayco-link.com}")
     private String defaultPaymentLink;
 
+    @Value("${chatbot.payment.link.half:}")
+    private String defaultPaymentLinkHalf;
+
     @Value("${chatbot.payment.link.a2:${chatbot.payment.link}}")
     private String paymentLinkA2;
+
+    @Value("${chatbot.payment.link.a2.half:${chatbot.payment.link.half}}")
+    private String paymentLinkA2Half;
 
     @Value("${chatbot.payment.link.b1:${chatbot.payment.link}}")
     private String paymentLinkB1;
 
+    @Value("${chatbot.payment.link.b1.half:${chatbot.payment.link.half}}")
+    private String paymentLinkB1Half;
+
     @Value("${chatbot.payment.link.c1:${chatbot.payment.link}}")
     private String paymentLinkC1;
+
+    @Value("${chatbot.payment.link.c1.half:${chatbot.payment.link.half}}")
+    private String paymentLinkC1Half;
 
     @Value("${chatbot.payment.link.a2b1:${chatbot.payment.link}}")
     private String paymentLinkA2B1;
 
+    @Value("${chatbot.payment.link.a2b1.half:${chatbot.payment.link.half}}")
+    private String paymentLinkA2B1Half;
+
     @Value("${chatbot.payment.link.a2c1:${chatbot.payment.link}}")
     private String paymentLinkA2C1;
+
+    @Value("${chatbot.payment.link.a2c1.half:${chatbot.payment.link.half}}")
+    private String paymentLinkA2C1Half;
 
     @Value("${chatbot.payment.link.b1c1:${chatbot.payment.link}}")
     private String paymentLinkB1C1;
 
+    @Value("${chatbot.payment.link.b1c1.half:${chatbot.payment.link.half}}")
+    private String paymentLinkB1C1Half;
+
     @Value("${chatbot.payment.link.a2b1c1:${chatbot.payment.link}}")
     private String paymentLinkA2B1C1;
+
+    @Value("${chatbot.payment.link.a2b1c1.half:${chatbot.payment.link.half}}")
+    private String paymentLinkA2B1C1Half;
 
     @Value("${chatbot.payment.confirmation-url:https://harorepositoty2-590358146556.europe-west1.run.app/confirmation}")
 private String paymentConfirmationUrl;
@@ -272,21 +297,39 @@ private String paymentConfirmationUrl;
     }
     @Transactional
     public ChatbotMatriculaProceso markPaymentPending(String documento) {
-    ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
+        return markPaymentPending(documento, "FULL");
+    }
 
-    p.setPaymentStatus("PENDING");
-    p.setExpectedAmount(resolveExpectedAmount(p));
-    p.setFlowStatus("PENDING_PAYMENT");
-    p.setPaymentLink(buildPaymentLink(p));
+    @Transactional
+    public ChatbotMatriculaProceso markPaymentPending(String documento, String paymentPlan) {
+        ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
 
-    ChatbotMatriculaProceso saved = procesoRepository.save(p);
+        String normalizedPlan = normalizePaymentPlan(paymentPlan);
+        if ("HALF".equals(normalizedPlan) && !canGenerateHalfPaymentLink(p)) {
+            throw new IllegalStateException("Pago por mitad no disponible para la categoria " + safe(p.getCategoria()));
+        }
 
-    log.info("Pago pendiente doc={} link={}",
-            saved.getNumeroDocumento(),
-            saved.getPaymentLink());
+        p.setPaymentPlan(normalizedPlan);
+        p.setPaymentStatus("PENDING");
+        // expectedAmount siempre representa el total esperado del curso (no el abono).
+        p.setExpectedAmount(resolveExpectedAmount(p));
+        p.setFlowStatus("PENDING_PAYMENT");
 
-    return saved;
-}
+        String link = buildPaymentLink(p);
+        if (link.isBlank()) {
+            throw new IllegalStateException("No se pudo generar el link de pago.");
+        }
+        p.setPaymentLink(link);
+
+        ChatbotMatriculaProceso saved = procesoRepository.save(p);
+
+        log.info("Pago pendiente doc={} plan={} link={}",
+                saved.getNumeroDocumento(),
+                safe(saved.getPaymentPlan()),
+                saved.getPaymentLink());
+
+        return saved;
+    }
     @Transactional
     public ChatbotMatriculaProceso markPaymentRejected(String documento) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
@@ -1544,6 +1587,14 @@ private String paymentConfirmationUrl;
     }
 
     private String buildPaymentLink(ChatbotMatriculaProceso proceso) {
+        String plan = normalizePaymentPlan(proceso == null ? "" : proceso.getPaymentPlan());
+        if ("HALF".equals(plan) && proceso != null && !canGenerateHalfPaymentLink(proceso)) {
+            log.warn("Pago por mitad solicitado pero no configurado doc={} categoria={}",
+                    proceso.getNumeroDocumento(),
+                    safe(proceso.getCategoria()));
+            return "";
+        }
+
         String base = trim(resolvePaymentBaseLink(proceso));
         if (base.isBlank()) {
             return "";
@@ -1551,6 +1602,7 @@ private String paymentConfirmationUrl;
 
         boolean paycoHostedLink = isPaycoHostedLink(base);
         BigDecimal expectedAmount = safeAmount(resolveExpectedAmount(proceso));
+        BigDecimal linkAmount = resolvePaymentLinkAmount(plan, expectedAmount);
         String confirmationParam = normalizeCallbackParam(paymentConfirmationParam, "confirmation");
         String responseParam = normalizeCallbackParam(paymentReturnParam, "response");
         String phoneForPayment = resolvePhoneForPayment(proceso);
@@ -1570,8 +1622,8 @@ private String paymentConfirmationUrl;
         link = appendQueryParam(link, "x_customer_phone", phoneForPayment);
         link = appendQueryParam(link, "x_customer_mobile", phoneForPayment);
 
-        if (!paycoHostedLink && expectedAmount.signum() > 0) {
-            link = appendQueryParam(link, paymentAmountParam, expectedAmount.toPlainString());
+        if (!paycoHostedLink && linkAmount.signum() > 0) {
+            link = appendQueryParam(link, paymentAmountParam, linkAmount.toPlainString());
         }
 
         String confirmationUrlWithContext = buildCallbackUrlWithContext(paymentConfirmationUrl, proceso);
@@ -1593,8 +1645,8 @@ private String paymentConfirmationUrl;
             compactLink = appendQueryParam(compactLink, paymentInvoiceParam, invoiceHintForPayment);
             compactLink = appendQueryParam(compactLink, "x_customer_phone", phoneForPayment);
             compactLink = appendQueryParam(compactLink, "x_customer_mobile", phoneForPayment);
-            if (!paycoHostedLink && expectedAmount.signum() > 0) {
-                compactLink = appendQueryParam(compactLink, paymentAmountParam, expectedAmount.toPlainString());
+            if (!paycoHostedLink && linkAmount.signum() > 0) {
+                compactLink = appendQueryParam(compactLink, paymentAmountParam, linkAmount.toPlainString());
             }
             compactLink = appendQueryParam(compactLink, confirmationParam, buildCallbackUrlWithCompactContext(paymentConfirmationUrl, proceso));
             compactLink = appendQueryParam(compactLink, responseParam, buildCallbackUrlWithCompactContext(paymentReturnUrl, proceso));
@@ -1689,11 +1741,21 @@ private String paymentConfirmationUrl;
         if (proceso == null) {
             return trim(defaultPaymentLink);
         }
-        return resolvePaymentBaseLinkByCategory(normalizeCategoria(proceso.getCategoria()));
+
+        String categoria = normalizeCategoria(proceso.getCategoria());
+        String plan = normalizePaymentPlan(proceso.getPaymentPlan());
+        if ("HALF".equals(plan)) {
+            String half = resolvePaymentHalfBaseLinkByCategoryConfigured(categoria);
+            if (!half.isBlank()) {
+                return half;
+            }
+        }
+
+        return resolvePaymentBaseLinkByCategory(categoria);
     }
 
     private String resolvePaymentBaseLinkByCategory(String categoria) {
-        return switch (categoria) {
+        String candidate = switch (categoria) {
             case "A2" -> trim(paymentLinkA2);
             case "B1" -> trim(paymentLinkB1);
             case "C1" -> trim(paymentLinkC1);
@@ -1703,6 +1765,27 @@ private String paymentConfirmationUrl;
             case "A2, B1 y C1" -> trim(paymentLinkA2B1C1);
             default -> trim(defaultPaymentLink);
         };
+        if (candidate.isBlank()) {
+            return trim(defaultPaymentLink);
+        }
+        return candidate;
+    }
+
+    private String resolvePaymentHalfBaseLinkByCategoryConfigured(String categoria) {
+        String candidate = switch (categoria) {
+            case "A2" -> trim(paymentLinkA2Half);
+            case "B1" -> trim(paymentLinkB1Half);
+            case "C1" -> trim(paymentLinkC1Half);
+            case "A2 y B1" -> trim(paymentLinkA2B1Half);
+            case "A2 y C1" -> trim(paymentLinkA2C1Half);
+            case "B1 y C1" -> trim(paymentLinkB1C1Half);
+            case "A2, B1 y C1" -> trim(paymentLinkA2B1C1Half);
+            default -> trim(defaultPaymentLinkHalf);
+        };
+        if (candidate.isBlank()) {
+            return trim(defaultPaymentLinkHalf);
+        }
+        return candidate;
     }
 
     private String appendQueryParam(String baseUrl, String key, String value) {
@@ -1738,6 +1821,33 @@ private String paymentConfirmationUrl;
             return "confirmation";
         }
         return key;
+    }
+
+    private String normalizePaymentPlan(String raw) {
+        String v = trim(raw).toUpperCase(Locale.ROOT);
+        if (v.isBlank()) return "FULL";
+        if ("HALF".equals(v) || "MITAD".equals(v) || "ABONO".equals(v) || "50".equals(v) || "50%".equals(v)) return "HALF";
+        if ("FULL".equals(v) || "COMPLETO".equals(v) || "100".equals(v) || "100%".equals(v)) return "FULL";
+        return "FULL";
+    }
+
+    private BigDecimal resolvePaymentLinkAmount(String plan, BigDecimal expectedAmount) {
+        BigDecimal base = safeAmount(expectedAmount);
+        if (base.signum() <= 0) return BigDecimal.ZERO;
+        if (!"HALF".equals(plan)) return base;
+        return base.divide(BigDecimal.valueOf(2L), 2, RoundingMode.HALF_UP);
+    }
+
+    private boolean canGenerateHalfPaymentLink(ChatbotMatriculaProceso proceso) {
+        if (proceso == null) return false;
+        String categoria = normalizeCategoria(proceso.getCategoria());
+        String fullBase = resolvePaymentBaseLinkByCategory(categoria);
+        if (!isPaycoHostedLink(fullBase)) {
+            // Si no es un payco.link, podemos enviar el abono con x_amount.
+            return true;
+        }
+        // En payco.link se requiere un link específico con el valor del 50%.
+        return !resolvePaymentHalfBaseLinkByCategoryConfigured(categoria).isBlank();
     }
 
     private String normalizeSingleTipoPase(String raw) {

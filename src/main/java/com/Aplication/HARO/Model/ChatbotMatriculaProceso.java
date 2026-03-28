@@ -68,6 +68,13 @@ public class ChatbotMatriculaProceso {
     @Column(name = "payment_status", nullable = false, length = 40)
     private String paymentStatus = "PENDING";
 
+    /**
+     * FULL / HALF. Se usa para saber si el link de pago corresponde a pago completo o abono (50%).
+     * Si viene null/vacio, se asume FULL.
+     */
+    @Column(name = "payment_plan", length = 20)
+    private String paymentPlan;
+
     @Column(name = "expected_amount", precision = 14, scale = 2)
     private BigDecimal expectedAmount;
 
@@ -227,6 +234,14 @@ public class ChatbotMatriculaProceso {
 
     public void setPaymentStatus(String paymentStatus) {
         this.paymentStatus = paymentStatus;
+    }
+
+    public String getPaymentPlan() {
+        return paymentPlan;
+    }
+
+    public void setPaymentPlan(String paymentPlan) {
+        this.paymentPlan = paymentPlan;
     }
 
     public String getContractStatus() {

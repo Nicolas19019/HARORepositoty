@@ -7,6 +7,9 @@ import java.util.Optional;
 
 public interface ProspectoRepository extends JpaRepository<Prospecto, Long> {
 
-    Optional<Prospecto> findByTelefonoAndServicio(String telefono, String servicio);
-}
+    Optional<Prospecto> findByTelefono(String telefono);
 
+    java.util.List<Prospecto> findByTelefonoOrderByActualizadoEnDesc(String telefono);
+
+    java.util.List<Prospecto> findByTelefonoInOrderByActualizadoEnDesc(java.util.Collection<String> telefonos);
+}

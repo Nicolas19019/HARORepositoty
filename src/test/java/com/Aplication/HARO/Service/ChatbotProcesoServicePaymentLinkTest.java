@@ -116,6 +116,64 @@ class ChatbotProcesoServicePaymentLinkTest {
         assertEquals("573144899708", responseParams.get("x_customer_mobile"));
     }
 
+    @Test
+    void getPaymentLink_halfPlan_shouldUseHalfLinkWhenPaycoHosted() {
+        ChatbotMatriculaProcesoRepository procesoRepository = mock(ChatbotMatriculaProcesoRepository.class);
+        EstudianteRepository estudianteRepository = mock(EstudianteRepository.class);
+        EstudianteService estudianteService = mock(EstudianteService.class);
+        EstadoCuentaRepository estadoCuentaRepository = mock(EstadoCuentaRepository.class);
+        PagoRepository pagoRepository = mock(PagoRepository.class);
+        ClaseRepository claseRepository = mock(ClaseRepository.class);
+        ProfesorRepository profesorRepository = mock(ProfesorRepository.class);
+        VehiculoRepository vehiculoRepository = mock(VehiculoRepository.class);
+        GoogleCalendarService googleCalendarService = mock(GoogleCalendarService.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+
+        ChatbotProcesoService service = new ChatbotProcesoService(
+                procesoRepository,
+                estudianteRepository,
+                estudianteService,
+                estadoCuentaRepository,
+                pagoRepository,
+                claseRepository,
+                profesorRepository,
+                vehiculoRepository,
+                googleCalendarService,
+                passwordEncoder
+        );
+
+        String full = "https://payco.link/f536c9aa-1456-4ce4-b142-6d7417f71c9f";
+        String half = "https://payco.link/00000000-0000-0000-0000-000000000000";
+
+        ReflectionTestUtils.setField(service, "defaultPaymentLink", full);
+        ReflectionTestUtils.setField(service, "paymentLinkA2", full);
+        ReflectionTestUtils.setField(service, "paymentLinkA2Half", half);
+        ReflectionTestUtils.setField(service, "paymentConfirmationUrl", "https://example.com/confirmation");
+        ReflectionTestUtils.setField(service, "paymentReturnUrl", "https://example.com/response");
+        ReflectionTestUtils.setField(service, "paymentDocumentParam", "x_extra1");
+        ReflectionTestUtils.setField(service, "paymentEmailParam", "customer_email");
+        ReflectionTestUtils.setField(service, "paymentFlowIdParam", "x_extra2");
+        ReflectionTestUtils.setField(service, "paymentInvoiceParam", "x_id_invoice");
+        ReflectionTestUtils.setField(service, "paymentConfirmationParam", "confirmation");
+        ReflectionTestUtils.setField(service, "paymentReturnParam", "response");
+
+        ChatbotMatriculaProceso proceso = new ChatbotMatriculaProceso();
+        proceso.setId(10L);
+        proceso.setNombreCompleto("Nicolas Machado");
+        proceso.setNumeroDocumento("12345678");
+        proceso.setCategoria("A2");
+        proceso.setEmail("nicolasmachado422@gmail.com");
+        proceso.setTelefono("573144899708");
+        proceso.setPaymentPlan("HALF");
+
+        when(procesoRepository.findByNumeroDocumento("12345678")).thenReturn(Optional.of(proceso));
+
+        String paymentLink = service.getPaymentLink("12345678");
+        assertNotNull(paymentLink);
+        assertFalse(paymentLink.isBlank());
+        assertEquals(half, URI.create(paymentLink).getScheme() + "://" + URI.create(paymentLink).getAuthority() + URI.create(paymentLink).getPath());
+    }
+
     private Map<String, String> parseFirstQueryParams(String rawUrl) {
         Map<String, String> out = new LinkedHashMap<>();
         URI uri = URI.create(rawUrl);

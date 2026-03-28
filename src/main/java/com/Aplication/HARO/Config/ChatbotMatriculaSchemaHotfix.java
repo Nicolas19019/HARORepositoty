@@ -79,9 +79,20 @@ public class ChatbotMatriculaSchemaHotfix implements CommandLineRunner {
                         ALTER TABLE chatbot_matricula_proceso
                           ADD COLUMN student_password_hash VARCHAR(100);
                       END IF;
+
+                      IF NOT EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = current_schema()
+                          AND table_name = 'chatbot_matricula_proceso'
+                          AND column_name = 'payment_plan'
+                      ) THEN
+                        ALTER TABLE chatbot_matricula_proceso
+                          ADD COLUMN payment_plan VARCHAR(20);
+                      END IF;
                     END $$;
                     """);
-            log.info("Schema hotfix aplicado: chatbot_matricula_proceso payment_link/contract_link/direccion/sede/student_password_hash");
+            log.info("Schema hotfix aplicado: chatbot_matricula_proceso payment_link/contract_link/direccion/sede/student_password_hash/payment_plan");
         } catch (Exception ex) {
             log.error("No se pudo aplicar hotfix de esquema para chatbot_matricula_proceso", ex);
         }

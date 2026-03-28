@@ -52,6 +52,8 @@ public class ContractChatbotSyncController {
     String email = normalizeEmail(payload.get("email"));
     String doc = firstNotBlank(payload, "document", "x_extra1", "numeroDocumento", "numero_documento");
     String phone = firstNotBlank(payload, "phone", "telefono", "celular");
+    Long studentIdHint = firstPositiveLong(payload,
+            "studentId", "student_id", "alumnoId", "alumno_id", "idEstudiante", "id_estudiante");
 
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("ok", true);
@@ -62,6 +64,9 @@ public class ContractChatbotSyncController {
     out.put("email", email);
     out.put("document", doc);
     out.put("phone", phone);
+    if (studentIdHint != null) {
+      out.put("studentId", studentIdHint);
+    }
 
     // Mark contract signed if we can resolve the process by email (best effort).
     if (StringUtils.hasText(email)) {
@@ -72,6 +77,14 @@ public class ContractChatbotSyncController {
       }
     }
 
+    // Si ya viene studentId desde /contract/complete, no necesitamos volver a ejecutar finalizacion.
+    if (studentIdHint != null) {
+      out.put("finalized", true);
+      out.put("message", "Sync recibido. studentId ya informado por el flujo de contrato.");
+      out.put("whatsappNotified", false);
+      return ResponseEntity.ok(out);
+    }
+
     // Retry finalization (student + estado de cuenta + pago).
     Long studentId = null;
     if (StringUtils.hasText(doc)) {
@@ -80,16 +93,16 @@ public class ContractChatbotSyncController {
         out.put("studentId", studentId);
         out.put("finalized", true);
       } catch (Exception ex) {
-        out.put("ok", false);
-        out.put("chatbotSynced", false);
         out.put("finalized", false);
-        out.put("message", "No se pudo finalizar matricula: " + safe(ex.getMessage()));
+        out.put("message", "Sync recibido, pero no se pudo finalizar matricula: " + safe(ex.getMessage()));
+        // Best-effort: el frontend no debe ver 500 por este endpoint "compat".
         log.error("sync: fallo finalizando matricula doc={} email={}: {}", doc, email, ex.getMessage(), ex);
-        return ResponseEntity.status(500).body(out);
+        out.put("whatsappNotified", false);
+        return ResponseEntity.ok(out);
       }
     } else {
       out.put("finalized", false);
-      out.put("message", "Falta documento para finalizar matricula.");
+      out.put("message", "Sync recibido, pero falta documento para finalizar matricula.");
     }
 
     out.put("whatsappNotified", false);
@@ -114,5 +127,21 @@ public class ContractChatbotSyncController {
       if (!s.isEmpty()) return s;
     }
     return "";
+  }
+
+  private static Long firstPositiveLong(Map<String, Object> payload, String... keys) {
+    for (String k : keys) {
+      Object v = payload.get(k);
+      if (v == null) continue;
+      String s = String.valueOf(v).trim();
+      if (s.isEmpty()) continue;
+      try {
+        long parsed = Long.parseLong(s);
+        if (parsed > 0) return parsed;
+      } catch (NumberFormatException ignored) {
+        // ignore
+      }
+    }
+    return null;
   }
 }

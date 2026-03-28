@@ -1032,13 +1032,13 @@ public class VerificationService {
                 .append("Ref estudiante: ").append(studentId).append("\n\n");
 
         if (StringUtils.hasText(theoryWhatsappGroupLink)) {
-            message.append("\uD83D\uDC65 Grupo de WhatsApp para programaci\u00f3n de clases te\u00f3ricas:\n")
+            message.append("\uD83D\uDC65 Grupo de WhatsApp:\n")
                     .append(trim(theoryWhatsappGroupLink))
                     .append("\n\n");
         }
 
         message.append("\uD83D\uDCC5 En este grupo se enviar\u00e1 la programaci\u00f3n de las clases del d\u00eda siguiente.\n\n")
-                .append("Si necesitas ayuda, escribe *ASESOR*.");
+                .append("Si necesitas ayuda, escribe ASESOR.");
 
         return message.toString();
     }

@@ -1000,14 +1000,17 @@ private String paymentConfirmationUrl;
             estudiante.setCategoria(profile.categoria());
             estudiante.setTipoPase(toTipoPase(profile.categoria()));
         }
-        if (estudiante.getTipoEstudiante() == null || estudiante.getTipoEstudiante().isBlank()) {
+        // En el flujo de contrato/pago aprobado, el estudiante debe quedar matriculado (aunque existiera como prospecto).
+        String tipoEst = trim(estudiante.getTipoEstudiante());
+        if (tipoEst.isBlank() || "prospecto".equalsIgnoreCase(tipoEst)) {
             estudiante.setTipoEstudiante("matriculado");
         }
         if (estudiante.getFechaMatricula() == null) {
             estudiante.setFechaMatricula(resolveEnrollmentDate(proceso));
         }
         estudiante.setOrigenMatricula("CHATBOT");
-        if (estudiante.getEstado() == null || estudiante.getEstado().isBlank()) {
+        String estadoActual = trim(estudiante.getEstado());
+        if (estadoActual.isBlank() || "pendiente".equalsIgnoreCase(estadoActual)) {
             estudiante.setEstado("Activo");
         }
         if (estudiante.getVisible() == null) {

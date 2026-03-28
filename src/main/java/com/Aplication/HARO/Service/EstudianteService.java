@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -140,7 +141,8 @@ public class EstudianteService {
     in.setOrigenMatricula(normalizarOrigenMatricula(in.getOrigenMatricula()));
 
     if (esMatriculado(in.getTipoEstudiante()) && in.getFechaMatricula() == null) {
-      in.setFechaMatricula(LocalDate.now());
+      // Cloud Run suele ejecutar en UTC; normalizamos a la zona local del negocio.
+      in.setFechaMatricula(LocalDate.now(ZoneId.of("America/Bogota")));
     }
     if (esMatriculado(in.getTipoEstudiante()) && in.getOrigenMatricula().isBlank()) {
       in.setOrigenMatricula("PRESENCIAL");
@@ -248,7 +250,7 @@ public class EstudianteService {
     }
 
     if (esMatriculado(db.getTipoEstudiante()) && db.getFechaMatricula() == null) {
-      db.setFechaMatricula(LocalDate.now());
+      db.setFechaMatricula(LocalDate.now(ZoneId.of("America/Bogota")));
     }
     if (esMatriculado(db.getTipoEstudiante()) && normalizarOrigenMatricula(db.getOrigenMatricula()).isBlank()) {
       db.setOrigenMatricula("PRESENCIAL");

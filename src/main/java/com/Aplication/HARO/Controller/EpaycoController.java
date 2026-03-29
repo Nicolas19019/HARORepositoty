@@ -1893,7 +1893,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             log.info("💰 Pago aprobado doc={} ref={} amount={}", xDocumento, xRefPayco, xAmount);
             try {
                 PaymentApprovalService.ApprovalResult approval =
-                        paymentApprovalService.handleApprovedPayment(xDocumento, parseAmountOrNull(xAmount), false);
+                         paymentApprovalService.handleApprovedPayment(xDocumento, parseAmountOrNull(xAmount), true);
                 log.info("✅ Pago aprobado procesado doc={} paymentStatus={} flowStatus={} contractLinkPresent={}",
                         xDocumento,
                         approval.paymentStatus(),

@@ -140,6 +140,10 @@ public class PaymentApprovalService {
         }
 
         String phone = trim(proceso.getPhone());
+        if (!StringUtils.hasText(phone)) {
+            // Compat: procesos antiguos guardaban el numero en "telefono" y no en "phone".
+            phone = trim(proceso.getTelefono());
+        }
         if (!StringUtils.hasText(phone) || !StringUtils.hasText(contractLink)) {
             log.warn("\u26A0\uFE0F No se pudo preparar WhatsApp por datos incompletos doc={} phonePresent={} contractLinkPresent={}",
                     documento, StringUtils.hasText(phone), StringUtils.hasText(contractLink));

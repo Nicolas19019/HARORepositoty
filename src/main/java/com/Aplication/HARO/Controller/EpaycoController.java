@@ -1,6 +1,8 @@
 package com.Aplication.HARO.Controller;
 
 import java.math.BigDecimal;
+import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
@@ -51,6 +53,7 @@ public class EpaycoController {
 
     private static final Logger log = LoggerFactory.getLogger(EpaycoController.class);
     private record SyncDecision(boolean synced, String reason, String resolvedBy) {}
+    private record ContractAccessParams(String email, String code) {}
 
     private final EpaycoService epaycoService;
     private final EpaycoCheckoutContextService checkoutContextService;
@@ -2214,11 +2217,68 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 || v.matches(".*:\\d{2,5}$");
     }
 
+    private VerificationService.ContractAccessResult peekContractLinkAccess(String contractLinkRaw) {
+        ContractAccessParams params = parseContractAccessParams(contractLinkRaw);
+        if (!StringUtils.hasText(params.email()) || !StringUtils.hasText(params.code())) {
+            return new VerificationService.ContractAccessResult(false, "Codigo requerido", null);
+        }
+        return verificationService.peekContractAccessCode(params.email(), params.code());
+    }
+
+    private ContractAccessParams parseContractAccessParams(String contractLinkRaw) {
+        String link = safeTrim(contractLinkRaw);
+        if (!StringUtils.hasText(link)) {
+            return new ContractAccessParams("", "");
+        }
+        return new ContractAccessParams(
+                readQueryParam(link, "email"),
+                readQueryParam(link, "code")
+        );
+    }
+
+    private String readQueryParam(String urlRaw, String keyRaw) {
+        String url = safeTrim(urlRaw);
+        String key = safeTrim(keyRaw);
+        if (!StringUtils.hasText(url) || !StringUtils.hasText(key)) {
+            return "";
+        }
+        try {
+            URI uri = URI.create(url);
+            String rawQuery = uri.getRawQuery();
+            if (!StringUtils.hasText(rawQuery)) {
+                return "";
+            }
+            for (String part : rawQuery.split("&")) {
+                if (!StringUtils.hasText(part)) continue;
+                int idx = part.indexOf('=');
+                String k = idx >= 0 ? part.substring(0, idx) : part;
+                String v = idx >= 0 ? part.substring(idx + 1) : "";
+                String dk = URLDecoder.decode(k, StandardCharsets.UTF_8);
+                if (!dk.equalsIgnoreCase(key)) continue;
+                return URLDecoder.decode(v, StandardCharsets.UTF_8);
+            }
+        } catch (Exception ignored) {
+            return "";
+        }
+        return "";
+    }
+
     private boolean shouldRefreshContractLink(String contractLinkRaw) {
-        String contractLink = safeTrim(contractLinkRaw);
+        String contractLink = normalizeStoredContractLink(contractLinkRaw);
         if (!StringUtils.hasText(contractLink)) {
             return true;
         }
+
+        // Regenerar si el codigo del link ya no es vigente (expirado/consumido/no encontrado).
+        try {
+            VerificationService.ContractAccessResult peek = peekContractLinkAccess(contractLink);
+            if (peek == null || !peek.ok()) {
+                return true;
+            }
+        } catch (Exception ex) {
+            // Si falla el "peek", no forzamos refresh para evitar loops.
+        }
+
         String expectedUi = normalizeContractUiUrl(contractUiUrl);
         if (!StringUtils.hasText(expectedUi)) {
             return false;

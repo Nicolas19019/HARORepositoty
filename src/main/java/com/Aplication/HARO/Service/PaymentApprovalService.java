@@ -13,8 +13,13 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
+import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -25,6 +30,10 @@ import java.util.Objects;
 public class PaymentApprovalService {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentApprovalService.class);
+
+    private static final ZoneId CONTRACT_ZONE = ZoneId.of("America/Bogota");
+    private static final DateTimeFormatter CONTRACT_EXPIRES_FMT =
+            DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(CONTRACT_ZONE);
 
     private final ChatbotMatriculaProcesoRepository procesoRepository;
     private final VerificationService verificationService;
@@ -166,7 +175,18 @@ public class PaymentApprovalService {
             return false;
         }
 
-        String message = "\u2705 Tu pago fue aprobado.\n\n\uD83D\uDCC4 Continua con tu contrato aqui:\n" + contractLink;
+        Instant expiresAt = null;
+        try {
+            VerificationService.ContractAccessResult peek = peekContractLinkAccess(contractLink);
+            expiresAt = peek == null ? null : peek.expiresAt();
+        } catch (Exception ignored) {
+            expiresAt = null;
+        }
+
+        String message = "\u2705 Tu pago fue aprobado.\n\n\uD83D\uDCC4 Continua con tu contrato aqui:\n"
+                + contractLink
+                + "\n\n"
+                + buildContractExpiryHint(expiresAt);
         log.info("\uD83D\uDCF2 Preparando envio por WhatsApp a {} con contractUiUrl={} contractLink={}",
                 maskPhone(phone),
                 normalizeContractUiUrl(contractUiUrl),
@@ -276,11 +296,78 @@ public class PaymentApprovalService {
         if (!StringUtils.hasText(contractLink)) {
             return true;
         }
+
+        // Refresh if the access code embedded in the link is no longer valid (expired/consumed/not found).
+        try {
+            VerificationService.ContractAccessResult peek = peekContractLinkAccess(contractLink);
+            if (peek == null || !peek.ok()) {
+                return true;
+            }
+        } catch (Exception ex) {
+            // If peeking fails, do not force refresh to avoid loops.
+        }
+
         String expectedUi = normalizeContractUiUrl(contractUiUrl);
         if (!StringUtils.hasText(expectedUi)) {
             return false;
         }
         return !contractLink.startsWith(expectedUi);
+    }
+
+    private record ContractAccessParams(String email, String code) {}
+
+    private VerificationService.ContractAccessResult peekContractLinkAccess(String contractLinkRaw) {
+        ContractAccessParams params = parseContractAccessParams(contractLinkRaw);
+        if (!StringUtils.hasText(params.email()) || !StringUtils.hasText(params.code())) {
+            return new VerificationService.ContractAccessResult(false, "Codigo requerido", null);
+        }
+        return verificationService.peekContractAccessCode(params.email(), params.code());
+    }
+
+    private ContractAccessParams parseContractAccessParams(String contractLinkRaw) {
+        String link = trim(contractLinkRaw);
+        if (!StringUtils.hasText(link)) {
+            return new ContractAccessParams("", "");
+        }
+        return new ContractAccessParams(
+                readQueryParam(link, "email"),
+                readQueryParam(link, "code")
+        );
+    }
+
+    private String readQueryParam(String urlRaw, String keyRaw) {
+        String url = trim(urlRaw);
+        String key = trim(keyRaw);
+        if (!StringUtils.hasText(url) || !StringUtils.hasText(key)) {
+            return "";
+        }
+        try {
+            URI uri = URI.create(url);
+            String rawQuery = uri.getRawQuery();
+            if (!StringUtils.hasText(rawQuery)) {
+                return "";
+            }
+            for (String part : rawQuery.split("&")) {
+                if (!StringUtils.hasText(part)) continue;
+                int idx = part.indexOf('=');
+                String k = idx >= 0 ? part.substring(0, idx) : part;
+                String v = idx >= 0 ? part.substring(idx + 1) : "";
+                String dk = URLDecoder.decode(k, StandardCharsets.UTF_8);
+                if (!dk.equalsIgnoreCase(key)) continue;
+                return URLDecoder.decode(v, StandardCharsets.UTF_8);
+            }
+        } catch (Exception ignored) {
+            return "";
+        }
+        return "";
+    }
+
+    private String buildContractExpiryHint(Instant expiresAt) {
+        if (expiresAt == null) {
+            return "\u23f3 Este enlace vence en 15 minutos. Si se vence, escribe *LINK* para generar otro.";
+        }
+        String until = CONTRACT_EXPIRES_FMT.format(expiresAt);
+        return "\u23f3 Vigente hasta: " + until + " (hora Colombia). Si se vence, escribe *LINK* para generar otro.";
     }
 
     private String normalizeContractUiUrl(String rawUiUrl) {

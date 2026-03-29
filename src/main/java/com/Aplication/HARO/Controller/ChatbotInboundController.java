@@ -24,6 +24,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.net.URI;
@@ -1128,20 +1129,49 @@ public class ChatbotInboundController {
             }
         }
 
+        boolean linkAlreadySent = "LINK_SENT".equals(contractStatus);
+        boolean refreshed = false;
+        Instant contractExpiresAt = null;
+
         if (shouldRefreshContractLink(contractLink)) {
             try {
-                contractLink = createAndStoreContractLink(documento);
+                ContractUserLink renewed = createAndStoreContractLink(documento);
+                contractLink = renewed.url();
+                contractExpiresAt = renewed.expiresAt();
+                refreshed = true;
             } catch (Exception ex) {
                 log.error("No se pudo reconstruir link de contrato doc={}: {}", documento, ex.getMessage(), ex);
             }
-        } 
+        }
+
+        if (contractExpiresAt == null && !contractLink.isBlank()) {
+            try {
+                VerificationService.ContractAccessResult peek = peekContractLinkAccess(contractLink);
+                contractExpiresAt = peek == null ? null : peek.expiresAt();
+            } catch (Exception ignored) {
+                contractExpiresAt = null;
+            }
+        }
 
         session.state = ChatState.CONTRACT_WAIT;
         if (!contractLink.isBlank()) {
+            if (linkAlreadySent && !refreshed) {
+                actions.add(textMsg(
+                        "Pago confirmado.\n\n" +
+                                "Ya te enviamos el enlace de contratos anteriormente.\n" +
+                                "Si no lo encuentras, escribe *LINK* para recibirlo nuevamente.\n\n" +
+                                "Cuando termines, responde *LISTO* para activar la matrícula."
+                ));
+                actions.add(textMsg("Opciones: MENU | LINK"));
+                return true;
+            }
+
+            String expiryHint = buildContractExpiryHint(contractExpiresAt);
             actions.add(textMsg(
                     "Pago confirmado.\n\n" +
                             "Siguiente paso: firma tus contratos en este enlace:\n" + contractLink + "\n\n" +
-                            "Cuando termines, responde LISTO para activar la matricula."
+                            expiryHint + "\n\n" +
+                            "Cuando termines, responde *LISTO* para activar la matrícula."
             ));
         } else {
             actions.add(textMsg(
@@ -1197,12 +1227,22 @@ public class ChatbotInboundController {
                 Optional<ChatbotMatriculaProceso> proceso =
                         procesoService.findProcesoByDocumento(session.documento);
 
-                String link = proceso.map(ChatbotMatriculaProceso::getContractLink).orElse("");
+                String link = normalizeStoredContractLink(proceso.map(ChatbotMatriculaProceso::getContractLink).orElse(""));
+                Instant expiresAt = null;
+
+                if (shouldRefreshContractLink(link)) {
+                    ContractUserLink renewed = createAndStoreContractLink(session.documento);
+                    link = renewed.url();
+                    expiresAt = renewed.expiresAt();
+                } else if (!link.isBlank()) {
+                    VerificationService.ContractAccessResult peek = peekContractLinkAccess(link);
+                    expiresAt = peek == null ? null : peek.expiresAt();
+                }
 
                 if (link == null || link.isBlank()) {
                     actions.add(textMsg("⚠️ Aún no hay un enlace de contrato disponible."));
                 } else {
-                    actions.add(textMsg("📄 *Enlace de contrato*\n\n" + link));
+                    actions.add(textMsg("📄 *Enlace de contrato*\n\n" + link + "\n\n" + buildContractExpiryHint(expiresAt)));
                 }
 
                 actions.add(textMsg("Opciones: MENU"));
@@ -1959,7 +1999,14 @@ public class ChatbotInboundController {
     // LINKS / PARSING / FORMAT
     // =========================
 
-    private String createAndStoreContractLink(String documento) {
+    private static final ZoneId CONTRACT_ZONE = ZoneId.of("America/Bogota");
+    private static final DateTimeFormatter CONTRACT_EXPIRES_FMT =
+            DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(CONTRACT_ZONE);
+
+    private record ContractUserLink(String url, Instant expiresAt) {}
+    private record ContractAccessParams(String email, String code) {}
+
+    private ContractUserLink createAndStoreContractLink(String documento) {
         ChatbotMatriculaProceso proceso = procesoService.findProcesoByDocumento(documento)
                 .orElseThrow(() -> new IllegalStateException("No existe proceso de matrícula para generar contrato"));
 
@@ -1969,7 +2016,61 @@ public class ChatbotInboundController {
         );
         String userLink = buildContractUserLink(out);
         procesoService.markContractLinkSent(documento, userLink);
-        return userLink;
+        return new ContractUserLink(userLink, out == null ? null : out.expiresAt());
+    }
+
+    private VerificationService.ContractAccessResult peekContractLinkAccess(String contractLinkRaw) {
+        ContractAccessParams params = parseContractAccessParams(contractLinkRaw);
+        if (params.email().isBlank() || params.code().isBlank()) {
+            return new VerificationService.ContractAccessResult(false, "Codigo requerido", null);
+        }
+        return verificationService.peekContractAccessCode(params.email(), params.code());
+    }
+
+    private ContractAccessParams parseContractAccessParams(String contractLinkRaw) {
+        String link = trim(contractLinkRaw);
+        if (link.isBlank()) {
+            return new ContractAccessParams("", "");
+        }
+        return new ContractAccessParams(
+                readQueryParam(link, "email"),
+                readQueryParam(link, "code")
+        );
+    }
+
+    private String readQueryParam(String urlRaw, String keyRaw) {
+        String url = trim(urlRaw);
+        String key = trim(keyRaw);
+        if (url.isBlank() || key.isBlank()) {
+            return "";
+        }
+        try {
+            URI uri = URI.create(url);
+            String rawQuery = uri.getRawQuery();
+            if (rawQuery == null || rawQuery.isBlank()) {
+                return "";
+            }
+            for (String part : rawQuery.split("&")) {
+                if (part == null || part.isBlank()) continue;
+                int idx = part.indexOf('=');
+                String k = idx >= 0 ? part.substring(0, idx) : part;
+                String v = idx >= 0 ? part.substring(idx + 1) : "";
+                String dk = URLDecoder.decode(k, StandardCharsets.UTF_8);
+                if (!dk.equalsIgnoreCase(key)) continue;
+                return URLDecoder.decode(v, StandardCharsets.UTF_8);
+            }
+        } catch (Exception ignored) {
+            return "";
+        }
+        return "";
+    }
+
+    private String buildContractExpiryHint(Instant expiresAt) {
+        if (expiresAt == null) {
+            return "⏳ Este enlace vence en 15 minutos. Si se vence, escribe *LINK* para generar otro.";
+        }
+        String until = CONTRACT_EXPIRES_FMT.format(expiresAt);
+        return "⏳ Vigente hasta: " + until + " (hora Colombia). Si se vence, escribe *LINK* para generar otro.";
     }
 
     private String buildContractUserLink(VerificationService.ContractLinkResult out) {
@@ -2015,6 +2116,17 @@ public class ChatbotInboundController {
         if (contractLink.isBlank()) {
             return true;
         }
+
+        // Regenerar si el codigo del link ya no es vigente (expirado/consumido/no encontrado).
+        try {
+            VerificationService.ContractAccessResult peek = peekContractLinkAccess(contractLink);
+            if (peek == null || !peek.ok()) {
+                return true;
+            }
+        } catch (Exception ex) {
+            // Si falla el "peek", no forzamos refresh para evitar loops.
+        }
+
         String expectedUi = normalizeContractUiUrl(contractUiUrl);
         if (expectedUi.isBlank()) {
             return false;

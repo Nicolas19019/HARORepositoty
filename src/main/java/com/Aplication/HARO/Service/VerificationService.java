@@ -95,7 +95,7 @@ public class VerificationService {
     @Value("${app.contract.verify.code.length:10}")
     private int contractCodeLength;
 
-    @Value("${app.contract.verify.ttlSeconds:2400}") // 40 min
+    @Value("${app.contract.verify.ttlSeconds:900}") // 15 min
     private long contractTtlSeconds;
 
     @Value("${app.contract.verify.base-url:http://localhost:8081}")
@@ -504,6 +504,37 @@ public class VerificationService {
         }
 
         return new ContractAccessResult(true, "Codigo valido", token.getExpiresAt());
+    }
+
+    /**
+     * Verifica si un codigo de contrato sigue vigente SIN mutar el token (no consume ni incrementa intentos).
+     * Se usa para decidir si se debe regenerar un link antes de enviarlo por WhatsApp/chatbot.
+     */
+    @Transactional(readOnly = true)
+    public ContractAccessResult peekContractAccessCode(String rawEmail, String rawCode) {
+        final String email = normalizeEmail(rawEmail);
+        final String code = trim(rawCode);
+        final Instant now = Instant.now();
+        final String purpose = "CONTRACT_SIGN";
+
+        if (code.isBlank()) {
+            return new ContractAccessResult(false, "Codigo requerido", null);
+        }
+
+        final String codeHash = OtpHasher.sha256(code);
+        Optional<OtpToken> tokenOpt =
+                repo.findTopByEmailAndPurposeAndOtpHashAndConsumedAtIsNullOrderByIdDesc(email, purpose, codeHash);
+        if (tokenOpt.isEmpty()) {
+            return new ContractAccessResult(false, "Codigo invalido o vencido", null);
+        }
+
+        OtpToken token = tokenOpt.get();
+        Instant expiresAt = token.getExpiresAt();
+        if (expiresAt == null || now.isAfter(expiresAt)) {
+            return new ContractAccessResult(false, "Codigo vencido", expiresAt);
+        }
+
+        return new ContractAccessResult(true, "Codigo valido", expiresAt);
     }
 
     /** Consume código de contrato y activa matrícula (creación de estudiante) si aplica. */

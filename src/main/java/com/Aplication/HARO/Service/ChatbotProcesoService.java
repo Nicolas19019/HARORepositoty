@@ -864,6 +864,27 @@ private String paymentConfirmationUrl;
 
         boolean changed = false;
         List<String> categories = splitPurchasedCategories(proceso.getCategoria());
+
+        // Data hygiene: if the process category was corrected over time, stale rows may remain.
+        // They must not force extra "categorias por firmar" in the UI/backoffice.
+        java.util.Set<String> desired = categories.stream()
+                .map(c -> trim(c).toUpperCase(Locale.ROOT))
+                .filter(c -> !c.isBlank())
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+        if (!desired.isEmpty()) {
+            for (ChatbotContractCategoryProgress item : existing) {
+                String code = trim(item.getCategoryCode()).toUpperCase(Locale.ROOT);
+                if (code.isBlank() || desired.contains(code)) continue;
+                try {
+                    contractCategoryProgressRepository.delete(item);
+                    changed = true;
+                } catch (Exception ex) {
+                    log.warn("No se pudo eliminar categoria de contrato sobrante procesoId={} categoryCode={}: {}",
+                            proceso.getId(), code, ex.getMessage());
+                }
+            }
+        }
+
         for (int i = 0; i < categories.size(); i++) {
             String code = categories.get(i);
             ChatbotContractCategoryProgress item = byCode.get(code);
@@ -896,6 +917,26 @@ private String paymentConfirmationUrl;
         List<ChatbotContractCategoryProgress> ordered = new ArrayList<>(
                 contractCategoryProgressRepository.findByProcesoIdOrderByOrderIndexAscIdAsc(proceso.getId())
         );
+
+        // Contratos: el frontend firma 4 PDFs (Contrato1/2/3/4) una sola vez por proceso,
+        // incluso si el estudiante compro multiples categorias (A2/B1/C1).
+        //
+        // Si detectamos que ya existen 4 PDFs firmados a nivel "master" (proceso.signed_contract_files),
+        // propagamos ese mismo set a todas las categorias para que el flujo pueda finalizar.
+        int masterUploadedContracts = countUploadedContracts(proceso.getSignedContractFiles());
+        if (masterUploadedContracts >= 4) {
+            String masterUploadsJson = writeJson(readJsonList(proceso.getSignedContractFiles()));
+            for (ChatbotContractCategoryProgress item : ordered) {
+                if (countUploadedContracts(item.getSignedContractFiles()) >= 4) {
+                    continue;
+                }
+                item.setSignedContractFiles(masterUploadsJson);
+                refreshContractCategoryProgressStatus(item);
+                contractCategoryProgressRepository.save(item);
+                changed = true;
+            }
+        }
+
         syncMasterContractStatus(proceso, ordered);
         if (changed) {
             procesoRepository.save(proceso);
@@ -949,8 +990,8 @@ private String paymentConfirmationUrl;
             categoryPayload.put("orderIndex", safeOrder(item));
             categoryPayload.put("status", trim(item.getStatus()));
             categoryPayload.put("uploadedContracts", uploadedContracts);
-            categoryPayload.put("totalContracts", 3);
-            categoryPayload.put("currentContractIndex", Math.min(uploadedContracts, 2));
+            categoryPayload.put("totalContracts", 4);
+            categoryPayload.put("currentContractIndex", Math.min(uploadedContracts, 3));
             categoryPayload.put("completed", completedCategory);
             if (item.getCompletedAt() != null) {
                 categoryPayload.put("completedAt", item.getCompletedAt().toString());
@@ -962,7 +1003,7 @@ private String paymentConfirmationUrl;
         int currentCategoryIndex = current == null ? Math.max(0, total - 1) : safeOrder(current);
         String currentCode = current == null ? "" : trim(current.getCategoryCode());
         String currentLabel = current == null ? "" : trim(current.getCategoryLabel());
-        int currentContractIndex = current == null ? 0 : Math.min(countUploadedContracts(current.getSignedContractFiles()), 2);
+        int currentContractIndex = current == null ? 0 : Math.min(countUploadedContracts(current.getSignedContractFiles()), 3);
 
         return new ContractCategoryFlowSnapshot(
                 allCompleted,
@@ -982,9 +1023,9 @@ private String paymentConfirmationUrl;
             return;
         }
         int uploadedContracts = countUploadedContracts(item.getSignedContractFiles());
-        if (uploadedContracts >= 3) {
+        if (uploadedContracts >= 4) {
             item.setStatus("COMPLETED");
-            item.setCurrentContractIndex(2);
+            item.setCurrentContractIndex(3);
             if (item.getCompletedAt() == null) {
                 item.setCompletedAt(Instant.now());
             }
@@ -993,7 +1034,8 @@ private String paymentConfirmationUrl;
         if (uploadedContracts > 0) {
             item.setStatus("IN_PROGRESS");
             item.setCurrentContractIndex(uploadedContracts);
-        } else if (!"COMPLETED".equalsIgnoreCase(trim(item.getStatus()))) {
+            item.setCompletedAt(null);
+        } else {
             item.setStatus("PENDING");
             item.setCurrentContractIndex(0);
             item.setCompletedAt(null);
@@ -1033,16 +1075,17 @@ private String paymentConfirmationUrl;
     }
 
     private int countUploadedContracts(String signedContractFilesJson) {
-        int count = 0;
         Set<String> seen = new LinkedHashSet<>();
         for (Map<String, Object> upload : readJsonList(signedContractFilesJson)) {
-            String pdfFile = trim(asString(upload.get("pdfFile")));
-            if (!pdfFile.isBlank()) {
-                seen.add(pdfFile);
-            }
+            // Prefer pdfFile (stable key), but fall back to contractName/fileName for older payloads.
+            String identity = firstNotBlank(
+                    trim(asString(upload.get("pdfFile"))),
+                    trim(asString(upload.get("contractName"))),
+                    trim(asString(upload.get("fileName")))
+            );
+            if (!identity.isBlank()) seen.add(identity);
         }
-        count = seen.size();
-        return Math.min(count, 3);
+        return Math.min(seen.size(), 4);
     }
 
     private int safeOrder(ChatbotContractCategoryProgress item) {
@@ -2527,11 +2570,22 @@ private String paymentConfirmationUrl;
     }
 
     private String normalizeCategoria(String categoria) {
-        String c = trim(categoria).toUpperCase(Locale.ROOT)
+        String c = trim(categoria);
+        if (c.isBlank()) {
+            // Defensive default: never infer extra categories from an empty/invalid value.
+            return "A2";
+        }
+
+        c = Normalizer.normalize(c, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .toUpperCase(Locale.ROOT)
                 .replace(" ", "")
                 .replace("+", "Y")
                 .replace("/", "Y")
                 .replace(",", "Y");
+
+        // Strip any other punctuation (e.g. "A-2", "B.1") but keep Y as a separator.
+        c = c.replaceAll("[^A-Z0-9Y]+", "");
 
         while (c.contains("YY")) c = c.replace("YY", "Y");
 
@@ -2550,7 +2604,9 @@ private String paymentConfirmationUrl;
         if (hasA2) return "A2";
         if (hasB1) return "B1";
         if (hasC1) return "C1";
-        return "A2 y B1";
+
+        // If we cannot detect a category reliably, don't add extra categories.
+        return "A2";
     }
 
     private String normalizeDoc(String doc) {

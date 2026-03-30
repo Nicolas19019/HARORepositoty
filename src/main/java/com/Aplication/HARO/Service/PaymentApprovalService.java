@@ -568,7 +568,7 @@ public class PaymentApprovalService {
 
     private String buildContractExpiryHint(Instant expiresAt) {
         if (expiresAt == null) {
-            return "\u23f3 Este enlace vence en 15 minutos. Si se vence, escribe *LINK* para generar otro.";
+            return "\u23f3 Este enlace es temporal. Si se vence, escribe *LINK* para generar otro.";
         }
         String until = CONTRACT_EXPIRES_FMT.format(expiresAt);
         return "\u23f3 Vigente hasta: " + until + " (hora Colombia). Si se vence, escribe *LINK* para generar otro.";

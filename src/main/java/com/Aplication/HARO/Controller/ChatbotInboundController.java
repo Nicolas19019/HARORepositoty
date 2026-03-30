@@ -463,6 +463,72 @@ public class ChatbotInboundController {
                 actions.add(textMsg(advisorContactText()));
                 actions.add(textMsg("Opciones: MENU"));
             }
+            case "link", "contrato", "contratos", "link contrato", "link contratos" -> {
+                try {
+                    Optional<ChatbotMatriculaProceso> procesoOpt = procesoService.findLatestProcesoByPhone(from);
+                    if (procesoOpt.isEmpty()) {
+                        actions.add(textMsg(
+                                "⚠️ No encuentro un proceso reciente asociado a este número.\n\n" +
+                                        "Escribe *MATRICULA* para iniciar un nuevo proceso."
+                        ));
+                        actions.add(textMsg(mainMenuText()));
+                        return;
+                    }
+
+                    ChatbotMatriculaProceso proceso = procesoOpt.get();
+                    String paymentStatus = trim(proceso.getPaymentStatus()).toUpperCase(Locale.ROOT);
+                    if (!"APPROVED".equals(paymentStatus)) {
+                        String payLink = trim(proceso.getPaymentLink());
+                        if (!payLink.isBlank()) {
+                            actions.add(textMsg(
+                                    "💳 Aún no tenemos el pago confirmado.\n\n" +
+                                            "Enlace de pago:\n" + payLink
+                            ));
+                        } else {
+                            actions.add(textMsg(
+                                    "⚠️ Aún no hay un enlace de contratos disponible porque el pago no está confirmado.\n\n" +
+                                            "Escribe *MATRICULA* para iniciar o continúa tu proceso."
+                            ));
+                        }
+                        actions.add(textMsg("Opciones: MENU"));
+                        return;
+                    }
+
+                    // En este punto el pago está aprobado: entregamos (y si aplica regeneramos) el enlace de contrato.
+                    session.documento = trim(proceso.getNumeroDocumento());
+                    session.state = ChatState.CONTRACT_WAIT;
+
+                    String link = normalizeStoredContractLink(proceso.getContractLink());
+                    Instant expiresAt = null;
+
+                    if (link.isBlank() || shouldRefreshContractLink(link)) {
+                        ContractUserLink renewed = createAndStoreContractLink(session.documento);
+                        link = renewed.url();
+                        expiresAt = renewed.expiresAt();
+                    } else {
+                        VerificationService.ContractAccessResult peek = peekContractLinkAccess(link);
+                        expiresAt = peek == null ? null : peek.expiresAt();
+                    }
+
+                    if (link.isBlank()) {
+                        actions.add(textMsg("⚠️ Aún no hay un enlace de contrato disponible."));
+                        actions.add(textMsg("Opciones: MENU"));
+                        return;
+                    }
+
+                    actions.add(textMsg(
+                            "📄 *Enlace de contrato*\n\n" +
+                                    link + "\n\n" +
+                                    buildContractExpiryHint(expiresAt) + "\n\n" +
+                                    "Cuando termines, escribe *LISTO*."
+                    ));
+                    actions.add(textMsg("Opciones: MENU | LINK"));
+                } catch (Exception e) {
+                    log.error("No se pudo resolver link de contrato desde menu principal from={}: {}", maskPhone(from), e.getMessage(), e);
+                    actions.add(textMsg("⚠️ No pude obtener el enlace de contrato en este momento. Intenta nuevamente."));
+                    actions.add(textMsg("Opciones: MENU"));
+                }
+            }
             default -> {
                 actions.add(textMsg("⚠️ Opción no reconocida en este menú. Escribe 1, 2, 3, 4 o 5, o MENU."));
                 actions.add(textMsg(mainMenuText()));
@@ -2241,7 +2307,7 @@ public class ChatbotInboundController {
 
     private String buildContractExpiryHint(Instant expiresAt) {
         if (expiresAt == null) {
-            return "⏳ Este enlace vence en 15 minutos. Si se vence, escribe *LINK* para generar otro.";
+            return "⏳ Este enlace es temporal. Si se vence, escribe *LINK* para generar otro.";
         }
         String until = CONTRACT_EXPIRES_FMT.format(expiresAt);
         return "⏳ Vigente hasta: " + until + " (hora Colombia). Si se vence, escribe *LINK* para generar otro.";

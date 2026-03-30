@@ -46,7 +46,8 @@ public class VerificationService {
     private static final String[] REQUIRED_SIGNED_CONTRACTS = {
             "Contrato1.pdf",
             "Contrato2.pdf",
-            "Contrato3.pdf"
+            "Contrato3.pdf",
+            "Contrato4.pdf"
     };
 
     private final OtpTokenRepository repo;
@@ -95,7 +96,7 @@ public class VerificationService {
     @Value("${app.contract.verify.code.length:10}")
     private int contractCodeLength;
 
-    @Value("${app.contract.verify.ttlSeconds:900}") // 15 min
+    @Value("${app.contract.verify.ttlSeconds:7200}") // default: 2h
     private long contractTtlSeconds;
 
     @Value("${app.contract.verify.base-url:http://localhost:8081}")
@@ -600,13 +601,13 @@ public class VerificationService {
     try {
         ChatbotProcesoService.ContractCategoryFlowSnapshot contractFlow = chatbotProcesoService.getContractCategoryFlowByEmail(email);
         if (!contractFlow.allCompleted()) {
-            return new ContractCompletionResult(
-                    false,
-                    "Aun faltan categorias por firmar antes de finalizar el proceso.",
-                    email,
-                    trim(proceso.getNumeroDocumento()),
-                    null,
-                    safe(proceso.getFlowStatus()),
+                    return new ContractCompletionResult(
+                            false,
+                            "Aun faltan contratos por firmar antes de finalizar el proceso.",
+                            email,
+                            trim(proceso.getNumeroDocumento()),
+                            null,
+                            safe(proceso.getFlowStatus()),
                     safe(proceso.getPaymentStatus())
             );
         }
@@ -709,7 +710,7 @@ public class VerificationService {
             if (!contractFlow.allCompleted()) {
                 return new ContractCompletionResult(
                         false,
-                        "Aun faltan categorias por firmar antes de finalizar el proceso.",
+                        "Aun faltan contratos por firmar antes de finalizar el proceso.",
                         email,
                         documento,
                         null,
@@ -802,7 +803,7 @@ public class VerificationService {
             if (!contractFlow.allCompleted()) {
                 return new ContractCompletionResult(
                         false,
-                        "Aun faltan categorias por firmar antes de finalizar el proceso.",
+                        "Aun faltan contratos por firmar antes de finalizar el proceso.",
                         email,
                         trim(proceso.getNumeroDocumento()),
                         null,

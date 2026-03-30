@@ -1,6 +1,7 @@
 package com.Aplication.HARO.Service;
 
 import com.Aplication.HARO.Model.Profesor;
+import com.Aplication.HARO.Repository.ChatbotContractCategoryProgressRepository;
 import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
 import com.Aplication.HARO.Repository.ClaseRepository;
 import com.Aplication.HARO.Repository.EstadoCuentaRepository;
@@ -27,6 +28,7 @@ class ChatbotProcesoServiceSedeTest {
     @Test
     void pickAvailableProfesor_shouldPreferInstructorFromSameSede() {
         ChatbotMatriculaProcesoRepository procesoRepository = mock(ChatbotMatriculaProcesoRepository.class);
+        ChatbotContractCategoryProgressRepository contractCategoryProgressRepository = mock(ChatbotContractCategoryProgressRepository.class);
         EstudianteRepository estudianteRepository = mock(EstudianteRepository.class);
         EstudianteService estudianteService = mock(EstudianteService.class);
         EstadoCuentaRepository estadoCuentaRepository = mock(EstadoCuentaRepository.class);
@@ -39,6 +41,7 @@ class ChatbotProcesoServiceSedeTest {
 
         ChatbotProcesoService service = new ChatbotProcesoService(
                 procesoRepository,
+                contractCategoryProgressRepository,
                 estudianteRepository,
                 estudianteService,
                 estadoCuentaRepository,

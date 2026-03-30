@@ -583,12 +583,6 @@ public class VerificationService {
         log.info("[contract.complete] codigo ya consumido pero contrato ya esta SIGNED. email={}", email);
     }
 
-    try {
-        chatbotProcesoService.markContractSignedByEmail(email);
-    } catch (Exception ex) {
-        log.warn("No se pudo marcar contrato firmado por email={}: {}", email, ex.getMessage(), ex);
-    }
-
     Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
     if (procesoOpt.isEmpty()) {
         return new ContractCompletionResult(
@@ -603,6 +597,27 @@ public class VerificationService {
     }
 
     ChatbotMatriculaProceso proceso = procesoOpt.get();
+    try {
+        ChatbotProcesoService.ContractCategoryFlowSnapshot contractFlow = chatbotProcesoService.getContractCategoryFlowByEmail(email);
+        if (!contractFlow.allCompleted()) {
+            return new ContractCompletionResult(
+                    false,
+                    "Aun faltan categorias por firmar antes de finalizar el proceso.",
+                    email,
+                    trim(proceso.getNumeroDocumento()),
+                    null,
+                    safe(proceso.getFlowStatus()),
+                    safe(proceso.getPaymentStatus())
+            );
+        }
+    } catch (Exception ex) {
+        log.warn("No se pudo validar flujo por categorias antes de completar email={}: {}", email, ex.getMessage());
+    }
+    try {
+        chatbotProcesoService.markContractSignedByEmail(email);
+    } catch (Exception ex) {
+        log.warn("No se pudo marcar contrato firmado por email={}: {}", email, ex.getMessage(), ex);
+    }
     String documento = trim(proceso.getNumeroDocumento());
     Long studentId = null;
     String message = "Contrato validado correctamente";
@@ -686,15 +701,30 @@ public class VerificationService {
             );
         }
 
+        Long studentId = null;
+        String message = "Contrato validado correctamente";
+        boolean okResult = true;
+        try {
+            ChatbotProcesoService.ContractCategoryFlowSnapshot contractFlow = chatbotProcesoService.getContractCategoryFlowByEmail(email);
+            if (!contractFlow.allCompleted()) {
+                return new ContractCompletionResult(
+                        false,
+                        "Aun faltan categorias por firmar antes de finalizar el proceso.",
+                        email,
+                        documento,
+                        null,
+                        safe(proceso.getFlowStatus()),
+                        safe(proceso.getPaymentStatus())
+                );
+            }
+        } catch (Exception ex) {
+            log.warn("[contract.complete.recover] No se pudo validar flujo por categorias email={}: {}", email, ex.getMessage());
+        }
         try {
             chatbotProcesoService.markContractSignedByEmail(email);
         } catch (Exception ex) {
             log.warn("[contract.complete.recover] No se pudo marcar contrato firmado email={}: {}", email, ex.getMessage(), ex);
         }
-
-        Long studentId = null;
-        String message = "Contrato validado correctamente";
-        boolean okResult = true;
 
         if (StringUtils.hasText(documento)) {
             try {
@@ -761,7 +791,28 @@ public class VerificationService {
             log.info("[contract.complete.v2] codigo ya consumido pero contrato ya esta SIGNED. email={}", email);
         }
 
-        // Mark contract signed (best effort) in its own tx.
+        Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+        if (procesoOpt.isEmpty()) {
+            return new ContractCompletionResult(true, "Contrato validado correctamente", email, "", null, "CONTRACT_SIGNED", "");
+        }
+
+        ChatbotMatriculaProceso proceso = procesoOpt.get();
+        try {
+            ChatbotProcesoService.ContractCategoryFlowSnapshot contractFlow = chatbotProcesoService.getContractCategoryFlowByEmail(email);
+            if (!contractFlow.allCompleted()) {
+                return new ContractCompletionResult(
+                        false,
+                        "Aun faltan categorias por firmar antes de finalizar el proceso.",
+                        email,
+                        trim(proceso.getNumeroDocumento()),
+                        null,
+                        safe(proceso.getFlowStatus()),
+                        safe(proceso.getPaymentStatus())
+                );
+            }
+        } catch (Exception ex) {
+            log.warn("[contract.complete.v2] No se pudo validar flujo por categorias email={}: {}", email, ex.getMessage());
+        }
         newTx(TransactionDefinition.PROPAGATION_REQUIRES_NEW).execute(status -> {
             try {
                 chatbotProcesoService.markContractSignedByEmail(email);
@@ -770,13 +821,6 @@ public class VerificationService {
             }
             return null;
         });
-
-        Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
-        if (procesoOpt.isEmpty()) {
-            return new ContractCompletionResult(true, "Contrato validado correctamente", email, "", null, "CONTRACT_SIGNED", "");
-        }
-
-        ChatbotMatriculaProceso proceso = procesoOpt.get();
         String documento = trim(proceso.getNumeroDocumento());
         Long studentId = null;
         String message = "Contrato validado correctamente";
@@ -829,6 +873,7 @@ public class VerificationService {
 
     public ContractUploadResult uploadSignedContractDocument(String rawEmail,
                                                              String rawCode,
+                                                             String rawCategoryCode,
                                                              String rawSignerName,
                                                              String rawContractName,
                                                              String rawPdfFile,
@@ -868,13 +913,28 @@ public class VerificationService {
             contractName = "contrato-firmado";
         }
 
+        String categoryLabel = trim(rawCategoryCode);
+        String sede = "";
+        try {
+            categoryLabel = chatbotProcesoService.resolveCurrentContractCategoryLabel(email, trim(rawCategoryCode));
+        } catch (Exception ex) {
+            log.warn("No se pudo resolver categoria actual para almacenamiento email={} categoryCode={}: {}",
+                    email, trim(rawCategoryCode), ex.getMessage());
+        }
+        try {
+            sede = chatbotProcesoService.resolveSedeByEmail(email);
+        } catch (Exception ex) {
+            log.warn("No se pudo resolver sede para almacenamiento email={}: {}", email, ex.getMessage());
+        }
+
         ContractDocumentStorageService.StoredDocument stored =
-                contractDocumentStorageService.storeSignedContract(file, signerName, documento, contractName);
+                contractDocumentStorageService.storeSignedContract(file, signerName, documento, contractName, sede, categoryLabel);
 
         Optional<ChatbotMatriculaProceso> mergedProcesoOpt = Optional.empty();
         try {
             mergedProcesoOpt = chatbotProcesoService.mergeContractSubmissionByEmail(
                     email,
+                    trim(rawCategoryCode),
                     contractName,
                     trim(rawPdfFile),
                     trim(rawFormDataJson),
@@ -896,8 +956,14 @@ public class VerificationService {
         String message = "Contrato cargado correctamente";
 
         ChatbotMatriculaProceso statusSource = mergedProcesoOpt.orElseGet(() -> procesoOpt.orElse(null));
-        if (statusSource != null && hasAllRequiredSignedContracts(statusSource.getSignedContractFiles())) {
-            message = "Contrato cargado correctamente. Se detectaron todos los contratos firmados.";
+        ChatbotProcesoService.ContractCategoryFlowSnapshot contractFlow = null;
+        try {
+            contractFlow = chatbotProcesoService.getContractCategoryFlowByEmail(email);
+        } catch (Exception ex) {
+            log.warn("No se pudo resolver estado de categorias tras upload email={}: {}", email, ex.getMessage());
+        }
+        if (contractFlow != null && contractFlow.allCompleted()) {
+            message = "Contrato cargado correctamente. Se detectaron todas las categorias firmadas.";
 
             try {
                 chatbotProcesoService.markContractSignedByEmail(email);
@@ -922,6 +988,8 @@ public class VerificationService {
                     message = "Contrato cargado correctamente. La firma se completo, pero la matricula quedo pendiente.";
                 }
             }
+        } else if (contractFlow != null && StringUtils.hasText(contractFlow.currentCategoryLabel())) {
+            message = "Contrato cargado correctamente. Continua con la categoria " + contractFlow.currentCategoryLabel() + ".";
         }
 
         ChatbotMatriculaProceso refreshed = resolveLatestContractStatus(email, documento).orElse(statusSource);

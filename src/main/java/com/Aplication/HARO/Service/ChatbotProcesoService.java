@@ -1,5 +1,6 @@
 package com.Aplication.HARO.Service;
 
+import com.Aplication.HARO.Model.ChatbotContractCategoryProgress;
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Model.Clase;
 import com.Aplication.HARO.Model.EstadoCuenta;
@@ -7,6 +8,7 @@ import com.Aplication.HARO.Model.Estudiante;
 import com.Aplication.HARO.Model.Pagos;
 import com.Aplication.HARO.Model.Profesor;
 import com.Aplication.HARO.Model.Vehiculo;
+import com.Aplication.HARO.Repository.ChatbotContractCategoryProgressRepository;
 import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
 import com.Aplication.HARO.Repository.ClaseRepository;
 import com.Aplication.HARO.Repository.EstadoCuentaRepository;
@@ -57,6 +59,7 @@ public class ChatbotProcesoService {
     private static final Logger log = LoggerFactory.getLogger(ChatbotProcesoService.class);
 
     private final ChatbotMatriculaProcesoRepository procesoRepository;
+    private final ChatbotContractCategoryProgressRepository contractCategoryProgressRepository;
     private final EstudianteRepository estudianteRepository;
     private final EstudianteService estudianteService;
     private final EstadoCuentaRepository estadoCuentaRepository;
@@ -189,6 +192,17 @@ private String paymentConfirmationUrl;
                                      long horasRestantes,
                                      BigDecimal multasAcumuladas) {}
     public record StudentDuplicateCheckResult(boolean exists, String reason) {}
+    public record ContractCategoryFlowSnapshot(
+            boolean allCompleted,
+            String currentCategoryCode,
+            String currentCategoryLabel,
+            int currentCategoryIndex,
+            int totalCategories,
+            int completedCategories,
+            int remainingCategories,
+            int currentContractIndex,
+            List<Map<String, Object>> categories
+    ) {}
     private record ContractStudentProfile(String nombre,
                                           String apellido,
                                           String tipoDocumento,
@@ -199,6 +213,7 @@ private String paymentConfirmationUrl;
                                           String sede) {}
 
     public ChatbotProcesoService(ChatbotMatriculaProcesoRepository procesoRepository,
+                                 ChatbotContractCategoryProgressRepository contractCategoryProgressRepository,
                                  EstudianteRepository estudianteRepository,
                                  EstudianteService estudianteService,
                                  EstadoCuentaRepository estadoCuentaRepository,
@@ -209,6 +224,7 @@ private String paymentConfirmationUrl;
                                  GoogleCalendarService googleCalendarService,
                                  @Qualifier("passwordEncoder") PasswordEncoder passwordEncoder) {
         this.procesoRepository = procesoRepository;
+        this.contractCategoryProgressRepository = contractCategoryProgressRepository;
         this.estudianteRepository = estudianteRepository;
         this.estudianteService = estudianteService;
         this.estadoCuentaRepository = estadoCuentaRepository;
@@ -295,7 +311,9 @@ private String paymentConfirmationUrl;
             proceso.setContractStatus("PENDING_SIGNATURE");
         }
 
-        return procesoRepository.save(proceso);
+        ChatbotMatriculaProceso saved = procesoRepository.save(proceso);
+        ensureContractCategoryProgress(saved);
+        return saved;
     }
 
     @Transactional
@@ -447,6 +465,10 @@ private String paymentConfirmationUrl;
         String mail = normalizeEmail(email);
         ChatbotMatriculaProceso proceso = procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail)
                 .orElseThrow(() -> new NoSuchElementException("No hay proceso de matricula para " + mail));
+        List<ChatbotContractCategoryProgress> categoryProgressList = ensureContractCategoryProgress(proceso);
+        if (!areAllCategoriesCompleted(categoryProgressList)) {
+            throw new IllegalStateException("Aun hay categorias pendientes por firmar.");
+        }
         proceso.setContractStatus("SIGNED");
         proceso.setFlowStatus("CONTRACT_SIGNED");
         proceso.setContractSignedAt(Instant.now());
@@ -597,6 +619,19 @@ private String paymentConfirmationUrl;
                                                                             String fileUrl,
                                                                             String objectKey,
                                                                             String signerFolder) {
+        return mergeContractSubmissionByEmail(email, "", contractName, pdfFile, formDataJson, fileName, fileUrl, objectKey, signerFolder);
+    }
+
+    @Transactional
+    public Optional<ChatbotMatriculaProceso> mergeContractSubmissionByEmail(String email,
+                                                                            String requestedCategoryCode,
+                                                                            String contractName,
+                                                                            String pdfFile,
+                                                                            String formDataJson,
+                                                                            String fileName,
+                                                                            String fileUrl,
+                                                                            String objectKey,
+                                                                            String signerFolder) {
         String mail = normalizeEmail(email);
         Optional<ChatbotMatriculaProceso> procesoOpt =
                 procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail);
@@ -605,12 +640,19 @@ private String paymentConfirmationUrl;
         }
 
         ChatbotMatriculaProceso proceso = procesoOpt.get();
+        List<ChatbotContractCategoryProgress> categoryProgressList = ensureContractCategoryProgress(proceso);
+        ChatbotContractCategoryProgress targetProgress = resolveWritableCategoryProgress(proceso, categoryProgressList, requestedCategoryCode);
+
         Map<String, Object> mergedFormData = readJsonMap(proceso.getContractFormData());
         Map<String, Object> incomingFormData = readJsonMap(formDataJson);
         if (!incomingFormData.isEmpty()) {
             mergedFormData.putAll(incomingFormData);
             proceso.setContractFormData(writeJson(mergedFormData));
             applyContractFormSnapshotToProceso(proceso, mergedFormData);
+
+            Map<String, Object> categoryFormData = readJsonMap(targetProgress.getContractFormData());
+            categoryFormData.putAll(incomingFormData);
+            targetProgress.setContractFormData(writeJson(categoryFormData));
         }
 
         Map<String, Object> uploadMeta = new LinkedHashMap<>();
@@ -625,8 +667,17 @@ private String paymentConfirmationUrl;
             List<Map<String, Object>> uploads = readJsonList(proceso.getSignedContractFiles());
             upsertContractUpload(uploads, uploadMeta);
             proceso.setSignedContractFiles(writeJson(uploads));
+
+            List<Map<String, Object>> categoryUploads = readJsonList(targetProgress.getSignedContractFiles());
+            putIfNotBlank(uploadMeta, "categoryCode", targetProgress.getCategoryCode());
+            putIfNotBlank(uploadMeta, "categoryLabel", targetProgress.getCategoryLabel());
+            upsertContractUpload(categoryUploads, uploadMeta);
+            targetProgress.setSignedContractFiles(writeJson(categoryUploads));
         }
 
+        refreshContractCategoryProgressStatus(targetProgress);
+        contractCategoryProgressRepository.save(targetProgress);
+        syncMasterContractStatus(proceso, ensureContractCategoryProgress(proceso));
         return Optional.of(procesoRepository.save(proceso));
     }
     @Transactional
@@ -651,7 +702,7 @@ private String paymentConfirmationUrl;
         return Optional.of(procesoRepository.save(proceso));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Map<String, Object> buildContractAccessPayloadByEmail(String email) {
         String mail = normalizeEmail(email);
         Optional<ChatbotMatriculaProceso> procesoOpt =
@@ -664,7 +715,17 @@ private String paymentConfirmationUrl;
         }
 
         ChatbotMatriculaProceso proceso = procesoOpt.get();
+        List<ChatbotContractCategoryProgress> categoryProgressList = ensureContractCategoryProgress(proceso);
+        ContractCategoryFlowSnapshot contractFlow = buildContractCategoryFlowSnapshot(categoryProgressList);
         Map<String, Object> formData = readJsonMap(proceso.getContractFormData());
+        ChatbotContractCategoryProgress currentCategoryProgress =
+                findCurrentCategoryProgress(categoryProgressList).orElse(null);
+        if (currentCategoryProgress != null) {
+            Map<String, Object> currentCategoryForm = readJsonMap(currentCategoryProgress.getContractFormData());
+            if (!currentCategoryForm.isEmpty()) {
+                formData.putAll(currentCategoryForm);
+            }
+        }
 
         putIfNotBlank(payload, "nombreCompleto", firstNotBlank(
                 readValue(formData, "c2_nombre"),
@@ -685,6 +746,7 @@ private String paymentConfirmationUrl;
         ));
         putIfNotBlank(payload, "categoria", firstNotBlank(
                 readValue(formData, "c2_categoria"),
+                contractFlow.currentCategoryLabel(),
                 proceso.getCategoria()
         ));
 
@@ -744,7 +806,267 @@ private String paymentConfirmationUrl;
         if (!trim(proceso.getStudentPasswordHash()).isBlank()) {
             payload.put("accessPasswordConfigured", true);
         }
+        Map<String, Object> contractFlowPayload = new LinkedHashMap<>();
+        contractFlowPayload.put("allCompleted", contractFlow.allCompleted());
+        contractFlowPayload.put("totalCategories", contractFlow.totalCategories());
+        contractFlowPayload.put("completedCategories", contractFlow.completedCategories());
+        contractFlowPayload.put("remainingCategories", contractFlow.remainingCategories());
+        contractFlowPayload.put("currentCategoryIndex", contractFlow.currentCategoryIndex());
+        putIfNotBlank(contractFlowPayload, "currentCategoryCode", contractFlow.currentCategoryCode());
+        putIfNotBlank(contractFlowPayload, "currentCategoryLabel", contractFlow.currentCategoryLabel());
+        contractFlowPayload.put("currentContractIndex", contractFlow.currentContractIndex());
+        contractFlowPayload.put("categories", contractFlow.categories());
+        payload.put("contractFlow", contractFlowPayload);
+        payload.put("selectedCategories", contractFlow.categories().stream()
+                .map(item -> String.valueOf(item.getOrDefault("categoryCode", "")))
+                .filter(value -> !trim(value).isBlank())
+                .toList());
         return payload;
+    }
+
+    @Transactional
+    public ContractCategoryFlowSnapshot getContractCategoryFlowByEmail(String email) {
+        String mail = normalizeEmail(email);
+        ChatbotMatriculaProceso proceso = procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail)
+                .orElseThrow(() -> new NoSuchElementException("No hay proceso de matricula para " + mail));
+        return buildContractCategoryFlowSnapshot(ensureContractCategoryProgress(proceso));
+    }
+
+    @Transactional
+    public String resolveCurrentContractCategoryLabel(String email, String requestedCategoryCode) {
+        String mail = normalizeEmail(email);
+        ChatbotMatriculaProceso proceso = procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail)
+                .orElseThrow(() -> new NoSuchElementException("No hay proceso de matricula para " + mail));
+        List<ChatbotContractCategoryProgress> items = ensureContractCategoryProgress(proceso);
+        return resolveWritableCategoryProgress(proceso, items, requestedCategoryCode).getCategoryLabel();
+    }
+
+    @Transactional(readOnly = true)
+    public String resolveSedeByEmail(String email) {
+        String mail = normalizeEmail(email);
+        return procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail)
+                .map(ChatbotMatriculaProceso::getSede)
+                .map(this::trim)
+                .orElse("");
+    }
+
+    private List<ChatbotContractCategoryProgress> ensureContractCategoryProgress(ChatbotMatriculaProceso proceso) {
+        if (proceso == null || proceso.getId() == null) {
+            return List.of();
+        }
+
+        List<ChatbotContractCategoryProgress> existing =
+                contractCategoryProgressRepository.findByProcesoIdOrderByOrderIndexAscIdAsc(proceso.getId());
+        Map<String, ChatbotContractCategoryProgress> byCode = new LinkedHashMap<>();
+        for (ChatbotContractCategoryProgress item : existing) {
+            byCode.put(trim(item.getCategoryCode()).toUpperCase(Locale.ROOT), item);
+        }
+
+        boolean changed = false;
+        List<String> categories = splitPurchasedCategories(proceso.getCategoria());
+        for (int i = 0; i < categories.size(); i++) {
+            String code = categories.get(i);
+            ChatbotContractCategoryProgress item = byCode.get(code);
+            if (item == null) {
+                item = new ChatbotContractCategoryProgress();
+                item.setProceso(proceso);
+                item.setCategoryCode(code);
+                item.setCategoryLabel(code);
+                item.setOrderIndex(i);
+                item.setStatus(i == 0 ? "IN_PROGRESS" : "PENDING");
+                item.setCurrentContractIndex(0);
+                byCode.put(code, contractCategoryProgressRepository.save(item));
+                changed = true;
+                continue;
+            }
+
+            String expectedLabel = code;
+            if (!Objects.equals(trim(item.getCategoryLabel()), expectedLabel)) {
+                item.setCategoryLabel(expectedLabel);
+                changed = true;
+            }
+            if (item.getOrderIndex() == null || item.getOrderIndex() != i) {
+                item.setOrderIndex(i);
+                changed = true;
+            }
+            refreshContractCategoryProgressStatus(item);
+            contractCategoryProgressRepository.save(item);
+        }
+
+        List<ChatbotContractCategoryProgress> ordered = new ArrayList<>(
+                contractCategoryProgressRepository.findByProcesoIdOrderByOrderIndexAscIdAsc(proceso.getId())
+        );
+        syncMasterContractStatus(proceso, ordered);
+        if (changed) {
+            procesoRepository.save(proceso);
+        }
+        return ordered;
+    }
+
+    private ChatbotContractCategoryProgress resolveWritableCategoryProgress(ChatbotMatriculaProceso proceso,
+                                                                           List<ChatbotContractCategoryProgress> items,
+                                                                           String requestedCategoryCode) {
+        String requested = normalizeSingleCategoryCode(requestedCategoryCode);
+        if (!requested.isBlank()) {
+            return items.stream()
+                    .filter(item -> requested.equalsIgnoreCase(trim(item.getCategoryCode())))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("La categoria " + requested + " no pertenece a la compra."));
+        }
+
+        return findCurrentCategoryProgress(items)
+                .orElseThrow(() -> new IllegalStateException("No hay categorias pendientes para este proceso."));
+    }
+
+    private Optional<ChatbotContractCategoryProgress> findCurrentCategoryProgress(List<ChatbotContractCategoryProgress> items) {
+        return items.stream()
+                .filter(item -> !"COMPLETED".equalsIgnoreCase(trim(item.getStatus())))
+                .sorted((left, right) -> Integer.compare(safeOrder(left), safeOrder(right)))
+                .findFirst()
+                .or(() -> items.stream()
+                        .sorted((left, right) -> Integer.compare(safeOrder(left), safeOrder(right)))
+                        .findFirst());
+    }
+
+    private ContractCategoryFlowSnapshot buildContractCategoryFlowSnapshot(List<ChatbotContractCategoryProgress> items) {
+        List<ChatbotContractCategoryProgress> ordered = new ArrayList<>(items);
+        ordered.sort((left, right) -> Integer.compare(safeOrder(left), safeOrder(right)));
+        ChatbotContractCategoryProgress current = findCurrentCategoryProgress(ordered).orElse(null);
+        int total = ordered.size();
+        int completed = 0;
+        List<Map<String, Object>> categories = new ArrayList<>();
+
+        for (ChatbotContractCategoryProgress item : ordered) {
+            refreshContractCategoryProgressStatus(item);
+            int uploadedContracts = countUploadedContracts(item.getSignedContractFiles());
+            boolean completedCategory = "COMPLETED".equalsIgnoreCase(trim(item.getStatus()));
+            if (completedCategory) {
+                completed++;
+            }
+            Map<String, Object> categoryPayload = new LinkedHashMap<>();
+            categoryPayload.put("categoryCode", item.getCategoryCode());
+            categoryPayload.put("categoryLabel", item.getCategoryLabel());
+            categoryPayload.put("orderIndex", safeOrder(item));
+            categoryPayload.put("status", trim(item.getStatus()));
+            categoryPayload.put("uploadedContracts", uploadedContracts);
+            categoryPayload.put("totalContracts", 3);
+            categoryPayload.put("currentContractIndex", Math.min(uploadedContracts, 2));
+            categoryPayload.put("completed", completedCategory);
+            if (item.getCompletedAt() != null) {
+                categoryPayload.put("completedAt", item.getCompletedAt().toString());
+            }
+            categories.add(categoryPayload);
+        }
+
+        boolean allCompleted = total > 0 && completed == total;
+        int currentCategoryIndex = current == null ? Math.max(0, total - 1) : safeOrder(current);
+        String currentCode = current == null ? "" : trim(current.getCategoryCode());
+        String currentLabel = current == null ? "" : trim(current.getCategoryLabel());
+        int currentContractIndex = current == null ? 0 : Math.min(countUploadedContracts(current.getSignedContractFiles()), 2);
+
+        return new ContractCategoryFlowSnapshot(
+                allCompleted,
+                currentCode,
+                currentLabel,
+                currentCategoryIndex,
+                total,
+                completed,
+                Math.max(0, total - completed),
+                currentContractIndex,
+                categories
+        );
+    }
+
+    private void refreshContractCategoryProgressStatus(ChatbotContractCategoryProgress item) {
+        if (item == null) {
+            return;
+        }
+        int uploadedContracts = countUploadedContracts(item.getSignedContractFiles());
+        if (uploadedContracts >= 3) {
+            item.setStatus("COMPLETED");
+            item.setCurrentContractIndex(2);
+            if (item.getCompletedAt() == null) {
+                item.setCompletedAt(Instant.now());
+            }
+            return;
+        }
+        if (uploadedContracts > 0) {
+            item.setStatus("IN_PROGRESS");
+            item.setCurrentContractIndex(uploadedContracts);
+        } else if (!"COMPLETED".equalsIgnoreCase(trim(item.getStatus()))) {
+            item.setStatus("PENDING");
+            item.setCurrentContractIndex(0);
+            item.setCompletedAt(null);
+        }
+    }
+
+    private void syncMasterContractStatus(ChatbotMatriculaProceso proceso, List<ChatbotContractCategoryProgress> items) {
+        if (proceso == null) {
+            return;
+        }
+        boolean allCompleted = areAllCategoriesCompleted(items);
+        boolean anyStarted = items.stream().anyMatch(item -> countUploadedContracts(item.getSignedContractFiles()) > 0);
+        if (allCompleted) {
+            proceso.setContractStatus("SIGNED");
+            proceso.setFlowStatus("CONTRACT_SIGNED");
+            if (proceso.getContractSignedAt() == null) {
+                proceso.setContractSignedAt(Instant.now());
+            }
+            return;
+        }
+        if (anyStarted) {
+            proceso.setContractStatus("IN_PROGRESS");
+            proceso.setFlowStatus("CONTRACT_IN_PROGRESS");
+        } else if (!"LINK_SENT".equalsIgnoreCase(trim(proceso.getContractStatus()))) {
+            proceso.setContractStatus("PENDING_SIGNATURE");
+            if ("CONTRACT_SIGNED".equalsIgnoreCase(trim(proceso.getFlowStatus()))) {
+                proceso.setFlowStatus("PAID");
+            }
+        }
+        if (!allCompleted) {
+            proceso.setContractSignedAt(null);
+        }
+    }
+
+    private boolean areAllCategoriesCompleted(List<ChatbotContractCategoryProgress> items) {
+        return !items.isEmpty() && items.stream().allMatch(item -> "COMPLETED".equalsIgnoreCase(trim(item.getStatus())));
+    }
+
+    private int countUploadedContracts(String signedContractFilesJson) {
+        int count = 0;
+        Set<String> seen = new LinkedHashSet<>();
+        for (Map<String, Object> upload : readJsonList(signedContractFilesJson)) {
+            String pdfFile = trim(asString(upload.get("pdfFile")));
+            if (!pdfFile.isBlank()) {
+                seen.add(pdfFile);
+            }
+        }
+        count = seen.size();
+        return Math.min(count, 3);
+    }
+
+    private int safeOrder(ChatbotContractCategoryProgress item) {
+        return item == null || item.getOrderIndex() == null ? Integer.MAX_VALUE : item.getOrderIndex();
+    }
+
+    private List<String> splitPurchasedCategories(String categoriaRaw) {
+        String normalized = normalizeCategoria(categoriaRaw);
+        List<String> categories = new ArrayList<>();
+        if (normalized.contains("A2")) categories.add("A2");
+        if (normalized.contains("B1")) categories.add("B1");
+        if (normalized.contains("C1")) categories.add("C1");
+        if (categories.isEmpty()) {
+            categories.add("A2");
+        }
+        return categories;
+    }
+
+    private String normalizeSingleCategoryCode(String rawCategoryCode) {
+        String value = trim(rawCategoryCode).toUpperCase(Locale.ROOT);
+        if ("A2".equals(value) || "B1".equals(value) || "C1".equals(value)) {
+            return value;
+        }
+        return "";
     }
     @Transactional
     public Long createStudentFromSignedContract(String documento) {
@@ -2267,6 +2589,10 @@ private String paymentConfirmationUrl;
     private String safe(String v) {
         String out = trim(v);
         return out.isBlank() ? "N/A" : out;
+    }
+
+    private String asString(Object value) {
+        return value == null ? "" : String.valueOf(value);
     }
 
     private String trim(String v) {

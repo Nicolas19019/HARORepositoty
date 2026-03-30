@@ -200,9 +200,45 @@ public class ChatbotMatriculaSchemaHotfix implements CommandLineRunner {
                         ALTER TABLE chatbot_matricula_proceso
                           ADD COLUMN contract_chatbot_sent_at TIMESTAMPTZ;
                       END IF;
+
+                      IF NOT EXISTS (
+                        SELECT 1
+                        FROM information_schema.tables
+                        WHERE table_schema = current_schema()
+                          AND table_name = 'chatbot_contract_category_progress'
+                      ) THEN
+                        CREATE TABLE chatbot_contract_category_progress (
+                          id BIGSERIAL PRIMARY KEY,
+                          proceso_id BIGINT NOT NULL,
+                          category_code VARCHAR(20) NOT NULL,
+                          category_label VARCHAR(40) NOT NULL,
+                          order_index INTEGER NOT NULL DEFAULT 0,
+                          status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+                          current_contract_index INTEGER NOT NULL DEFAULT 0,
+                          contract_form_data TEXT,
+                          signed_contract_files TEXT,
+                          completed_at TIMESTAMPTZ,
+                          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                          CONSTRAINT fk_chatbot_contract_category_progress_proceso
+                            FOREIGN KEY (proceso_id) REFERENCES chatbot_matricula_proceso(id) ON DELETE CASCADE,
+                          CONSTRAINT uk_chatbot_contract_category_progress_process_category
+                            UNIQUE (proceso_id, category_code)
+                        );
+                      END IF;
+
+                      IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_indexes
+                        WHERE schemaname = current_schema()
+                          AND indexname = 'idx_chatbot_contract_category_progress_proceso'
+                      ) THEN
+                        CREATE INDEX idx_chatbot_contract_category_progress_proceso
+                          ON chatbot_contract_category_progress (proceso_id, order_index);
+                      END IF;
                     END $$;
                     """);
-            log.info("Schema hotfix aplicado: chatbot_matricula_proceso payment_link/contract_link/direccion/sede/student_password_hash/payment_plan/origen_registro/metodo_pago/auditoria_pago/flags_envio_contrato");
+            log.info("Schema hotfix aplicado: chatbot_matricula_proceso + chatbot_contract_category_progress");
         } catch (Exception ex) {
             log.error("No se pudo aplicar hotfix de esquema para chatbot_matricula_proceso", ex);
         }

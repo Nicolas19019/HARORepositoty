@@ -154,6 +154,7 @@ public ResponseEntity<?> completeContract(@RequestBody VerifyReq req) {
      body.put("studentId", result.studentId());
      body.put("flowStatus", result.flowStatus());
      body.put("paymentStatus", result.paymentStatus());
+     body.put("contractFlow", svc.buildContractAccessPayload(req.email()).get("contractFlow"));
      body.put("whatsappNotified", whatsappNotified);
      body.put("mode", mode);
      body.put("recovered", recovered);
@@ -166,13 +167,14 @@ public ResponseEntity<?> completeContract(@RequestBody VerifyReq req) {
   @PostMapping(value = "/contract/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<?> uploadContractSigned(@RequestParam @Email String email,
                                                 @RequestParam @NotBlank String code,
+                                                @RequestParam(name = "categoryCode", required = false) String categoryCode,
                                                 @RequestParam(name = "signerName", required = false) String signerName,
                                                 @RequestParam(name = "contractName", required = false) String contractName,
                                                 @RequestParam(name = "pdfFile", required = false) String pdfFile,
                                                 @RequestParam(name = "formData", required = false) String formData,
                                                 @RequestPart("file") MultipartFile file) {
     VerificationService.ContractUploadResult out =
-            svc.uploadSignedContractDocument(email, code, signerName, contractName, pdfFile, formData, file);
+            svc.uploadSignedContractDocument(email, code, categoryCode, signerName, contractName, pdfFile, formData, file);
     return out.ok()
             ? ResponseEntity.ok(out)
             : ResponseEntity.badRequest().body(out);

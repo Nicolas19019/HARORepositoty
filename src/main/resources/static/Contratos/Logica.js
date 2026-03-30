@@ -162,6 +162,11 @@
 
   let apiBase = apiBaseCandidates[0] || sanitizeApiBase(API_BASE_DEFAULT);
   let contractAccessPayload = {};
+  let contractFlowState = null;
+  let categoryFlow = [];
+  let categoryIndex = 0;
+  let currentCategoryCode = "";
+  let currentCategoryLabel = "";
 
   saveStoredAccess({
     email: contractEmail,
@@ -239,6 +244,52 @@
     }
   }
 
+  function syncContractFlowFromPayload(payload) {
+    const src = payload && typeof payload === "object" ? payload : {};
+    const flow = src.contractFlow && typeof src.contractFlow === "object" ? src.contractFlow : {};
+    const categories = Array.isArray(flow.categories) ? flow.categories : [];
+    contractFlowState = flow;
+    categoryFlow = categories;
+    categoryIndex = Math.max(0, Number.isFinite(Number(flow.currentCategoryIndex)) ? Number(flow.currentCategoryIndex) : 0);
+    currentCategoryCode = firstNotBlank(flow.currentCategoryCode, src.categoria);
+    currentCategoryLabel = firstNotBlank(flow.currentCategoryLabel, currentCategoryCode);
+    contractIndex = Math.max(0, Math.min(CONTRACTS.length - 1, Number.isFinite(Number(flow.currentContractIndex)) ? Number(flow.currentContractIndex) : 0));
+  }
+
+  async function fetchValidatedAccessState(baseOverride) {
+    const candidate = sanitizeApiBase(baseOverride || apiBase);
+    if (!candidate) throw new Error("No hay backend disponible para validar el acceso.");
+    const res = await fetch(candidate + "/api/verification/contract/access", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: contractEmail, code: contractCode })
+    });
+    const out = await readApiPayload(res);
+    if (!res.ok || !out || !out.ok) {
+      throw new Error((out && out.message) || "No se pudo validar el enlace del contrato.");
+    }
+    apiBase = candidate;
+    contractAccessPayload =
+      (out && typeof out.data === "object" && out.data) ||
+      (out && typeof out.payload === "object" && out.payload) ||
+      {};
+    syncContractFlowFromPayload(contractAccessPayload);
+    saveStoredAccess({
+      email: contractEmail,
+      code: contractCode,
+      apiBaseHint: sanitizeApiBase(apiBaseParam),
+      apiBaseResolved: apiBase,
+      refPayco: paymentRefPayco,
+      invoice: paymentInvoice,
+      amount: paymentAmount,
+      currency: paymentCurrency,
+      transactionId: paymentTransactionId,
+      paymentMethod: paymentMethod,
+      paymentNote: paymentMethodDetail
+    });
+    return out;
+  }
+
   async function validateContractAccessOrFail() {
     if (!contractEmail || !contractCode) denyAccessAndThrow("Falta el enlace completo del contrato.");
 
@@ -255,24 +306,7 @@
         const out = await readApiPayload(res);
 
         if (res.ok && out && out.ok) {
-          apiBase = candidate;
-          contractAccessPayload =
-            (out && typeof out.data === "object" && out.data) ||
-            (out && typeof out.payload === "object" && out.payload) ||
-            {};
-          saveStoredAccess({
-            email: contractEmail,
-            code: contractCode,
-            apiBaseHint: sanitizeApiBase(apiBaseParam),
-            apiBaseResolved: apiBase,
-            refPayco: paymentRefPayco,
-            invoice: paymentInvoice,
-            amount: paymentAmount,
-            currency: paymentCurrency,
-            transactionId: paymentTransactionId,
-            paymentMethod: paymentMethod,
-            paymentNote: paymentMethodDetail
-          });
+          await fetchValidatedAccessState(candidate);
           return;
         }
 
@@ -322,6 +356,7 @@
     const fd = new FormData();
     fd.append("email", contractEmail);
     fd.append("code", contractCode);
+    fd.append("categoryCode", currentCategoryCode);
     fd.append("signerName", signerName);
     fd.append("contractName", contractName);
     fd.append("pdfFile", c && c.pdfFile ? c.pdfFile : "");
@@ -408,11 +443,19 @@
   function getGlobalProgressPercent(stepNumber) {
     const safeStep = Math.max(1, Math.min(4, stepNumber));
     const stepRatio = (safeStep - 1) / 3;
-    return Math.round(((contractIndex + stepRatio) / CONTRACTS.length) * 100);
+    const totalCategories = Math.max(1, (categoryFlow && categoryFlow.length) || (contractFlowState && contractFlowState.totalCategories) || 1);
+    const completedContracts = (categoryIndex * CONTRACTS.length) + contractIndex + stepRatio;
+    return Math.round((completedContracts / (totalCategories * CONTRACTS.length)) * 100);
   }
 
   function updateFlowMeta(stepNumber) {
-    flowMeta.textContent = "Contrato " + (contractIndex + 1) + " de " + CONTRACTS.length + " · " + getGlobalProgressPercent(stepNumber) + "%";
+    const totalCategories = Math.max(1, (categoryFlow && categoryFlow.length) || (contractFlowState && contractFlowState.totalCategories) || 1);
+    const label = firstNotBlank(currentCategoryLabel, currentCategoryCode, "Categoria");
+    flowMeta.textContent =
+      "Categoria " + (categoryIndex + 1) + " de " + totalCategories +
+      " (" + label + ")" +
+      " · Contrato " + (contractIndex + 1) + " de " + CONTRACTS.length +
+      " · " + getGlobalProgressPercent(stepNumber) + "%";
   }
 
   function getCurrentContract() { return CONTRACTS[contractIndex]; }
@@ -420,9 +463,11 @@
   function updateContractUI() {
     const c = getCurrentContract();
     if (!c) return;
-    contractTitle.textContent = c.name;
-    pdfCardTitle.textContent = c.name + " (PDF)";
-    formCardTitle.textContent = "Campos del " + c.name.toLowerCase();
+    const categoryLabel = firstNotBlank(currentCategoryLabel, currentCategoryCode);
+    const suffix = categoryLabel ? " - " + categoryLabel : "";
+    contractTitle.textContent = c.name + suffix;
+    pdfCardTitle.textContent = c.name + suffix + " (PDF)";
+    formCardTitle.textContent = "Campos del " + c.name.toLowerCase() + (categoryLabel ? (" - " + categoryLabel) : "");
     const isC2 = c.pdfFile === "Contrato2.pdf";
     const isC3 = c.pdfFile === "Contrato3.pdf";
     contract1Fields.style.display = (isC2 || isC3) ? "none" : "block";
@@ -430,6 +475,8 @@
     contract2Fields.style.display = isC2 ? "block" : "none";
     contract3Fields.style.display = isC3 ? "block" : "none";
     signatureSection.style.display = isC3 ? "none" : "block";
+    const categoriaField = document.getElementById("c2_categoria");
+    if (categoriaField && currentCategoryLabel) categoriaField.value = currentCategoryLabel;
     updateFlowMeta(currentStep);
     syncAcuSignatureUI();
     scheduleSignatureResize();
@@ -484,6 +531,23 @@
   function ok(m) { formMsg.className = "alert ok"; formMsg.textContent = m; }
   function err(m) { formMsg.className = "alert err"; formMsg.textContent = m; }
   function must(v) { return (v || "").trim(); }
+  function resetContractEditorState() {
+    accept.checked = false;
+    hasAcudienteCheck.checked = false;
+    hasRep2Check.checked = false;
+    hasAcu3Check.checked = false;
+    signaturePad.clear();
+    signaturePadAcu.clear();
+    studentSigDataUrl = null;
+    acuSigDataUrl = null;
+    contract3Photo3x4DataUrl = null;
+    contract3Photo3x4FileName = "";
+    contract3SelfieDataUrl = null;
+    contract3SelfieFileName = "";
+    setImagePreview(c3PhotoPreview, "", "Sin imagen cargada");
+    setImagePreview(c3SelfiePreview, "", "Sin imagen cargada");
+    syncAcuSignatureUI();
+  }
   function readFieldValue(id) {
     const field = document.getElementById(id);
     if (!field) return "";
@@ -1264,10 +1328,23 @@
 
       const outBytes = await pdf.save();
       const blob = new Blob([outBytes], { type: "application/pdf" });
+      const previousCategoryCode = currentCategoryCode;
+      const previousCategoryLabel = currentCategoryLabel;
+      const signedName = c.name;
       const uploadResult = await uploadSignedPdfToApi(blob, c.outFile, form);
+      await fetchValidatedAccessState(apiBase);
+      prefillSharedEnrollmentFields();
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = c.outFile; a.click(); URL.revokeObjectURL(a.href);
-      if (contractIndex < CONTRACTS.length - 1) {
-        const signedName = c.name; contractIndex += 1; updateContractUI(); accept.checked = false; hasAcudienteCheck.checked = false; hasRep2Check.checked = false; hasAcu3Check.checked = false; signaturePad.clear(); signaturePadAcu.clear(); studentSigDataUrl = null; acuSigDataUrl = null; contract3Photo3x4DataUrl = null; contract3Photo3x4FileName = ""; contract3SelfieDataUrl = null; contract3SelfieFileName = ""; setImagePreview(c3PhotoPreview, "", "Sin imagen cargada"); setImagePreview(c3SelfiePreview, "", "Sin imagen cargada"); syncAcuSignatureUI(); setStep(1); await loadPDF(); ok(signedName + " firmado y subido correctamente. Ahora continua con " + getCurrentContract().name + ".");
+      if (!(contractFlowState && contractFlowState.allCompleted)) {
+        updateContractUI();
+        resetContractEditorState();
+        setStep(1);
+        await loadPDF();
+        const movedToNextCategory = previousCategoryCode && currentCategoryCode && previousCategoryCode !== currentCategoryCode;
+        const nextMessage = movedToNextCategory
+          ? ("Ahora continua con la categoria " + currentCategoryLabel + " y " + getCurrentContract().name + ".")
+          : ("Ahora continua con " + getCurrentContract().name + (currentCategoryLabel ? (" de la categoria " + currentCategoryLabel) : "") + ".");
+        ok(signedName + " firmado y subido correctamente." + " " + nextMessage);
       } else {
         setStep(4);
         const completion = await completeContractInBackend();
@@ -1298,7 +1375,13 @@
     if (sharedSedeEl) sharedSedeEl.value = firstNotBlank(contractAccessPayload.shared_sede, contractAccessPayload.sede);
     if (sharedPaymentMethodEl) sharedPaymentMethodEl.value = paymentMethod;
     if (sharedPaymentNoteEl) sharedPaymentNoteEl.value = paymentMethodDetail;
-    signaturePad.clear(); signaturePadAcu.clear(); studentSigDataUrl = null; acuSigDataUrl = null; contract3Photo3x4DataUrl = null; contract3Photo3x4FileName = ""; contract3SelfieDataUrl = null; contract3SelfieFileName = ""; setImagePreview(c3PhotoPreview, "", "Sin imagen cargada"); setImagePreview(c3SelfiePreview, "", "Sin imagen cargada"); hasAcudienteCheck.checked = false; hasRep2Check.checked = false; hasAcu3Check.checked = false; syncAcuSignatureUI(); syncCualDispositivoUI(); accept.checked = false; contractIndex = 0; updateContractUI(); loadPDF(); setStep(1); info("Reiniciado. Vuelve a aceptar y diligenciar.");
+    resetContractEditorState();
+    syncCualDispositivoUI();
+    contractIndex = Math.max(0, Math.min(CONTRACTS.length - 1, Number.isFinite(Number(contractFlowState && contractFlowState.currentContractIndex)) ? Number(contractFlowState.currentContractIndex) : 0));
+    updateContractUI();
+    loadPDF();
+    setStep(1);
+    info("Reiniciado. Continua en " + getCurrentContract().name + (currentCategoryLabel ? (" de la categoria " + currentCategoryLabel) : "") + ".");
   };
 
   (function setupToolbar() {
@@ -1325,7 +1408,8 @@
       setStep(1);
       await loadPDF();
       const fallbackMsg = apiBase !== sanitizeApiBase(apiBaseParam) && sanitizeApiBase(apiBaseParam) ? "\nAPI usada: " + apiBase : "";
-      info("Acceso validado. Completa el paso 1 (aceptar) para continuar. Motor PDF.js: " + pdfMode + "." + fallbackMsg);
+      const categoryMsg = currentCategoryLabel ? ("\nCategoria actual: " + currentCategoryLabel + ".") : "";
+      info("Acceso validado. Completa el paso 1 (aceptar) para continuar. Motor PDF.js: " + pdfMode + "." + categoryMsg + fallbackMsg);
     } catch (e) {
       console.error(e);
       if (e && e.name === "AccessDeniedError") return;

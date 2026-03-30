@@ -1,6 +1,7 @@
 package com.Aplication.HARO.Service;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
+import com.Aplication.HARO.Repository.ChatbotContractCategoryProgressRepository;
 import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
 import com.Aplication.HARO.Repository.ClaseRepository;
 import com.Aplication.HARO.Repository.EstadoCuentaRepository;
@@ -30,6 +31,7 @@ class ChatbotProcesoServicePaymentLinkTest {
     @Test
     void getPaymentLink_shouldEmbedUnmaskedIdentityInCallbacks() {
         ChatbotMatriculaProcesoRepository procesoRepository = mock(ChatbotMatriculaProcesoRepository.class);
+        ChatbotContractCategoryProgressRepository contractCategoryProgressRepository = mock(ChatbotContractCategoryProgressRepository.class);
         EstudianteRepository estudianteRepository = mock(EstudianteRepository.class);
         EstudianteService estudianteService = mock(EstudianteService.class);
         EstadoCuentaRepository estadoCuentaRepository = mock(EstadoCuentaRepository.class);
@@ -42,6 +44,7 @@ class ChatbotProcesoServicePaymentLinkTest {
 
         ChatbotProcesoService service = new ChatbotProcesoService(
                 procesoRepository,
+                contractCategoryProgressRepository,
                 estudianteRepository,
                 estudianteService,
                 estadoCuentaRepository,
@@ -73,6 +76,7 @@ class ChatbotProcesoServicePaymentLinkTest {
         proceso.setTelefono("573144899708");
 
         when(procesoRepository.findByNumeroDocumento("12345678")).thenReturn(Optional.of(proceso));
+        when(contractCategoryProgressRepository.findByProcesoIdOrderByOrderIndexAscIdAsc(2L)).thenReturn(java.util.List.of());
 
         String paymentLink = service.getPaymentLink("12345678");
         assertNotNull(paymentLink);
@@ -119,6 +123,7 @@ class ChatbotProcesoServicePaymentLinkTest {
     @Test
     void getPaymentLink_halfPlan_shouldUseHalfLinkWhenPaycoHosted() {
         ChatbotMatriculaProcesoRepository procesoRepository = mock(ChatbotMatriculaProcesoRepository.class);
+        ChatbotContractCategoryProgressRepository contractCategoryProgressRepository = mock(ChatbotContractCategoryProgressRepository.class);
         EstudianteRepository estudianteRepository = mock(EstudianteRepository.class);
         EstudianteService estudianteService = mock(EstudianteService.class);
         EstadoCuentaRepository estadoCuentaRepository = mock(EstadoCuentaRepository.class);
@@ -131,6 +136,7 @@ class ChatbotProcesoServicePaymentLinkTest {
 
         ChatbotProcesoService service = new ChatbotProcesoService(
                 procesoRepository,
+                contractCategoryProgressRepository,
                 estudianteRepository,
                 estudianteService,
                 estadoCuentaRepository,
@@ -167,6 +173,7 @@ class ChatbotProcesoServicePaymentLinkTest {
         proceso.setPaymentPlan("HALF");
 
         when(procesoRepository.findByNumeroDocumento("12345678")).thenReturn(Optional.of(proceso));
+        when(contractCategoryProgressRepository.findByProcesoIdOrderByOrderIndexAscIdAsc(10L)).thenReturn(java.util.List.of());
 
         String paymentLink = service.getPaymentLink("12345678");
         assertNotNull(paymentLink);

@@ -76,16 +76,20 @@ public class ContractDocumentStorageService {
     public StoredDocument storeSignedContract(MultipartFile file,
                                               String signerName,
                                               String documento,
-                                              String contractName) {
+                                              String contractName,
+                                              String sede,
+                                              String categoryCode) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("Archivo PDF requerido");
         }
 
+        String sedeFolder = slugSede(sede);
+        String categoryFolder = slugCategory(categoryCode);
         String signerFolder = slug(signerName, "firmante");
         String docFolder = slug(documento, "sin-documento");
         String contractSlug = slug(contractName, "contrato");
         String fileName = contractSlug + "-" + TS_FORMAT.format(Instant.now()) + ".pdf";
-        String relativeFolder = signerFolder + "/" + docFolder + "/";
+        String relativeFolder = sedeFolder + "/" + signerFolder + "/" + docFolder + "/" + categoryFolder + "/";
 
         if ("s3".equals(storageProvider)) {
             return storeInS3(file, relativeFolder, fileName, signerFolder);
@@ -154,6 +158,25 @@ public class ContractDocumentStorageService {
 
     private String safe(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private String slugSede(String rawSede) {
+        String normalized = safe(rawSede).toLowerCase(Locale.ROOT);
+        if (normalized.contains("1 de mayo") || normalized.contains("primero de mayo")) {
+            return "1-de-mayo";
+        }
+        if (normalized.contains("eden") || normalized.contains("edén")) {
+            return "el-eden";
+        }
+        return slug(rawSede, "sin-sede");
+    }
+
+    private String slugCategory(String rawCategoryCode) {
+        String normalized = safe(rawCategoryCode).toUpperCase(Locale.ROOT);
+        if ("A2".equals(normalized) || "B1".equals(normalized) || "C1".equals(normalized)) {
+            return normalized.toLowerCase(Locale.ROOT);
+        }
+        return slug(rawCategoryCode, "sin-categoria");
     }
 }
 

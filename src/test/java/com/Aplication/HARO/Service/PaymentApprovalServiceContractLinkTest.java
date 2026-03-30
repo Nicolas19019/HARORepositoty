@@ -24,6 +24,8 @@ class PaymentApprovalServiceContractLinkTest {
         VerificationService verificationService = mock(VerificationService.class);
         ChatbotProcesoService chatbotProcesoService = mock(ChatbotProcesoService.class);
         WhatsAppTemplateService waService = mock(WhatsAppTemplateService.class);
+        ProspectoService prospectoService = mock(ProspectoService.class);
+        MailService mailService = mock(MailService.class);
         RestTemplate restTemplate = mock(RestTemplate.class);
 
         PaymentApprovalService service = new PaymentApprovalService(
@@ -31,6 +33,8 @@ class PaymentApprovalServiceContractLinkTest {
                 verificationService,
                 chatbotProcesoService,
                 waService,
+                prospectoService,
+                mailService,
                 restTemplate
         );
 
@@ -84,6 +88,8 @@ class PaymentApprovalServiceContractLinkTest {
         VerificationService verificationService = mock(VerificationService.class);
         ChatbotProcesoService chatbotProcesoService = mock(ChatbotProcesoService.class);
         WhatsAppTemplateService waService = mock(WhatsAppTemplateService.class);
+        ProspectoService prospectoService = mock(ProspectoService.class);
+        MailService mailService = mock(MailService.class);
         RestTemplate restTemplate = mock(RestTemplate.class);
 
         PaymentApprovalService service = new PaymentApprovalService(
@@ -91,6 +97,8 @@ class PaymentApprovalServiceContractLinkTest {
                 verificationService,
                 chatbotProcesoService,
                 waService,
+                prospectoService,
+                mailService,
                 restTemplate
         );
 

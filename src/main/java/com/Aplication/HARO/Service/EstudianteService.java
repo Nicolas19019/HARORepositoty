@@ -89,6 +89,8 @@ public class EstudianteService {
   public Estudiante createEstudiante(Estudiante in) {
     // por si llega con id desde el front
     in.setId(null);
+    // consecutivo siempre lo asigna el backend
+    in.setConsecutivo(null);
 
     // Normaliza email para evitar duplicados por mayusculas/espacios.
     if (in.getEmail() != null) {
@@ -157,6 +159,9 @@ public class EstudianteService {
     } else {
       in.setContrasena(rawOrHash);
     }
+
+    // Consecutivo (secuencia DB) - evita colisiones en concurrencia.
+    in.setConsecutivo(repo.nextConsecutivo());
 
     return repo.save(in);
   }

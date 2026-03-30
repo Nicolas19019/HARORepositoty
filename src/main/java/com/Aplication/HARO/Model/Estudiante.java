@@ -17,6 +17,10 @@ public class Estudiante {
     @Column(name = "id_estudiante")
     @JsonProperty(access = JsonProperty.Access.READ_ONLY) // <-- evita que el cliente setee
 	private Long id;
+
+	@Column(name = "consecutivo")
+	@JsonProperty(access = JsonProperty.Access.READ_ONLY)
+	private Long consecutivo;
 	@Column(name = "nombre")
 	private String nombre;
 	@Column(name = "apellido")
@@ -73,6 +77,14 @@ public class Estudiante {
 
 	public void setId(Long id) {
 		this.id = id;
+	}
+
+	public Long getConsecutivo() {
+		return consecutivo;
+	}
+
+	public void setConsecutivo(Long consecutivo) {
+		this.consecutivo = consecutivo;
 	}
 
 	public String getNombre() {

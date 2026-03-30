@@ -68,6 +68,24 @@ public class ChatbotMatriculaProceso {
     @Column(name = "payment_status", nullable = false, length = 40)
     private String paymentStatus = "PENDING";
 
+    @Column(name = "origen_registro", length = 20)
+    private String origenRegistro;
+
+    /**
+     * EPAYCO / EFECTIVO.
+     */
+    @Column(name = "metodo_pago", length = 20)
+    private String metodoPago;
+
+    @Column(name = "payment_confirmed_at")
+    private Instant paymentConfirmedAt;
+
+    @Column(name = "payment_validated_by_admin_id")
+    private Long paymentValidatedByAdminId;
+
+    @Column(name = "payment_observation", columnDefinition = "TEXT")
+    private String paymentObservation;
+
     /**
      * FULL / HALF. Se usa para saber si el link de pago corresponde a pago completo o abono (50%).
      * Si viene null/vacio, se asume FULL.
@@ -102,6 +120,18 @@ public class ChatbotMatriculaProceso {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
 
+    @Column(name = "contract_email_sent", columnDefinition = "boolean default false")
+    private Boolean contractEmailSent = false;
+
+    @Column(name = "contract_email_sent_at")
+    private Instant contractEmailSentAt;
+
+    @Column(name = "contract_chatbot_sent", columnDefinition = "boolean default false")
+    private Boolean contractChatbotSent = false;
+
+    @Column(name = "contract_chatbot_sent_at")
+    private Instant contractChatbotSentAt;
+
     @PrePersist
     void onCreate() {
         if (createdAt == null) createdAt = Instant.now();
@@ -109,6 +139,8 @@ public class ChatbotMatriculaProceso {
         if (paymentStatus == null || paymentStatus.isBlank()) paymentStatus = "PENDING";
         if (contractStatus == null || contractStatus.isBlank()) contractStatus = "PENDING_SIGNATURE";
         if (flowStatus == null || flowStatus.isBlank()) flowStatus = "DRAFT";
+        if (contractEmailSent == null) contractEmailSent = false;
+        if (contractChatbotSent == null) contractChatbotSent = false;
     }
 
     @PreUpdate
@@ -236,6 +268,46 @@ public class ChatbotMatriculaProceso {
         this.paymentStatus = paymentStatus;
     }
 
+    public String getOrigenRegistro() {
+        return origenRegistro;
+    }
+
+    public void setOrigenRegistro(String origenRegistro) {
+        this.origenRegistro = origenRegistro;
+    }
+
+    public String getMetodoPago() {
+        return metodoPago;
+    }
+
+    public void setMetodoPago(String metodoPago) {
+        this.metodoPago = metodoPago;
+    }
+
+    public Instant getPaymentConfirmedAt() {
+        return paymentConfirmedAt;
+    }
+
+    public void setPaymentConfirmedAt(Instant paymentConfirmedAt) {
+        this.paymentConfirmedAt = paymentConfirmedAt;
+    }
+
+    public Long getPaymentValidatedByAdminId() {
+        return paymentValidatedByAdminId;
+    }
+
+    public void setPaymentValidatedByAdminId(Long paymentValidatedByAdminId) {
+        this.paymentValidatedByAdminId = paymentValidatedByAdminId;
+    }
+
+    public String getPaymentObservation() {
+        return paymentObservation;
+    }
+
+    public void setPaymentObservation(String paymentObservation) {
+        this.paymentObservation = paymentObservation;
+    }
+
     public String getPaymentPlan() {
         return paymentPlan;
     }
@@ -314,5 +386,37 @@ public class ChatbotMatriculaProceso {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public Boolean getContractEmailSent() {
+        return contractEmailSent;
+    }
+
+    public void setContractEmailSent(Boolean contractEmailSent) {
+        this.contractEmailSent = contractEmailSent;
+    }
+
+    public Instant getContractEmailSentAt() {
+        return contractEmailSentAt;
+    }
+
+    public void setContractEmailSentAt(Instant contractEmailSentAt) {
+        this.contractEmailSentAt = contractEmailSentAt;
+    }
+
+    public Boolean getContractChatbotSent() {
+        return contractChatbotSent;
+    }
+
+    public void setContractChatbotSent(Boolean contractChatbotSent) {
+        this.contractChatbotSent = contractChatbotSent;
+    }
+
+    public Instant getContractChatbotSentAt() {
+        return contractChatbotSentAt;
+    }
+
+    public void setContractChatbotSentAt(Instant contractChatbotSentAt) {
+        this.contractChatbotSentAt = contractChatbotSentAt;
     }
 }

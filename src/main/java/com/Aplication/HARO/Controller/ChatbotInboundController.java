@@ -152,13 +152,16 @@ public class ChatbotInboundController {
 
         ENROLLMENT_DATA_AUTH_WAIT,
         ENROLLMENT_CAPTURE,
+        ENROLLMENT_AGE_CAPTURE,
         ENROLLMENT_EMAIL_CAPTURE,
         ENROLLMENT_PHONE_CAPTURE,
         ENROLLMENT_ADDRESS_CAPTURE,
         ENROLLMENT_SEDE_CAPTURE,
         ENROLLMENT_CONFIRM,
+        PAYMENT_METHOD_SELECT,
         PAYMENT_PLAN_SELECT,
         PAYMENT_WAIT,
+        PAYMENT_CASH_WAIT,
         CONTRACT_WAIT,
         ENROLLMENT_ABORT_CONFIRM,
 
@@ -197,6 +200,7 @@ public class ChatbotInboundController {
         String nombre;
         String documento;
         String categoria;
+        Integer edad;
         String email;
         String telefono;
         String direccion;
@@ -358,13 +362,16 @@ public class ChatbotInboundController {
 
                 case ENROLLMENT_DATA_AUTH_WAIT -> handleEnrollmentDataAuthWait(text, session, actions);
                 case ENROLLMENT_CAPTURE -> handleEnrollmentCapture(from, rawText, session, actions);
+                case ENROLLMENT_AGE_CAPTURE -> handleEnrollmentAgeCapture(text, session, actions);
                 case ENROLLMENT_EMAIL_CAPTURE -> handleEnrollmentEmailCapture(text, session, actions);
                 case ENROLLMENT_PHONE_CAPTURE -> handleEnrollmentPhoneCapture(text, session, actions);
                  case ENROLLMENT_ADDRESS_CAPTURE -> handleEnrollmentAddressCapture(rawText, session, actions);
                  case ENROLLMENT_SEDE_CAPTURE -> handleEnrollmentSedeCapture(from, text, session, actions);
                  case ENROLLMENT_CONFIRM -> handleEnrollmentConfirm(text, session, actions);
+                 case PAYMENT_METHOD_SELECT -> handlePaymentMethodSelect(text, session, actions);
                  case PAYMENT_PLAN_SELECT -> handlePaymentPlanSelect(text, session, actions);
                  case PAYMENT_WAIT -> handlePaymentWait(text, session, actions);
+                 case PAYMENT_CASH_WAIT -> handlePaymentCashWait(text, session, actions);
                  case CONTRACT_WAIT -> handleContractWait(from, text, session, actions);
                  case ENROLLMENT_ABORT_CONFIRM -> handleEnrollmentAbortConfirm(from, text, session, actions);
 
@@ -607,7 +614,7 @@ public class ChatbotInboundController {
         if (isEnrollmentDataAuthAccepted(cmd)) {
             session.state = ChatState.ENROLLMENT_CAPTURE;
             actions.add(textMsg(enrollmentInitialPromptText()));
-            actions.add(textMsg("Despues de ese primer mensaje te pedire correo, telefono, direccion y la sede."));
+            actions.add(textMsg("Despues de ese primer mensaje te pedire tu edad, correo, telefono, direccion y la sede."));
             actions.add(textMsg("Opciones: MENU | CANCELAR"));
             return;
         }
@@ -633,12 +640,70 @@ public class ChatbotInboundController {
         session.nombre = basic.nombre();
         session.documento = basic.documento();
         session.categoria = basic.categoria();
-        session.state = ChatState.ENROLLMENT_EMAIL_CAPTURE;
+        session.state = ChatState.ENROLLMENT_AGE_CAPTURE;
 
         trackProspectServiceSafe(from, session, prospectServiceFromCategoria(session.categoria));
 
         actions.add(textMsg(
-                "Paso 2 de 7: envia tu correo electronico.\n" +
+                "Paso 2 de 8: envía tu edad en años.\n\n" +
+                        "Ejemplo: 18\n\n" +
+                        "Importante: debes tener mínimo 16 años para matricularte."
+        ));
+        actions.add(textMsg("Opciones: MENU | CANCELAR"));
+    }
+
+    private void handleEnrollmentAgeCapture(String text, SessionData session, List<BotAction> actions) {
+        String digits = trim(text).replaceAll("\\D+", "");
+        if (digits.isBlank()) {
+            actions.add(textMsg(
+                    "⚠️ Edad inválida.\n\n" +
+                            "Envía solo tu edad en años (número).\n" +
+                            "Ejemplo: 18"
+            ));
+            actions.add(textMsg("Opciones: MENU | CANCELAR"));
+            return;
+        }
+
+        final int age;
+        try {
+            age = Integer.parseInt(digits);
+        } catch (NumberFormatException ex) {
+            actions.add(textMsg(
+                    "⚠️ Edad inválida.\n\n" +
+                            "Envía solo tu edad en años (número).\n" +
+                            "Ejemplo: 18"
+            ));
+            actions.add(textMsg("Opciones: MENU | CANCELAR"));
+            return;
+        }
+
+        if (age < 16) {
+            resetToMain(session);
+            actions.add(textMsg(
+                    "⚠️ En este momento no podemos continuar con la matrícula.\n\n" +
+                            "La matrícula está disponible desde los 16 años.\n\n" +
+                            "Si necesitas ayuda, puedes contactar un asesor."
+            ));
+            actions.add(textMsg(advisorContactText()));
+            actions.add(textMsg("Opciones: MENU"));
+            return;
+        }
+
+        if (age > 100) {
+            actions.add(textMsg(
+                    "⚠️ Edad inválida.\n\n" +
+                            "Envía solo tu edad en años (número).\n" +
+                            "Ejemplo: 18"
+            ));
+            actions.add(textMsg("Opciones: MENU | CANCELAR"));
+            return;
+        }
+
+        session.edad = age;
+        session.state = ChatState.ENROLLMENT_EMAIL_CAPTURE;
+
+        actions.add(textMsg(
+                "Paso 3 de 8: envia tu correo electronico.\n" +
                         "Ejemplo: usuario@correo.com"
         ));
         actions.add(textMsg("Opciones: MENU | CANCELAR"));
@@ -659,7 +724,7 @@ public class ChatbotInboundController {
         session.state = ChatState.ENROLLMENT_PHONE_CAPTURE;
 
         actions.add(textMsg(
-                "Paso 3 de 7: envia tu telefono de contacto.\n" +
+                "Paso 4 de 8: envia tu telefono de contacto.\n" +
                         "Ejemplo: 573001112233"
         ));
         actions.add(textMsg("Opciones: MENU | CANCELAR"));
@@ -680,7 +745,7 @@ public class ChatbotInboundController {
         session.telefono = phone;
         session.state = ChatState.ENROLLMENT_ADDRESS_CAPTURE;
         actions.add(textMsg(
-                "Paso 4 de 7: envia tu direccion de residencia.\n\n" +
+                "Paso 5 de 8: envia tu direccion de residencia.\n\n" +
                         "Escríbela completa con barrio, nomenclatura o apartamento si aplica.\n\n" +
                         "Ejemplo: Cra 80 #12-45 Apto 302, Kennedy, Bogota"
         ));
@@ -702,7 +767,7 @@ public class ChatbotInboundController {
         session.direccion = address;
         session.state = ChatState.ENROLLMENT_SEDE_CAPTURE;
         actions.add(textMsg(
-                "Paso 5 de 7: selecciona tu sede.\n\n" +
+                "Paso 6 de 8: selecciona tu sede.\n\n" +
                         "1) Kennedy - Av. 1 de Mayo #68D-23 Piso 2\n" +
                         "2) CC El Eden - Local L2-094A\n\n" +
                         "Responde con 1 o 2."
@@ -749,10 +814,11 @@ public class ChatbotInboundController {
         session.state = ChatState.ENROLLMENT_CONFIRM;
 
         actions.add(textMsg(
-                "Paso 6 de 7: revisa tus datos y confirma.\n\n" +
+                "Paso 7 de 8: revisa tus datos y confirma.\n\n" +
                         "Nombre: " + safe(session.nombre) + "\n" +
                         "Documento: " + safe(session.documento) + "\n" +
                         "Categoria: " + safe(session.categoria) + "\n" +
+                        "Edad: " + (session.edad == null ? "N/A" : (session.edad + " años")) + "\n" +
                         "Correo: " + safe(session.email) + "\n" +
                         "Telefono: " + safe(session.telefono) + "\n" +
                         "Direccion: " + safe(session.direccion) + "\n" +
@@ -782,12 +848,12 @@ public class ChatbotInboundController {
                         return;
                     }
 
-                    session.state = ChatState.PAYMENT_PLAN_SELECT;
+                    session.state = ChatState.PAYMENT_METHOD_SELECT;
 
                     actions.add(textMsg(
-                            "Paso 7 de 7: elige como deseas pagar.\n\n" +
-                                    "1) Pagar completo (100%)\n" +
-                                    "2) Pagar por la mitad (50%)\n\n" +
+                            "Paso 8 de 8: selecciona tu metodo de pago.\n\n" +
+                                    "1) Pagar por ePayco (en linea)\n" +
+                                    "2) Pagar en efectivo en la academia\n\n" +
                                     "Responde 1 o 2."
                     ));
                     actions.add(textMsg("Opciones: MENU | TERMINAR"));
@@ -805,7 +871,7 @@ public class ChatbotInboundController {
                 clearEnrollmentData(session);
                 session.state = ChatState.ENROLLMENT_CAPTURE;
                 actions.add(textMsg(enrollmentInitialPromptText()));
-                actions.add(textMsg("Despues de ese primer mensaje te pedire correo, telefono, direccion y la sede."));
+                actions.add(textMsg("Despues de ese primer mensaje te pedire tu edad, correo, telefono, direccion y la sede."));
                 actions.add(textMsg("Opciones: MENU | CANCELAR"));
             }
             case "3", "no", "cancelar" -> {
@@ -817,6 +883,56 @@ public class ChatbotInboundController {
                 actions.add(textMsg("Opciones: MENU"));
             }
         }
+    }
+
+    private void handlePaymentMethodSelect(String text, SessionData session, List<BotAction> actions) {
+        String cmd = normalizeCommandText(text);
+
+        if ("1".equals(cmd) || cmd.contains("epayco") || cmd.contains("en linea") || cmd.contains("online")) {
+            try {
+                procesoService.setMetodoPago(session.documento, "EPAYCO");
+            } catch (Exception ex) {
+                // no bloquea el flujo, pero deja rastro en logs
+                log.warn("No se pudo guardar metodoPago=EPAYCO doc={}: {}", safe(session.documento), ex.getMessage());
+            }
+
+            session.state = ChatState.PAYMENT_PLAN_SELECT;
+            actions.add(textMsg(
+                    "Elige como deseas pagar por ePayco:\n\n" +
+                            "1) Pagar completo (100%)\n" +
+                            "2) Pagar por la mitad (50%)\n\n" +
+                            "Responde 1 o 2."
+            ));
+            actions.add(textMsg("Opciones: MENU | TERMINAR"));
+            return;
+        }
+
+        if ("2".equals(cmd) || cmd.contains("efectivo") || cmd.contains("academia")) {
+            try {
+                procesoService.markCashPaymentPending(session.documento);
+            } catch (Exception ex) {
+                log.error("No se pudo marcar pago en efectivo doc={}: {}", safe(session.documento), ex.getMessage(), ex);
+                actions.add(textMsg("⚠️ No pude registrar el pago en efectivo en este momento. Intenta nuevamente."));
+                actions.add(textMsg("Opciones: MENU"));
+                return;
+            }
+
+            session.state = ChatState.PAYMENT_CASH_WAIT;
+            actions.add(textMsg(
+                    "✅ Tu proceso quedo registrado correctamente.\n\n" +
+                            "⏳ El pago en efectivo debe ser confirmado por la academia antes de continuar.\n\n" +
+                            "📩 Cuando validemos tu pago, recibiras en tu correo el enlace para firmar los contratos."
+            ));
+            actions.add(textMsg("Opciones: MENU | TERMINAR"));
+            return;
+        }
+
+        actions.add(textMsg(
+                "Selecciona el metodo de pago para continuar:\n\n" +
+                        "1) Pagar por ePayco (en linea)\n" +
+                        "2) Pagar en efectivo en la academia"
+        ));
+        actions.add(textMsg("Opciones: MENU | TERMINAR"));
     }
 
     private void handlePaymentPlanSelect(String text, SessionData session, List<BotAction> actions) {
@@ -849,7 +965,7 @@ public class ChatbotInboundController {
             session.state = ChatState.PAYMENT_WAIT;
 
             actions.add(textMsg(
-                    "Paso 7 de 7: realiza el pago para continuar (" + planLabel + ").\n\n" +
+                    "Paso 8 de 8: realiza el pago para continuar (" + planLabel + ").\n\n" +
                             "Enlace de pago:\n" + link + "\n\n" +
                             "Cuando lo realices, vuelve a este chat.\n" +
                             "Si necesitas el enlace otra vez escribe: LINK\n\n" +
@@ -873,9 +989,29 @@ public class ChatbotInboundController {
                 return;
             }
 
-            actions.add(textMsg("âš ï¸ No pude iniciar el pago en este momento. Intenta de nuevo en 1 minuto."));
+            actions.add(textMsg("⚠️ No pude iniciar el pago en este momento. Intenta de nuevo en 1 minuto."));
             actions.add(textMsg("Opciones: MENU"));
         }
+    }
+
+    private void handlePaymentCashWait(String text, SessionData session, List<BotAction> actions) {
+        String cmd = normalizeCommandText(text);
+        if ("link".equals(cmd) || cmd.contains("link")) {
+            actions.add(textMsg(
+                    "⏳ Aun no podemos continuar.\n\n" +
+                            "El pago en efectivo debe ser confirmado por la academia.\n\n" +
+                            "Cuando sea confirmado recibiras en tu correo el enlace para firmar contratos."
+            ));
+            actions.add(textMsg("Opciones: MENU | TERMINAR"));
+            return;
+        }
+
+        actions.add(textMsg(
+                "⏳ Estamos esperando la confirmacion del pago en efectivo.\n\n" +
+                        "Cuando se confirme, recibiras en tu correo el enlace para firmar los contratos.\n\n" +
+                        "Escribe MENU para ver opciones o TERMINAR para salir."
+        ));
+        actions.add(textMsg("Opciones: MENU | TERMINAR"));
     }
 
         private void handlePaymentWait(String text, SessionData session, List<BotAction> actions) {
@@ -1056,6 +1192,9 @@ public class ChatbotInboundController {
 
     private boolean shouldSyncEnrollmentFlow(ChatState state, String text) {
         if (state == ChatState.PAYMENT_WAIT) {
+            return true;
+        }
+        if (state == ChatState.PAYMENT_CASH_WAIT) {
             return true;
         }
         if (state != ChatState.MAIN_MENU) {
@@ -1916,7 +2055,7 @@ public class ChatbotInboundController {
             }
             case ENROLLMENT_CAPTURE -> {
                 actions.add(textMsg(enrollmentInitialPromptText()));
-                actions.add(textMsg("Despues de ese primer mensaje te pedire correo, telefono, direccion y la sede."));
+                actions.add(textMsg("Despues de ese primer mensaje te pedire tu edad, correo, telefono, direccion y la sede."));
                 actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
             }
             case ENROLLMENT_EMAIL_CAPTURE -> {
@@ -1967,12 +2106,37 @@ public class ChatbotInboundController {
                 ));
                 actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
             }
+            case PAYMENT_METHOD_SELECT -> {
+                actions.add(textMsg(
+                        "Selecciona tu metodo de pago:\n\n" +
+                                "1) Pagar por ePayco (en linea)\n" +
+                                "2) Pagar en efectivo en la academia\n\n" +
+                                "Responde 1 o 2."
+                ));
+                actions.add(textMsg("Opciones: MENU | TERMINAR"));
+            }
+            case PAYMENT_PLAN_SELECT -> {
+                actions.add(textMsg(
+                        "Elige como deseas pagar por ePayco:\n\n" +
+                                "1) Pagar completo (100%)\n" +
+                                "2) Pagar por la mitad (50%)\n\n" +
+                                "Responde 1 o 2."
+                ));
+                actions.add(textMsg("Opciones: MENU | TERMINAR"));
+            }
             case PAYMENT_WAIT -> {
                 actions.add(textMsg(
                         "💳 Estamos esperando la confirmacion de tu pago.\n\n" +
                                 "Puedes escribir:\n" +
                                 "🔹 LINK para ver el enlace de pago\n" +
                                 "🔹 YA PAGUE si ya realizaste el pago"
+                ));
+                actions.add(textMsg("Opciones: MENU | TERMINAR"));
+            }
+            case PAYMENT_CASH_WAIT -> {
+                actions.add(textMsg(
+                        "⏳ Estamos esperando la confirmacion del pago en efectivo.\n\n" +
+                                "Cuando se confirme, recibiras en tu correo el enlace para firmar los contratos."
                 ));
                 actions.add(textMsg("Opciones: MENU | TERMINAR"));
             }
@@ -2426,6 +2590,7 @@ public class ChatbotInboundController {
         session.nombre = null;
         session.documento = null;
         session.categoria = null;
+        session.edad = null;
         session.email = null;
         session.telefono = null;
         session.direccion = null;

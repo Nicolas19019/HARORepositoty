@@ -39,6 +39,8 @@ public class PaymentApprovalService {
     private final VerificationService verificationService;
     private final ChatbotProcesoService chatbotProcesoService;
     private final WhatsAppTemplateService waService;
+    private final ProspectoService prospectoService;
+    private final MailService mailService;
     private final RestTemplate restTemplate;
 
     @Value("${chatbot.contract.base-url:}")
@@ -49,6 +51,12 @@ public class PaymentApprovalService {
 
     @Value("${chatbot.auto-send-contract-on-payment:true}")
     private boolean autoSendContractOnPayment;
+
+    @Value("${chatbot.auto-send-contract-email-on-payment:true}")
+    private boolean autoSendContractEmailOnPayment;
+
+    @Value("${chatbot.contract.email.subject:Enlace de contratos - CEA HARO}")
+    private String contractEmailSubject;
 
     @Value("${app.internal-api-base-url:}")
     private String internalApiBaseUrl;
@@ -66,13 +74,28 @@ public class PaymentApprovalService {
                                   VerificationService verificationService,
                                   ChatbotProcesoService chatbotProcesoService,
                                   WhatsAppTemplateService waService,
+                                  ProspectoService prospectoService,
+                                  MailService mailService,
                                   RestTemplate restTemplate) {
         this.procesoRepository = procesoRepository;
         this.verificationService = verificationService;
         this.chatbotProcesoService = chatbotProcesoService;
         this.waService = waService;
+        this.prospectoService = prospectoService;
+        this.mailService = mailService;
         this.restTemplate = restTemplate;
     }
+
+    public record ContractSendResult(
+            boolean ok,
+            String message,
+            String paymentStatus,
+            String flowStatus,
+            String contractStatus,
+            String contractLink,
+            boolean sent,
+            Instant expiresAt
+    ) {}
 
     @Transactional
     public ApprovalResult handleApprovedPayment(String documentoRaw, BigDecimal amount) {
@@ -104,6 +127,12 @@ public class PaymentApprovalService {
 
         proceso.setPaymentStatus("APPROVED");
         proceso.setFlowStatus("PAID");
+        if (trim(proceso.getMetodoPago()).isBlank()) {
+            proceso.setMetodoPago("EPAYCO");
+        }
+        if (proceso.getPaymentConfirmedAt() == null) {
+            proceso.setPaymentConfirmedAt(Instant.now());
+        }
         if (amount != null && amount.signum() >= 0) {
             proceso.setPaymentAmount(amount);
         }
@@ -137,6 +166,15 @@ public class PaymentApprovalService {
         log.info("\u2705 Pago persistido doc={} paymentStatus={} flowStatus={}",
                 documento, trim(proceso.getPaymentStatus()), trim(proceso.getFlowStatus()));
 
+        // Correo: enviar link de contratos (best-effort, no revienta el flujo si falla).
+        if (autoSendContractEmailOnPayment) {
+            try {
+                sendContractLinkByEmailInternal(proceso, contractLink, contractExpiresAtFromLink(contractLink), false);
+            } catch (Exception ex) {
+                log.warn("\u26A0\uFE0F No se pudo enviar correo de contratos doc={}: {}", documento, ex.getMessage());
+            }
+        }
+
         boolean whatsappSent = false;
         if (!notifyContractLinkByChatbot) {
             log.info("\u2139\uFE0F Pago aprobado sin envio automatico de WhatsApp. doc={}", documento);
@@ -162,10 +200,176 @@ public class PaymentApprovalService {
         whatsappSent = sendPaymentApprovedMessage(phone, contractLink);
         if (whatsappSent) {
             proceso.setContractStatus("LINK_SENT");
+            proceso.setContractChatbotSent(true);
+            proceso.setContractChatbotSentAt(Instant.now());
             procesoRepository.save(proceso);
         }
 
         return toResult("OK", proceso, whatsappSent, false);
+    }
+
+    @Transactional
+    public ContractSendResult confirmCashPaymentManual(String documentoRaw,
+                                                       BigDecimal amount,
+                                                       Long adminId,
+                                                       String observation,
+                                                       boolean sendEmail,
+                                                       boolean sendChatbot,
+                                                       boolean requireProspect) {
+        String documento = normalizeDocumento(documentoRaw);
+        if (!StringUtils.hasText(documento)) {
+            return new ContractSendResult(false, "documento es requerido", "", "", "", "", false, null);
+        }
+
+        ChatbotMatriculaProceso proceso = procesoRepository.findByNumeroDocumentoForUpdate(documento)
+                .orElseThrow(() -> new NoSuchElementException("No existe proceso de matricula para documento " + documento));
+
+        proceso.setMetodoPago("EFECTIVO");
+        proceso.setPaymentValidatedByAdminId(adminId);
+        proceso.setPaymentObservation(trim(observation));
+        proceso.setPaymentConfirmedAt(Instant.now());
+
+        if (!"APPROVED".equalsIgnoreCase(trim(proceso.getPaymentStatus()))) {
+            proceso.setPaymentStatus("APPROVED");
+        }
+        if (amount != null && amount.signum() >= 0) {
+            proceso.setPaymentAmount(amount);
+        }
+        if (trim(proceso.getFlowStatus()).isBlank() || "DRAFT".equalsIgnoreCase(trim(proceso.getFlowStatus()))) {
+            proceso.setFlowStatus("PAID");
+        }
+
+        String contractLink = ensureValidContractLink(proceso);
+        procesoRepository.save(proceso);
+
+        Instant expiresAt = contractExpiresAtFromLink(contractLink);
+
+        boolean emailed = false;
+        if (sendEmail) {
+            emailed = sendContractLinkByEmailInternal(proceso, contractLink, expiresAt, true);
+        }
+
+        boolean chatted = false;
+        if (sendChatbot) {
+            ContractSendResult out = sendContractLinkByChatbot(documento, requireProspect, true);
+            chatted = out.sent();
+        }
+
+        // Si el contrato ya estaba firmado, intenta finalizar matricula (best effort).
+        try {
+            chatbotProcesoService.tryFinalizeEnrollmentIfReadyByDocumento(documento);
+        } catch (Exception ex) {
+            log.warn("No se pudo finalizar matricula automaticamente tras pago manual doc={}: {}", documento, ex.getMessage());
+        }
+
+        String msg = emailed
+                ? "Pago confirmado y enlace de contratos enviado al correo."
+                : "Pago confirmado. Enlace de contratos preparado.";
+
+        return new ContractSendResult(true, msg,
+                trim(proceso.getPaymentStatus()),
+                trim(proceso.getFlowStatus()),
+                trim(proceso.getContractStatus()),
+                contractLink,
+                emailed || chatted,
+                expiresAt);
+    }
+
+    @Transactional
+    public ContractSendResult sendContractLinkByEmail(String documentoRaw, boolean forceResend) {
+        String documento = normalizeDocumento(documentoRaw);
+        if (!StringUtils.hasText(documento)) {
+            return new ContractSendResult(false, "documento es requerido", "", "", "", "", false, null);
+        }
+
+        ChatbotMatriculaProceso proceso = procesoRepository.findByNumeroDocumentoForUpdate(documento)
+                .orElseThrow(() -> new NoSuchElementException("No existe proceso de matricula para documento " + documento));
+
+        if (!"APPROVED".equalsIgnoreCase(trim(proceso.getPaymentStatus()))) {
+            return new ContractSendResult(false, "El pago aun no esta confirmado.", trim(proceso.getPaymentStatus()),
+                    trim(proceso.getFlowStatus()), trim(proceso.getContractStatus()), "", false, null);
+        }
+
+        String contractLink = ensureValidContractLink(proceso);
+        procesoRepository.save(proceso);
+
+        Instant expiresAt = contractExpiresAtFromLink(contractLink);
+        boolean sent = sendContractLinkByEmailInternal(proceso, contractLink, expiresAt, forceResend);
+        return new ContractSendResult(true,
+                sent ? "Enlace de contratos enviado por correo." : "El enlace ya habia sido enviado por correo.",
+                trim(proceso.getPaymentStatus()),
+                trim(proceso.getFlowStatus()),
+                trim(proceso.getContractStatus()),
+                contractLink,
+                sent,
+                expiresAt);
+    }
+
+    @Transactional
+    public ContractSendResult sendContractLinkByChatbot(String documentoRaw, boolean requireProspect, boolean forceResend) {
+        String documento = normalizeDocumento(documentoRaw);
+        if (!StringUtils.hasText(documento)) {
+            return new ContractSendResult(false, "documento es requerido", "", "", "", "", false, null);
+        }
+
+        ChatbotMatriculaProceso proceso = procesoRepository.findByNumeroDocumentoForUpdate(documento)
+                .orElseThrow(() -> new NoSuchElementException("No existe proceso de matricula para documento " + documento));
+
+        if (!"APPROVED".equalsIgnoreCase(trim(proceso.getPaymentStatus()))) {
+            return new ContractSendResult(false, "El pago aun no esta confirmado.", trim(proceso.getPaymentStatus()),
+                    trim(proceso.getFlowStatus()), trim(proceso.getContractStatus()), "", false, null);
+        }
+
+        String phone = firstNotBlank(trim(proceso.getPhone()), trim(proceso.getTelefono()));
+        if (!StringUtils.hasText(phone)) {
+            return new ContractSendResult(false, "No hay telefono para enviar por chatbot.",
+                    trim(proceso.getPaymentStatus()), trim(proceso.getFlowStatus()), trim(proceso.getContractStatus()), "", false, null);
+        }
+
+        if (requireProspect && !prospectoService.existeProspectoActivoPorTelefono(phone)) {
+            return new ContractSendResult(false,
+                    "No es posible enviar por chatbot: el estudiante no se encuentra en prospectos activos.",
+                    trim(proceso.getPaymentStatus()), trim(proceso.getFlowStatus()), trim(proceso.getContractStatus()), "", false, null);
+        }
+
+        if (!forceResend && Boolean.TRUE.equals(proceso.getContractChatbotSent())) {
+            return new ContractSendResult(true,
+                    "El enlace ya habia sido enviado por chatbot.",
+                    trim(proceso.getPaymentStatus()), trim(proceso.getFlowStatus()), trim(proceso.getContractStatus()),
+                    normalizeStoredContractLink(proceso.getContractLink()), false, contractExpiresAtFromLink(proceso.getContractLink()));
+        }
+
+        String contractLink = ensureValidContractLink(proceso);
+        Instant expiresAt = contractExpiresAtFromLink(contractLink);
+
+        String message = "Hola, tu proceso de matricula ya tiene habilitada la etapa de firma de contratos.\n\n"
+                + "Por favor ingresa al siguiente enlace para revisarlos y firmarlos:\n"
+                + contractLink
+                + "\n\n"
+                + buildContractExpiryHint(expiresAt);
+
+        boolean sent = false;
+        try {
+            sent = sendWhatsappText(phone, message);
+        } catch (Exception ex) {
+            log.error("No se pudo enviar mensaje de contratos por WhatsApp doc={}: {}", documento, ex.getMessage(), ex);
+            sent = false;
+        }
+
+        if (sent) {
+            proceso.setContractChatbotSent(true);
+            proceso.setContractChatbotSentAt(Instant.now());
+            proceso.setContractStatus("LINK_SENT");
+            if (trim(proceso.getFlowStatus()).isBlank() || "DRAFT".equalsIgnoreCase(trim(proceso.getFlowStatus()))) {
+                proceso.setFlowStatus("CONTRACT_LINK_SENT");
+            }
+            procesoRepository.save(proceso);
+        }
+
+        return new ContractSendResult(true,
+                sent ? "Enlace de contratos enviado por chatbot." : "No se pudo enviar el enlace por chatbot.",
+                trim(proceso.getPaymentStatus()), trim(proceso.getFlowStatus()), trim(proceso.getContractStatus()),
+                contractLink, sent, expiresAt);
     }
 
     public boolean sendPaymentApprovedMessage(String phoneRaw, String contractLinkRaw) {
@@ -402,6 +606,155 @@ public class PaymentApprovalService {
                     proceso.getId(), ex.getMessage());
             return currentLink;
         }
+    }
+
+    private Instant contractExpiresAtFromLink(String contractLinkRaw) {
+        String link = normalizeStoredContractLink(contractLinkRaw);
+        if (!StringUtils.hasText(link)) return null;
+        try {
+            VerificationService.ContractAccessResult peek = peekContractLinkAccess(link);
+            return peek == null ? null : peek.expiresAt();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String ensureValidContractLink(ChatbotMatriculaProceso proceso) {
+        if (proceso == null) return "";
+        String current = resolveCurrentContractLink(proceso);
+        if (!Objects.equals(trim(proceso.getContractLink()), current)) {
+            proceso.setContractLink(current);
+        }
+        return current;
+    }
+
+    private boolean sendContractLinkByEmailInternal(ChatbotMatriculaProceso proceso,
+                                                   String contractLinkRaw,
+                                                   Instant expiresAt,
+                                                   boolean forceResend) {
+        if (proceso == null) return false;
+
+        String email = trim(proceso.getEmail());
+        String contractLink = normalizeStoredContractLink(contractLinkRaw);
+        if (!StringUtils.hasText(email) || !StringUtils.hasText(contractLink)) {
+            return false;
+        }
+
+        if (!forceResend && Boolean.TRUE.equals(proceso.getContractEmailSent())) {
+            return false;
+        }
+
+        String subject = trim(contractEmailSubject);
+        if (!StringUtils.hasText(subject)) {
+            subject = "Enlace de contratos - CEA HARO";
+        }
+
+        String html = buildContractLinkEmailHtml(proceso, contractLink, expiresAt);
+        String plain = buildContractLinkEmailPlain(proceso, contractLink, expiresAt);
+
+        try {
+            mailService.sendHtml(email, subject, html, plain);
+        } catch (Exception ex) {
+            log.error("No se pudo enviar correo de contratos email={} doc={}: {}",
+                    maskEmail(email), safe(proceso.getNumeroDocumento()), ex.getMessage(), ex);
+            return false;
+        }
+
+        proceso.setContractEmailSent(true);
+        proceso.setContractEmailSentAt(Instant.now());
+        procesoRepository.save(proceso);
+        return true;
+    }
+
+    private String buildContractLinkEmailHtml(ChatbotMatriculaProceso proceso, String contractLink, Instant expiresAt) {
+        String nombre = escapeHtml(firstNotBlank(trim(proceso.getNombreCompleto()), "Estudiante"));
+        String expiry = escapeHtml(buildContractExpiryHint(expiresAt));
+        String linkEscaped = escapeHtml(contractLink);
+        return """
+                <div style="font-family:Segoe UI, Arial, sans-serif; color:#111827; line-height:1.5;">
+                  <h2 style="margin:0 0 12px 0;">Enlace para firma de contratos</h2>
+                  <p style="margin:0 0 12px 0;">Hola %s,</p>
+                  <p style="margin:0 0 12px 0;">Tu proceso ya tiene habilitada la etapa de firma de contratos. Ingresa al siguiente enlace:</p>
+                  <p style="margin:0 0 12px 0;"><a href="%s" target="_blank" rel="noopener">%s</a></p>
+                  <p style="margin:0 0 12px 0;">%s</p>
+                  <p style="margin:0;">Si necesitas ayuda, responde a este mensaje o escribe ASESOR por WhatsApp.</p>
+                </div>
+                """.formatted(nombre, linkEscaped, linkEscaped, expiry);
+    }
+
+    private String buildContractLinkEmailPlain(ChatbotMatriculaProceso proceso, String contractLink, Instant expiresAt) {
+        String nombre = firstNotBlank(trim(proceso == null ? "" : proceso.getNombreCompleto()), "Estudiante");
+        return "Enlace para firma de contratos\n\n"
+                + "Hola " + nombre + ",\n\n"
+                + "Tu proceso ya tiene habilitada la etapa de firma de contratos. Ingresa al siguiente enlace:\n"
+                + contractLink + "\n\n"
+                + buildContractExpiryHint(expiresAt) + "\n\n"
+                + "Si necesitas ayuda, escribe ASESOR.";
+    }
+
+    private boolean sendWhatsappText(String phoneRaw, String message) {
+        String phone = normalizePhone(phoneRaw);
+        if (!StringUtils.hasText(phone) || !StringUtils.hasText(message)) {
+            return false;
+        }
+
+        try {
+            if (StringUtils.hasText(internalApiBaseUrl)) {
+                String base = trim(internalApiBaseUrl);
+                while (base.endsWith("/")) {
+                    base = base.substring(0, base.length() - 1);
+                }
+                String url = base + "/api/whatsapp/text/send";
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("to", phone);
+                payload.put("text", message);
+                payload.put("message", message);
+
+                ResponseEntity<Map> response = restTemplate.postForEntity(url, payload, Map.class);
+                if (response.getStatusCode().is2xxSuccessful()) {
+                    return true;
+                }
+                return false;
+            }
+
+            waService.sendTextMessage(phone, message);
+            return true;
+        } catch (Exception ex) {
+            log.error("Error enviando WhatsApp to={}: {}", maskPhone(phone), ex.getMessage(), ex);
+            return false;
+        }
+    }
+
+    private String firstNotBlank(String... values) {
+        if (values == null) return "";
+        for (String v : values) {
+            String t = trim(v);
+            if (!t.isBlank()) return t;
+        }
+        return "";
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value;
+    }
+
+    private String maskEmail(String email) {
+        String e = trim(email);
+        int at = e.indexOf('@');
+        if (at <= 1) return "***";
+        String left = e.substring(0, at);
+        String domain = e.substring(at);
+        String maskedLeft = left.substring(0, 1) + "***" + left.substring(Math.max(1, left.length() - 1));
+        return maskedLeft + domain;
+    }
+
+    private String escapeHtml(String raw) {
+        String v = raw == null ? "" : raw;
+        return v.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 
     private String normalizeStoredContractLink(String rawContractLink) {

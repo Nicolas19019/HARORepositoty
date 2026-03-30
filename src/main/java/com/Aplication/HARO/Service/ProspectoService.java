@@ -75,6 +75,18 @@ public class ProspectoService {
         repo.save(p);
     }
 
+    @Transactional(readOnly = true)
+    public boolean existeProspectoActivoPorTelefono(String telefono) {
+        String tel = normalizePhone(telefono);
+        if (tel.isBlank()) {
+            return false;
+        }
+        return repo.findByTelefonoInOrderByActualizadoEnDesc(phoneCandidates(tel))
+                .stream()
+                .findFirst()
+                .isPresent();
+    }
+
     private String normalizePhone(String raw) {
         String out = raw == null ? "" : raw.trim();
         if (out.isBlank()) return "";

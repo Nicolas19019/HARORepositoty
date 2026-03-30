@@ -268,6 +268,9 @@ private String paymentConfirmationUrl;
         }
         proceso.setExpectedAmount(resolveExpectedAmountByCategory(cat));
         proceso.setFlowStatus("DRAFT");
+        if (trim(proceso.getOrigenRegistro()).isBlank()) {
+            proceso.setOrigenRegistro("CHATBOT");
+        }
 
         if (proceso.getPaymentStatus() == null || proceso.getPaymentStatus().isBlank()) {
             proceso.setPaymentStatus("PENDING");
@@ -277,6 +280,51 @@ private String paymentConfirmationUrl;
         }
 
         return procesoRepository.save(proceso);
+    }
+
+    @Transactional
+    public ChatbotMatriculaProceso markCashPaymentPending(String documento) {
+        ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
+        p.setMetodoPago("EFECTIVO");
+        p.setPaymentStatus("PENDING");
+        p.setFlowStatus("PENDING_CASH_VALIDATION");
+        // No hay link de pago cuando el pago es en efectivo.
+        p.setPaymentLink(null);
+        // Conserva el total esperado para reportes.
+        if (p.getExpectedAmount() == null) {
+            p.setExpectedAmount(resolveExpectedAmount(p));
+        }
+        return procesoRepository.save(p);
+    }
+
+    @Transactional
+    public ChatbotMatriculaProceso setMetodoPago(String documento, String metodoPago) {
+        ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
+        String normalized = trim(metodoPago).toUpperCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            p.setMetodoPago(null);
+            return procesoRepository.save(p);
+        }
+        if (!"EPAYCO".equals(normalized) && !"EFECTIVO".equals(normalized)) {
+            throw new IllegalArgumentException("metodoPago solo permite: EPAYCO o EFECTIVO");
+        }
+        p.setMetodoPago(normalized);
+        return procesoRepository.save(p);
+    }
+
+    @Transactional
+    public ChatbotMatriculaProceso setOrigenRegistro(String documento, String origenRegistro) {
+        ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
+        String normalized = trim(origenRegistro).toUpperCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            p.setOrigenRegistro(null);
+            return procesoRepository.save(p);
+        }
+        if (!"CHATBOT".equals(normalized) && !"HAROGESTION".equals(normalized)) {
+            throw new IllegalArgumentException("origenRegistro solo permite: CHATBOT o HAROGESTION");
+        }
+        p.setOrigenRegistro(normalized);
+        return procesoRepository.save(p);
     }
 
     @Transactional(readOnly = true)

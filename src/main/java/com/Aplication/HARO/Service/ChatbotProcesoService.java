@@ -226,7 +226,7 @@ private String paymentConfirmationUrl;
                                                String categoria,
                                                String email,
                                                String telefono) {
-        return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, "", "");
+        return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, "", "", null);
     }
     @Transactional
     public ChatbotMatriculaProceso upsertDraft(String phone,
@@ -236,7 +236,7 @@ private String paymentConfirmationUrl;
                                                String email,
                                                String telefono,
                                                String direccion) {
-        return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, direccion, "");
+        return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, direccion, "", null);
     }
 
     @Transactional
@@ -248,6 +248,19 @@ private String paymentConfirmationUrl;
                                                String telefono,
                                                String direccion,
                                                String sede) {
+        return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, direccion, sede, null);
+    }
+
+    @Transactional
+    public ChatbotMatriculaProceso upsertDraft(String phone,
+                                               String nombreCompleto,
+                                               String documento,
+                                               String categoria,
+                                               String email,
+                                               String telefono,
+                                               String direccion,
+                                               String sede,
+                                               Integer edad) {
         String doc = normalizeDoc(documento);
         String mail = normalizeEmail(email);
         String cat = normalizeCategoria(categoria);
@@ -261,6 +274,9 @@ private String paymentConfirmationUrl;
         proceso.setCategoria(cat);
         proceso.setEmail(mail);
         proceso.setTelefono(normalizePhone(telefono));
+        if (edad != null && edad.intValue() > 0) {
+            proceso.setEdad(edad);
+        }
         proceso.setDireccion(collapseSpaces(direccion));
         String sedeValue = collapseSpaces(sede);
         if (!sedeValue.isBlank()) {

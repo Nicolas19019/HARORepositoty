@@ -63,6 +63,17 @@ public class ChatbotMatriculaSchemaHotfix implements CommandLineRunner {
                         FROM information_schema.columns
                         WHERE table_schema = current_schema()
                           AND table_name = 'chatbot_matricula_proceso'
+                          AND column_name = 'edad'
+                      ) THEN
+                        ALTER TABLE chatbot_matricula_proceso
+                          ADD COLUMN edad INTEGER;
+                      END IF;
+
+                      IF NOT EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = current_schema()
+                          AND table_name = 'chatbot_matricula_proceso'
                           AND column_name = 'sede'
                       ) THEN
                         ALTER TABLE chatbot_matricula_proceso

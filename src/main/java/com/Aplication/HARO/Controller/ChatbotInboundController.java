@@ -799,7 +799,8 @@ public class ChatbotInboundController {
                     session.email,
                     session.telefono,
                     session.direccion,
-                    session.sedeSeleccionada
+                    session.sedeSeleccionada,
+                    session.edad
             );
         } catch (Exception e) {
             log.error("No se pudo guardar pre-registro from={} doc={}",
@@ -2058,23 +2059,31 @@ public class ChatbotInboundController {
                 actions.add(textMsg("Despues de ese primer mensaje te pedire tu edad, correo, telefono, direccion y la sede."));
                 actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
             }
+            case ENROLLMENT_AGE_CAPTURE -> {
+                actions.add(textMsg(
+                        "Paso 2 de 8: envía tu edad en años.\n\n" +
+                                "Ejemplo: 18\n\n" +
+                                "Importante: debes tener mínimo 16 años para matricularte."
+                ));
+                actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
+            }
             case ENROLLMENT_EMAIL_CAPTURE -> {
                 actions.add(textMsg(
-                        "Paso 2 de 7: envia tu correo electronico.\n" +
+                        "Paso 3 de 8: envia tu correo electronico.\n" +
                                 "Ejemplo: usuario@correo.com"
                 ));
                 actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
             }
             case ENROLLMENT_PHONE_CAPTURE -> {
                 actions.add(textMsg(
-                        "Paso 3 de 7: envia tu telefono de contacto.\n" +
+                        "Paso 4 de 8: envia tu telefono de contacto.\n" +
                                 "Ejemplo: 573001112233"
                 ));
                 actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
             }
             case ENROLLMENT_ADDRESS_CAPTURE -> {
                 actions.add(textMsg(
-                        "Paso 4 de 7: envia tu direccion de residencia.\n\n" +
+                        "Paso 5 de 8: envia tu direccion de residencia.\n\n" +
                                 "Escribela completa con barrio, nomenclatura o apartamento si aplica.\n\n" +
                                 "Ejemplo: Cra 80 #12-45 Apto 302, Kennedy, Bogota"
                 ));
@@ -2082,7 +2091,7 @@ public class ChatbotInboundController {
             }
             case ENROLLMENT_SEDE_CAPTURE -> {
                 actions.add(textMsg(
-                        "Paso 5 de 7: selecciona tu sede.\n\n" +
+                        "Paso 6 de 8: selecciona tu sede.\n\n" +
                                 "1) Kennedy - Av. 1 de Mayo #68D-23 Piso 2\n" +
                                 "2) CC El Eden - Local L2-094A\n\n" +
                                 "Responde con 1 o 2."
@@ -2091,10 +2100,11 @@ public class ChatbotInboundController {
             }
             case ENROLLMENT_CONFIRM -> {
                 actions.add(textMsg(
-                        "Paso 6 de 7: revisa tus datos y confirma.\n\n" +
+                        "Paso 7 de 8: revisa tus datos y confirma.\n\n" +
                                 "Nombre: " + safe(session.nombre) + "\n" +
                                 "Documento: " + safe(session.documento) + "\n" +
                                 "Categoria: " + safe(session.categoria) + "\n" +
+                                "Edad: " + (session.edad == null ? "N/A" : (session.edad + " años")) + "\n" +
                                 "Correo: " + safe(session.email) + "\n" +
                                 "Telefono: " + safe(session.telefono) + "\n" +
                                 "Direccion: " + safe(session.direccion) + "\n" +
@@ -2108,7 +2118,7 @@ public class ChatbotInboundController {
             }
             case PAYMENT_METHOD_SELECT -> {
                 actions.add(textMsg(
-                        "Selecciona tu metodo de pago:\n\n" +
+                        "Paso 8 de 8: selecciona tu metodo de pago.\n\n" +
                                 "1) Pagar por ePayco (en linea)\n" +
                                 "2) Pagar en efectivo en la academia\n\n" +
                                 "Responde 1 o 2."
@@ -2811,9 +2821,9 @@ public class ChatbotInboundController {
     private String advisorContactText(String predefinedMessage) {
         String link = buildAdvisorLink(predefinedMessage);
         if (trim(predefinedMessage).isBlank()) {
-            return "🤝 Para contactar un asesor, escribe aquí:\n" + link;
+            return "🤖 Contactar asesor:\n" + link;
         }
-        return "🤝 Para contactar un asesor, escribe aquí:\n" + link + "\n\n" +
+        return "🤖 Contactar asesor:\n" + link + "\n\n" +
                 "Mensaje sugerido:\n" + trim(predefinedMessage);
     }
 
@@ -3128,7 +3138,7 @@ public class ChatbotInboundController {
                 "3) Categoría que deseas realizar (A2, B1, C1, A2 y B1, A2, B1 y C1)\n\n" +
                 "✅ Ejemplo:\n" +
                 "Juan Perez 12345678 A2\n\n" +
-                "Luego te pediré la sede (Kennedy o CC El Eden).";
+                "Luego te pediré tu edad, correo, teléfono, dirección y la sede (Kennedy o CC El Eden).";
     }
 
     private String infoText() {

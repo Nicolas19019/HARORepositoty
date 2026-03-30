@@ -44,6 +44,9 @@ public class ChatbotMatriculaProceso {
     @Column(name = "telefono", nullable = false, length = 40)
     private String telefono;
 
+    @Column(name = "edad")
+    private Integer edad;
+
     @Column(name = "direccion", length = 220)
     private String direccion;
 
@@ -202,6 +205,14 @@ public class ChatbotMatriculaProceso {
 
     public void setTelefono(String telefono) {
         this.telefono = telefono;
+    }
+
+    public Integer getEdad() {
+        return edad;
+    }
+
+    public void setEdad(Integer edad) {
+        this.edad = edad;
     }
 
     public String getDireccion() {

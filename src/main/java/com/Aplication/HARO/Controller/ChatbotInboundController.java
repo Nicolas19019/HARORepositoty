@@ -988,7 +988,7 @@ public class ChatbotInboundController {
             actions.add(textMsg(
                     "✅ Tu proceso quedo registrado correctamente.\n\n" +
                             "⏳ El pago en efectivo debe ser confirmado por la academia antes de continuar.\n\n" +
-                            "📩 Cuando validemos tu pago, recibiras en tu correo el enlace para firmar los contratos."
+                            "📩 Cuando validemos tu pago, te enviaremos por este chat el enlace para firmar los contratos."
             ));
             actions.add(textMsg("Opciones: MENU | TERMINAR"));
             return;
@@ -1067,7 +1067,7 @@ public class ChatbotInboundController {
             actions.add(textMsg(
                     "⏳ Aun no podemos continuar.\n\n" +
                             "El pago en efectivo debe ser confirmado por la academia.\n\n" +
-                            "Cuando sea confirmado recibiras en tu correo el enlace para firmar contratos."
+                            "Cuando sea confirmado te enviaremos por este chat el enlace para firmar contratos."
             ));
             actions.add(textMsg("Opciones: MENU | TERMINAR"));
             return;
@@ -1075,7 +1075,7 @@ public class ChatbotInboundController {
 
         actions.add(textMsg(
                 "⏳ Estamos esperando la confirmacion del pago en efectivo.\n\n" +
-                        "Cuando se confirme, recibiras en tu correo el enlace para firmar los contratos.\n\n" +
+                        "Cuando se confirme, te enviaremos por este chat el enlace para firmar los contratos.\n\n" +
                         "Escribe MENU para ver opciones o TERMINAR para salir."
         ));
         actions.add(textMsg("Opciones: MENU | TERMINAR"));
@@ -2212,7 +2212,7 @@ public class ChatbotInboundController {
             case PAYMENT_CASH_WAIT -> {
                 actions.add(textMsg(
                         "⏳ Estamos esperando la confirmacion del pago en efectivo.\n\n" +
-                                "Cuando se confirme, recibiras en tu correo el enlace para firmar los contratos."
+                                "Cuando se confirme, te enviaremos por este chat el enlace para firmar los contratos."
                 ));
                 actions.add(textMsg("Opciones: MENU | TERMINAR"));
             }

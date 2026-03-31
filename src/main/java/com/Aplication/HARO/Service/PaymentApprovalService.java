@@ -235,7 +235,10 @@ public class PaymentApprovalService {
         if (amount != null && amount.signum() >= 0) {
             proceso.setPaymentAmount(amount);
         }
-        if (trim(proceso.getFlowStatus()).isBlank() || "DRAFT".equalsIgnoreCase(trim(proceso.getFlowStatus()))) {
+        String currentFlow = trim(proceso.getFlowStatus()).toUpperCase(Locale.ROOT);
+        if (currentFlow.isBlank()
+                || "DRAFT".equals(currentFlow)
+                || "PENDING_CASH_VALIDATION".equals(currentFlow)) {
             proceso.setFlowStatus("PAID");
         }
 
@@ -244,16 +247,20 @@ public class PaymentApprovalService {
 
         Instant expiresAt = contractExpiresAtFromLink(contractLink);
 
-        boolean emailed = false;
+        boolean emailAlreadySent = Boolean.TRUE.equals(proceso.getContractEmailSent());
+        boolean emailedNow = false;
         if (sendEmail) {
-            emailed = sendContractLinkByEmailInternal(proceso, contractLink, expiresAt, true);
+            emailedNow = sendContractLinkByEmailInternal(proceso, contractLink, expiresAt, false);
         }
+        boolean emailSent = sendEmail && (emailedNow || emailAlreadySent);
 
-        boolean chatted = false;
+        boolean chatbotAlreadySent = Boolean.TRUE.equals(proceso.getContractChatbotSent());
+        boolean chattedNow = false;
         if (sendChatbot) {
-            ContractSendResult out = sendContractLinkByChatbot(documento, requireProspect, true);
-            chatted = out.sent();
+            ContractSendResult out = sendContractLinkByChatbot(documento, requireProspect, false);
+            chattedNow = out.sent();
         }
+        boolean chatbotSent = sendChatbot && (chattedNow || chatbotAlreadySent);
 
         // Si el contrato ya estaba firmado, intenta finalizar matricula (best effort).
         try {
@@ -262,16 +269,23 @@ public class PaymentApprovalService {
             log.warn("No se pudo finalizar matricula automaticamente tras pago manual doc={}: {}", documento, ex.getMessage());
         }
 
-        String msg = emailed
-                ? "Pago confirmado y enlace de contratos enviado al correo."
-                : "Pago confirmado. Enlace de contratos preparado.";
+        String msg;
+        if (emailSent && chatbotSent) {
+            msg = "Pago confirmado. Enlace de contratos enviado por correo y por WhatsApp.";
+        } else if (emailSent) {
+            msg = "Pago confirmado. Enlace de contratos enviado por correo.";
+        } else if (chatbotSent) {
+            msg = "Pago confirmado. Enlace de contratos enviado por WhatsApp.";
+        } else {
+            msg = "Pago confirmado. Enlace de contratos preparado.";
+        }
 
         return new ContractSendResult(true, msg,
                 trim(proceso.getPaymentStatus()),
                 trim(proceso.getFlowStatus()),
                 trim(proceso.getContractStatus()),
                 contractLink,
-                emailed || chatted,
+                emailSent || chatbotSent,
                 expiresAt);
     }
 
@@ -326,7 +340,9 @@ public class PaymentApprovalService {
                     trim(proceso.getPaymentStatus()), trim(proceso.getFlowStatus()), trim(proceso.getContractStatus()), "", false, null);
         }
 
-        if (requireProspect && !prospectoService.existeProspectoActivoPorTelefono(phone)) {
+        String origen = trim(proceso.getOrigenRegistro()).toUpperCase(Locale.ROOT);
+        boolean isChatbotOrigin = "CHATBOT".equals(origen);
+        if (requireProspect && !isChatbotOrigin && !prospectoService.existeProspectoActivoPorTelefono(phone)) {
             return new ContractSendResult(false,
                     "No es posible enviar por chatbot: el estudiante no se encuentra en prospectos activos.",
                     trim(proceso.getPaymentStatus()), trim(proceso.getFlowStatus()), trim(proceso.getContractStatus()), "", false, null);

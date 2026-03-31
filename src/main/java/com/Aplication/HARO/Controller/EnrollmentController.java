@@ -107,6 +107,35 @@ public class EnrollmentController {
         return ResponseEntity.status(status).body(out);
     }
 
+    /**
+     * Confirmar pago en efectivo y enviar automaticamente el enlace de contratos.
+     *
+     * Default:
+     * - sendEmail=true
+     * - sendChatbot=true
+     * - requireProspect=true (se ignora si origenRegistro=CHATBOT)
+     */
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/payment/cash/confirm-and-send")
+    public ResponseEntity<?> confirmCashAndSend(@RequestBody ManualCashConfirmReq req) {
+        boolean sendEmail = req.sendEmail() == null || req.sendEmail();
+        boolean sendChatbot = req.sendChatbot() == null || req.sendChatbot();
+        boolean requireProspect = req.requireProspect() == null || req.requireProspect();
+
+        PaymentApprovalService.ContractSendResult out = paymentApprovalService.confirmCashPaymentManual(
+                req.documento(),
+                req.valorPagado(),
+                req.adminId(),
+                req.observacion(),
+                sendEmail,
+                sendChatbot,
+                requireProspect
+        );
+
+        HttpStatus status = out.ok() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(out);
+    }
+
     public record SendContractReq(
             @NotBlank String documento,
             Boolean force,

@@ -6,10 +6,13 @@ import com.Aplication.HARO.Service.ChatbotProcesoService;
 import com.Aplication.HARO.Service.PaymentApprovalService;
 import com.Aplication.HARO.Service.ProspectoService;
 import jakarta.validation.constraints.NotBlank;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -17,9 +20,13 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.sql.Timestamp;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 /**
  * Endpoints de compatibilidad para HaroGestion (desktop).
@@ -40,19 +47,24 @@ import java.util.NoSuchElementException;
 })
 public class MatriculasController {
 
+    private static final Logger log = LoggerFactory.getLogger(MatriculasController.class);
+
     private final ChatbotMatriculaProcesoRepository procesoRepository;
     private final ChatbotProcesoService procesoService;
     private final PaymentApprovalService paymentApprovalService;
     private final ProspectoService prospectoService;
+    private final JdbcTemplate jdbcTemplate;
 
     public MatriculasController(ChatbotMatriculaProcesoRepository procesoRepository,
                                 ChatbotProcesoService procesoService,
                                 PaymentApprovalService paymentApprovalService,
-                                ProspectoService prospectoService) {
+                                ProspectoService prospectoService,
+                                JdbcTemplate jdbcTemplate) {
         this.procesoRepository = procesoRepository;
         this.procesoService = procesoService;
         this.paymentApprovalService = paymentApprovalService;
         this.prospectoService = prospectoService;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     public record CrearReq(
@@ -109,11 +121,199 @@ public class MatriculasController {
     @GetMapping
     public List<MatriculaRow> list(@RequestParam(value = "limit", defaultValue = "500") int limit) {
         int size = Math.max(1, Math.min(limit, 2000));
-        List<ChatbotMatriculaProceso> items = procesoRepository.findAll(
-                PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, "updatedAt"))
-        ).getContent();
+        try {
+            List<ChatbotMatriculaProceso> items = procesoRepository.findAll(
+                    PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, "updatedAt"))
+            ).getContent();
+            return items.stream().map(this::toRow).toList();
+        } catch (Exception ex) {
+            // En prod puede fallar si el esquema del proceso de matrícula está desfasado.
+            // Este fallback evita que HaroGestion se quede sin pantalla: lee lo disponible por JDBC.
+            log.warn("Fallo listando solicitudes por JPA, usando fallback JDBC. cause={}", ex.getMessage());
+            return listViaJdbc(size);
+        }
+    }
 
-        return items.stream().map(this::toRow).toList();
+    private List<MatriculaRow> listViaJdbc(int limit) {
+        if (jdbcTemplate == null) {
+            return List.of();
+        }
+
+        Set<String> cols = new LinkedHashSet<>();
+        try {
+            List<String> raw = jdbcTemplate.queryForList("""
+                    select lower(column_name)
+                    from information_schema.columns
+                    where table_schema = current_schema()
+                      and table_name = 'chatbot_matricula_proceso'
+                    """, String.class);
+            if (raw != null) cols.addAll(raw);
+        } catch (Exception ex) {
+            log.warn("No se pudo consultar columnas de chatbot_matricula_proceso: {}", ex.getMessage());
+            return List.of();
+        }
+        if (cols.isEmpty()) {
+            // tabla no existe o no es visible para el usuario DB
+            return List.of();
+        }
+
+        String colId = pickCol(cols, "id");
+        String colNombre = pickCol(cols, "nombre_completo", "nombrecompleto");
+        String colDoc = pickCol(cols, "numero_documento", "numerodocumento", "numeroDocumento", "numerodocumento");
+        String colEmail = pickCol(cols, "email");
+        String colTel = pickCol(cols, "telefono", "phone");
+        String colPhone = pickCol(cols, "phone", "telefono");
+        String colCategoria = pickCol(cols, "categoria");
+        String colSede = pickCol(cols, "sede");
+        String colOrigen = pickCol(cols, "origen_registro", "origenregistro");
+        String colMetodo = pickCol(cols, "metodo_pago", "metodopago");
+        String colPaymentStatus = pickCol(cols, "payment_status", "paymentstatus");
+        String colContractStatus = pickCol(cols, "contract_status", "contractstatus");
+        String colCreated = pickCol(cols, "created_at", "createdat");
+        String colUpdated = pickCol(cols, "updated_at", "updatedat");
+
+        String orderBy = colUpdated != null ? colUpdated : (colCreated != null ? colCreated : (colId != null ? colId : "1"));
+
+        String sql = """
+                select
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s,
+                  %s
+                from chatbot_matricula_proceso
+                order by %s desc
+                limit ?
+                """.formatted(
+                expr(cols, colId, "id"),
+                expr(cols, colNombre, "nombre_completo"),
+                expr(cols, colDoc, "numero_documento"),
+                expr(cols, colEmail, "email"),
+                expr(cols, colTel, "telefono"),
+                expr(cols, colPhone, "phone"),
+                expr(cols, colCategoria, "categoria"),
+                expr(cols, colSede, "sede"),
+                expr(cols, colOrigen, "origen_registro"),
+                expr(cols, colMetodo, "metodo_pago"),
+                expr(cols, colPaymentStatus, "payment_status"),
+                expr(cols, colContractStatus, "contract_status"),
+                expr(cols, colCreated, "created_at") + ",\n  " + expr(cols, colUpdated, "updated_at"),
+                orderBy
+        );
+
+        List<Map<String, Object>> rows;
+        try {
+            rows = jdbcTemplate.queryForList(sql, Math.max(1, limit));
+        } catch (Exception ex) {
+            log.warn("Fallback JDBC fallo listando chatbot_matricula_proceso: {}", ex.getMessage());
+            return List.of();
+        }
+
+        return rows.stream().map(this::toRowJdbc).toList();
+    }
+
+    private String pickCol(Set<String> cols, String... candidates) {
+        if (cols == null || candidates == null) return null;
+        for (String c : candidates) {
+            String v = c == null ? "" : c.trim().toLowerCase(Locale.ROOT);
+            if (!v.isBlank() && cols.contains(v)) return v;
+        }
+        return null;
+    }
+
+    private String expr(Set<String> cols, String col, String alias) {
+        String a = alias == null ? "" : alias.trim();
+        if (a.isBlank()) {
+            return "NULL";
+        }
+        if (col == null || col.isBlank() || cols == null || !cols.contains(col)) {
+            return "NULL as " + a;
+        }
+        return col + " as " + a;
+    }
+
+    private MatriculaRow toRowJdbc(Map<String, Object> row) {
+        if (row == null) {
+            return new MatriculaRow(null, "—", "", "", "", "—", "", "", "", "", "", null, null, false);
+        }
+
+        Long id = toLong(row.get("id"));
+        String nombre = safeUpperOrRaw(toString(row.get("nombre_completo")), false);
+        String doc = toString(row.get("numero_documento"));
+        String email = toString(row.get("email"));
+        String telefono = firstNotBlank(toString(row.get("telefono")), toString(row.get("phone")));
+        String categoria = safeUpperOrRaw(toString(row.get("categoria")), true);
+        String sede = toString(row.get("sede"));
+        String origen = safeUpperOrRaw(toString(row.get("origen_registro")), true);
+        String metodo = safeUpperOrRaw(toString(row.get("metodo_pago")), true);
+        String estadoPago = mapEstadoPago(toString(row.get("payment_status")));
+        String estadoContrato = safeUpperOrRaw(toString(row.get("contract_status")), true);
+        Instant createdAt = toInstant(row.get("created_at"));
+        Instant updatedAt = toInstant(row.get("updated_at"));
+
+        boolean prospectoActivo = false;
+        try {
+            if (StringUtils.hasText(telefono) && prospectoService != null) {
+                prospectoActivo = prospectoService.existeProspectoActivoPorTelefono(telefono);
+            }
+        } catch (Exception ignored) {
+            prospectoActivo = false;
+        }
+
+        return new MatriculaRow(
+                id,
+                firstNotBlank(nombre, "—"),
+                doc,
+                email,
+                telefono,
+                firstNotBlank(categoria, "—"),
+                sede,
+                origen,
+                metodo,
+                estadoPago,
+                estadoContrato,
+                createdAt,
+                updatedAt,
+                prospectoActivo
+        );
+    }
+
+    private Instant toInstant(Object v) {
+        if (v == null) return null;
+        if (v instanceof Instant i) return i;
+        if (v instanceof Timestamp ts) return ts.toInstant();
+        if (v instanceof java.util.Date d) return d.toInstant();
+        return null;
+    }
+
+    private Long toLong(Object v) {
+        if (v == null) return null;
+        if (v instanceof Number n) return n.longValue();
+        try {
+            String s = String.valueOf(v).trim();
+            if (s.isBlank()) return null;
+            return Long.parseLong(s);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String toString(Object v) {
+        return v == null ? "" : String.valueOf(v).trim();
+    }
+
+    private String safeUpperOrRaw(String v, boolean toUpper) {
+        String s = v == null ? "" : v.trim();
+        if (s.isBlank()) return "";
+        return toUpper ? s.toUpperCase(Locale.ROOT) : s;
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -361,4 +561,3 @@ public class MatriculasController {
         return "";
     }
 }
-

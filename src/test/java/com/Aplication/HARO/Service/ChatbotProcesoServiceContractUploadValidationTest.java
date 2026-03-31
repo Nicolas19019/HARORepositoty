@@ -72,6 +72,29 @@ class ChatbotProcesoServiceContractUploadValidationTest {
         assertEquals("Debe cargar Contrato1.pdf para la categoria A2.", ex.getMessage());
     }
 
+    @Test
+    void mergeContractSubmissionByEmail_shouldRejectExemptCategoryInTripleCombo() {
+        Fixture fixture = new Fixture("A2, B1 y C1");
+
+        ChatbotProcesoService.ContractUploadValidationException ex = assertThrows(
+                ChatbotProcesoService.ContractUploadValidationException.class,
+                () -> fixture.service.mergeContractSubmissionByEmail(
+                        "combo@example.com",
+                        "B1",
+                        "Contrato 1",
+                        "Contrato1.pdf",
+                        "{}",
+                        "Contrato1_Firmado_B1.pdf",
+                        "/tmp/Contrato1_Firmado_B1.pdf",
+                        "contracts/b1/Contrato1_Firmado_B1.pdf",
+                        "firmante"
+                )
+        );
+
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.getStatus());
+        assertEquals("La categoria B1 no requiere contrato en este combo.", ex.getMessage());
+    }
+
     private static final class Fixture {
         private final ChatbotProcesoService service;
 

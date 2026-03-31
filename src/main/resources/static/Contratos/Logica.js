@@ -248,11 +248,26 @@
     const src = payload && typeof payload === "object" ? payload : {};
     const flow = src.contractFlow && typeof src.contractFlow === "object" ? src.contractFlow : {};
     const categories = Array.isArray(flow.categories) ? flow.categories : [];
+    const requiredCategories = categories.filter((item) => item && item.requiresContract !== false);
+    const flowIndex = Number.isFinite(Number(flow.currentCategoryIndex)) ? Number(flow.currentCategoryIndex) : 0;
+    const indexedRequiredCategory =
+      requiredCategories.find((item) => Number.isFinite(Number(item && item.orderIndex)) && Number(item.orderIndex) === flowIndex) ||
+      requiredCategories[flowIndex] ||
+      requiredCategories.find((item) => String(item && item.status || "").toUpperCase() !== "COMPLETED") ||
+      requiredCategories[0] ||
+      null;
     contractFlowState = flow;
     categoryFlow = categories;
-    categoryIndex = Math.max(0, Number.isFinite(Number(flow.currentCategoryIndex)) ? Number(flow.currentCategoryIndex) : 0);
-    currentCategoryCode = firstNotBlank(flow.currentCategoryCode, src.categoria);
-    currentCategoryLabel = firstNotBlank(flow.currentCategoryLabel, currentCategoryCode);
+    categoryIndex = Math.max(0, flowIndex);
+    currentCategoryCode = firstNotBlank(
+      flow.currentCategoryCode,
+      indexedRequiredCategory && indexedRequiredCategory.categoryCode
+    );
+    currentCategoryLabel = firstNotBlank(
+      flow.currentCategoryLabel,
+      indexedRequiredCategory && indexedRequiredCategory.categoryLabel,
+      currentCategoryCode
+    );
     contractIndex = Math.max(0, Math.min(CONTRACTS.length - 1, Number.isFinite(Number(flow.currentContractIndex)) ? Number(flow.currentContractIndex) : 0));
   }
 

@@ -123,7 +123,8 @@ public class MatriculasController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping
-    public List<MatriculaRow> list(@RequestParam(value = "limit", defaultValue = "500") int limit) {
+    public List<MatriculaRow> list(@RequestParam(value = "limit", defaultValue = "500") int limit,
+                                   @RequestParam(value = "all", defaultValue = "false") boolean all) {
         int size = Math.max(1, Math.min(limit, 2000));
         try {
             cashCleanupService.cleanupExpiredCashRequests();
@@ -131,19 +132,24 @@ public class MatriculasController {
             log.warn("No se pudo ejecutar limpieza de solicitudes EFECTIVO vencidas: {}", ex.getMessage());
         }
         try {
-            List<ChatbotMatriculaProceso> items = procesoRepository.findAll(
-                    PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, "updatedAt"))
-            ).getContent();
+            PageRequest page = PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, "updatedAt"));
+            List<ChatbotMatriculaProceso> items;
+            if (all) {
+                items = procesoRepository.findAll(page).getContent();
+            } else {
+                // HaroGestion: solo solicitudes de pago en efectivo.
+                items = procesoRepository.findByMetodoPagoIgnoreCase("EFECTIVO", page);
+            }
             return items.stream().map(this::toRow).toList();
         } catch (Exception ex) {
             // En prod puede fallar si el esquema del proceso de matrícula está desfasado.
             // Este fallback evita que HaroGestion se quede sin pantalla: lee lo disponible por JDBC.
             log.warn("Fallo listando solicitudes por JPA, usando fallback JDBC. cause={}", ex.getMessage());
-            return listViaJdbc(size);
+            return listViaJdbc(size, all);
         }
     }
 
-    private List<MatriculaRow> listViaJdbc(int limit) {
+    private List<MatriculaRow> listViaJdbc(int limit, boolean all) {
         if (jdbcTemplate == null) {
             return List.of();
         }
@@ -182,6 +188,14 @@ public class MatriculasController {
         String colUpdated = pickCol(cols, "updated_at", "updatedat");
 
         String orderBy = colUpdated != null ? colUpdated : (colCreated != null ? colCreated : (colId != null ? colId : "1"));
+        String where = "";
+        if (!all) {
+            if (colMetodo == null || colMetodo.isBlank()) {
+                // Si no se puede filtrar, es más seguro no devolver nada (la pantalla de HaroGestion debe ser "solo efectivo").
+                return List.of();
+            }
+            where = "\nwhere coalesce(nullif(btrim(" + colMetodo + "), ''), '') ilike 'EFECTIVO'\n";
+        }
 
         String sql = """
                 select
@@ -199,6 +213,7 @@ public class MatriculasController {
                   %s,
                   %s
                 from chatbot_matricula_proceso
+                %s
                 order by %s desc
                 limit ?
                 """.formatted(
@@ -215,6 +230,7 @@ public class MatriculasController {
                 expr(cols, colPaymentStatus, "payment_status"),
                 expr(cols, colContractStatus, "contract_status"),
                 expr(cols, colCreated, "created_at") + ",\n  " + expr(cols, colUpdated, "updated_at"),
+                where,
                 orderBy
         );
 

@@ -242,5 +242,25 @@ public class ChatbotMatriculaSchemaHotfix implements CommandLineRunner {
         } catch (Exception ex) {
             log.error("No se pudo aplicar hotfix de esquema para chatbot_matricula_proceso", ex);
         }
+
+        // Vistas de conveniencia: separan ePayco vs efectivo sin cambiar la entidad principal.
+        // (PostgreSQL no tiene CREATE VIEW IF NOT EXISTS, por eso usamos OR REPLACE)
+        try {
+            jdbcTemplate.execute("""
+                    CREATE OR REPLACE VIEW chatbot_matricula_proceso_epayco AS
+                    SELECT p.*
+                    FROM chatbot_matricula_proceso p
+                    WHERE COALESCE(NULLIF(btrim(p.metodo_pago), ''), 'EPAYCO') ILIKE 'EPAYCO';
+                    """);
+            jdbcTemplate.execute("""
+                    CREATE OR REPLACE VIEW chatbot_matricula_proceso_efectivo AS
+                    SELECT p.*
+                    FROM chatbot_matricula_proceso p
+                    WHERE COALESCE(NULLIF(btrim(p.metodo_pago), ''), '') ILIKE 'EFECTIVO';
+                    """);
+            log.info("Vistas creadas/actualizadas: chatbot_matricula_proceso_epayco, chatbot_matricula_proceso_efectivo");
+        } catch (Exception ex) {
+            log.warn("No se pudieron crear vistas de matricula por metodo de pago: {}", ex.getMessage());
+        }
     }
 }

@@ -23,6 +23,8 @@ public interface ChatbotMatriculaProcesoRepository extends JpaRepository<Chatbot
     Optional<ChatbotMatriculaProceso> findTopByPhoneOrderByUpdatedAtDesc(String phone);
     Optional<ChatbotMatriculaProceso> findTopByPaymentLinkContainingOrderByUpdatedAtDesc(String invoiceToken);
 
+    List<ChatbotMatriculaProceso> findByMetodoPagoIgnoreCase(String metodoPago, Pageable pageable);
+
     @Query("""
             select p
             from ChatbotMatriculaProceso p

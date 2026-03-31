@@ -1,6 +1,7 @@
 package com.Aplication.HARO.Controller;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
+import com.Aplication.HARO.Repository.ChatbotContractCategoryProgressRepository;
 import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
 import com.Aplication.HARO.Service.ServicioLimpiezaSolicitudesEfectivo;
 import com.Aplication.HARO.Service.ChatbotProcesoService;
@@ -51,6 +52,7 @@ public class MatriculasController {
     private static final Logger log = LoggerFactory.getLogger(MatriculasController.class);
 
     private final ChatbotMatriculaProcesoRepository procesoRepository;
+    private final ChatbotContractCategoryProgressRepository contractCategoryProgressRepository;
     private final ChatbotProcesoService procesoService;
     private final PaymentApprovalService paymentApprovalService;
     private final ProspectoService prospectoService;
@@ -58,12 +60,14 @@ public class MatriculasController {
     private final JdbcTemplate jdbcTemplate;
 
     public MatriculasController(ChatbotMatriculaProcesoRepository procesoRepository,
+                                ChatbotContractCategoryProgressRepository contractCategoryProgressRepository,
                                 ChatbotProcesoService procesoService,
                                 PaymentApprovalService paymentApprovalService,
                                 ProspectoService prospectoService,
                                 ServicioLimpiezaSolicitudesEfectivo cashCleanupService,
                                 JdbcTemplate jdbcTemplate) {
         this.procesoRepository = procesoRepository;
+        this.contractCategoryProgressRepository = contractCategoryProgressRepository;
         this.procesoService = procesoService;
         this.paymentApprovalService = paymentApprovalService;
         this.prospectoService = prospectoService;
@@ -517,6 +521,32 @@ public class MatriculasController {
         return ResponseEntity.status(status).body(out);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
+    @DeleteMapping("/{id}")
+    @Transactional
+    public ResponseEntity<?> eliminarSolicitud(@PathVariable Long id) {
+        ChatbotMatriculaProceso proceso = procesoRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Solicitud no encontrada: " + id));
+
+        String bloqueo = validarEliminacion(proceso);
+        if (!bloqueo.isBlank()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "ok", false,
+                    "message", bloqueo,
+                    "id", id
+            ));
+        }
+
+        contractCategoryProgressRepository.deleteByProcesoId(id);
+        procesoRepository.delete(proceso);
+
+        return ResponseEntity.ok(Map.of(
+                "ok", true,
+                "message", "Solicitud eliminada",
+                "id", id
+        ));
+    }
+
     private MatriculaRow toRow(ChatbotMatriculaProceso p) {
         String phone = firstNotBlank(trim(p.getPhone()), trim(p.getTelefono()));
         boolean prospectoActivo = false;
@@ -556,6 +586,28 @@ public class MatriculasController {
             case "PENDING" -> "PENDIENTE";
             default -> status;
         };
+    }
+
+    private String validarEliminacion(ChatbotMatriculaProceso proceso) {
+        String paymentStatus = trim(proceso.getPaymentStatus()).toUpperCase(Locale.ROOT);
+        if (Set.of("APPROVED", "PAID", "CONFIRMED", "OK").contains(paymentStatus)
+                || proceso.getPaymentConfirmedAt() != null) {
+            return "No se puede eliminar una solicitud con pago confirmado.";
+        }
+
+        if (Boolean.TRUE.equals(proceso.getContractEmailSent())
+                || Boolean.TRUE.equals(proceso.getContractChatbotSent())
+                || StringUtils.hasText(trim(proceso.getContractLink()))) {
+            return "No se puede eliminar una solicitud con contrato ya enviado.";
+        }
+
+        if (proceso.getContractSignedAt() != null
+                || "SIGNED".equalsIgnoreCase(trim(proceso.getContractStatus()))
+                || "COMPLETED".equalsIgnoreCase(trim(proceso.getContractStatus()))) {
+            return "No se puede eliminar una solicitud con contrato ya firmado.";
+        }
+
+        return "";
     }
 
     private String normalizeEstadoPago(String raw) {

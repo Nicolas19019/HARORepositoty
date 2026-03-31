@@ -2885,22 +2885,25 @@ public class ChatbotInboundController {
     }
 
     private String advisorContactText(String predefinedMessage) {
+        String suggestedMessage = buildAdvisorSuggestedMessage(predefinedMessage);
         String link = buildAdvisorLink(predefinedMessage);
-        if (trim(predefinedMessage).isBlank()) {
-            return "🤖 Contactar asesor:\n" + link;
-        }
-        return "🤖 Contactar asesor:\n" + link + "\n\n" +
-                "Mensaje sugerido:\n" + trim(predefinedMessage);
+        return "💬 Contactar asesor:\n" + link + "\n\n" +
+                "Mensaje sugerido:\n" + suggestedMessage;
     }
 
     private String buildAdvisorLink(String predefinedMessage) {
-        String normalized = collapseSpaces(predefinedMessage);
-        if (normalized.isBlank()) {
-            return ADVISOR_WHATSAPP_LINK;
-        }
-        return ADVISOR_WHATSAPP_LINK + "?text=" + URLEncoder.encode(normalized, StandardCharsets.UTF_8);
+        String suggestedMessage = buildAdvisorSuggestedMessage(predefinedMessage);
+        return ADVISOR_WHATSAPP_LINK + "?text=" + URLEncoder.encode(suggestedMessage, StandardCharsets.UTF_8);
     }
 
+    private String buildAdvisorSuggestedMessage(String predefinedMessage) {
+        String normalized = collapseSpaces(predefinedMessage);
+        String baseMessage = normalized.isBlank()
+                ? "Necesito tu ayuda, por favor."
+                : normalized;
+        return "🤖: " + baseMessage +
+                " Por favor, no borrar el emoji del robot para tener en cuenta el origen de la solicitud.";
+    }
     // =========================
     // PROSPECTOS (NO ESTUDIANTE)
     // =========================

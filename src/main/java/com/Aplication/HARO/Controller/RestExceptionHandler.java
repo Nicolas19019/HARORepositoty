@@ -19,6 +19,8 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import jakarta.validation.ConstraintViolationException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -60,6 +62,16 @@ public class RestExceptionHandler {
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<?> handleNotFound(NoSuchElementException ex) {
         return ResponseEntity.status(404).body(ex.getMessage());
+    }
+
+    @ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})
+    public ResponseEntity<?> handleNotFoundEndpoint(Exception ex, HttpServletRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "NOT_FOUND");
+        body.put("path", request.getRequestURI());
+        body.put("methodReceived", request.getMethod());
+        body.put("message", "Endpoint no encontrado");
+        return ResponseEntity.status(404).body(body);
     }
 
     @ExceptionHandler(AuthenticationCredentialsNotFoundException.class)

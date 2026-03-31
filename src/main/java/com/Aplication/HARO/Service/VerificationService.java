@@ -377,8 +377,9 @@ public class VerificationService {
         final Instant now = Instant.now();
         final String purpose = "CONTRACT_SIGN";
 
-        // Limpiar expirados del mismo flujo
-        repo.deleteByEmailAndPurposeAndExpiresAtBefore(email, purpose, now);
+        // Solo puede existir 1 link activo por email: si se genera uno nuevo, el anterior debe dejar de servir.
+        // Esto evita que queden varios links validos circulando al reenviar el correo/WhatsApp.
+        repo.deleteByEmailAndPurposeAndConsumedAtIsNull(email, purpose);
 
         String code = generateAlphaNumericCode(contractCodeLength);
         OtpToken token = new OtpToken();

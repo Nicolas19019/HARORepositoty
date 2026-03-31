@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -36,4 +37,17 @@ public interface ChatbotMatriculaProcesoRepository extends JpaRepository<Chatbot
                                                                 @Param("emailPrefix") String emailPrefix,
                                                                 @Param("emailSuffix") String emailSuffix,
                                                                 Pageable pageable);
+
+    @Query("""
+            select p.id
+            from ChatbotMatriculaProceso p
+            where p.flowStatus = :flowStatus
+              and p.metodoPago = :metodoPago
+              and p.paymentStatus = :paymentStatus
+              and p.updatedAt < :threshold
+            """)
+    List<Long> findIdsForCashPendingCleanup(@Param("flowStatus") String flowStatus,
+                                           @Param("metodoPago") String metodoPago,
+                                           @Param("paymentStatus") String paymentStatus,
+                                           @Param("threshold") Instant threshold);
 }

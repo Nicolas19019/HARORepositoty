@@ -2,6 +2,7 @@ package com.Aplication.HARO.Controller;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
+import com.Aplication.HARO.Service.ServicioLimpiezaSolicitudesEfectivo;
 import com.Aplication.HARO.Service.ChatbotProcesoService;
 import com.Aplication.HARO.Service.PaymentApprovalService;
 import com.Aplication.HARO.Service.ProspectoService;
@@ -53,17 +54,20 @@ public class MatriculasController {
     private final ChatbotProcesoService procesoService;
     private final PaymentApprovalService paymentApprovalService;
     private final ProspectoService prospectoService;
+    private final ServicioLimpiezaSolicitudesEfectivo cashCleanupService;
     private final JdbcTemplate jdbcTemplate;
 
     public MatriculasController(ChatbotMatriculaProcesoRepository procesoRepository,
                                 ChatbotProcesoService procesoService,
                                 PaymentApprovalService paymentApprovalService,
                                 ProspectoService prospectoService,
+                                ServicioLimpiezaSolicitudesEfectivo cashCleanupService,
                                 JdbcTemplate jdbcTemplate) {
         this.procesoRepository = procesoRepository;
         this.procesoService = procesoService;
         this.paymentApprovalService = paymentApprovalService;
         this.prospectoService = prospectoService;
+        this.cashCleanupService = cashCleanupService;
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -121,6 +125,11 @@ public class MatriculasController {
     @GetMapping
     public List<MatriculaRow> list(@RequestParam(value = "limit", defaultValue = "500") int limit) {
         int size = Math.max(1, Math.min(limit, 2000));
+        try {
+            cashCleanupService.cleanupExpiredCashRequests();
+        } catch (Exception ex) {
+            log.warn("No se pudo ejecutar limpieza de solicitudes EFECTIVO vencidas: {}", ex.getMessage());
+        }
         try {
             List<ChatbotMatriculaProceso> items = procesoRepository.findAll(
                     PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, "updatedAt"))

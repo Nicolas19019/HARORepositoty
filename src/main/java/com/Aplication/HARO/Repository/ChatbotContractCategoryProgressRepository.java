@@ -11,4 +11,6 @@ public interface ChatbotContractCategoryProgressRepository extends JpaRepository
     List<ChatbotContractCategoryProgress> findByProcesoIdOrderByOrderIndexAscIdAsc(Long procesoId);
 
     Optional<ChatbotContractCategoryProgress> findByProcesoIdAndCategoryCodeIgnoreCase(Long procesoId, String categoryCode);
+
+    long deleteByProcesoIdIn(List<Long> procesoIds);
 }

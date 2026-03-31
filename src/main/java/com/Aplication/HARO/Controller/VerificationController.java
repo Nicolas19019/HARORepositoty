@@ -22,6 +22,7 @@ import java.util.Map;
 @Validated
 @RestController
 @RequestMapping("/api/verification")
+@CrossOrigin(origins = {"https://ceaharo.com", "https://www.ceaharo.com"})
 public class VerificationController {
 
   private static final Logger log = LoggerFactory.getLogger(VerificationController.class);

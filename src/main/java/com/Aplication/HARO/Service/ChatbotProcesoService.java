@@ -20,6 +20,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -197,12 +198,30 @@ private String paymentConfirmationUrl;
             String currentCategoryCode,
             String currentCategoryLabel,
             int currentCategoryIndex,
+            int currentCategoryPosition,
             int totalCategories,
             int completedCategories,
             int remainingCategories,
             int currentContractIndex,
+            Integer currentContractPosition,
+            Integer expectedContractNumber,
+            String expectedContractFile,
+            String nextCategoryCode,
+            String nextCategoryLabel,
             List<Map<String, Object>> categories
     ) {}
+    public static class ContractUploadValidationException extends RuntimeException {
+        private final HttpStatus status;
+
+        public ContractUploadValidationException(HttpStatus status, String message) {
+            super(message);
+            this.status = status == null ? HttpStatus.UNPROCESSABLE_ENTITY : status;
+        }
+
+        public HttpStatus getStatus() {
+            return status;
+        }
+    }
     private record ContractStudentProfile(String nombre,
                                           String apellido,
                                           String tipoDocumento,
@@ -641,7 +660,9 @@ private String paymentConfirmationUrl;
 
         ChatbotMatriculaProceso proceso = procesoOpt.get();
         List<ChatbotContractCategoryProgress> categoryProgressList = ensureContractCategoryProgress(proceso);
-        ChatbotContractCategoryProgress targetProgress = resolveWritableCategoryProgress(proceso, categoryProgressList, requestedCategoryCode);
+        ChatbotContractCategoryProgress targetProgress =
+                resolveValidatedUploadCategoryProgress(categoryProgressList, requestedCategoryCode);
+        validateExpectedContractUpload(targetProgress, pdfFile, contractName, fileName);
 
         Map<String, Object> mergedFormData = readJsonMap(proceso.getContractFormData());
         Map<String, Object> incomingFormData = readJsonMap(formDataJson);
@@ -664,10 +685,6 @@ private String paymentConfirmationUrl;
         putIfNotBlank(uploadMeta, "signerFolder", signerFolder);
         if (!uploadMeta.isEmpty()) {
             uploadMeta.put("storedAt", Instant.now().toString());
-            List<Map<String, Object>> uploads = readJsonList(proceso.getSignedContractFiles());
-            upsertContractUpload(uploads, uploadMeta);
-            proceso.setSignedContractFiles(writeJson(uploads));
-
             List<Map<String, Object>> categoryUploads = readJsonList(targetProgress.getSignedContractFiles());
             putIfNotBlank(uploadMeta, "categoryCode", targetProgress.getCategoryCode());
             putIfNotBlank(uploadMeta, "categoryLabel", targetProgress.getCategoryLabel());
@@ -812,9 +829,15 @@ private String paymentConfirmationUrl;
         contractFlowPayload.put("completedCategories", contractFlow.completedCategories());
         contractFlowPayload.put("remainingCategories", contractFlow.remainingCategories());
         contractFlowPayload.put("currentCategoryIndex", contractFlow.currentCategoryIndex());
+        contractFlowPayload.put("currentCategoryPosition", contractFlow.currentCategoryPosition());
         putIfNotBlank(contractFlowPayload, "currentCategoryCode", contractFlow.currentCategoryCode());
         putIfNotBlank(contractFlowPayload, "currentCategoryLabel", contractFlow.currentCategoryLabel());
         contractFlowPayload.put("currentContractIndex", contractFlow.currentContractIndex());
+        contractFlowPayload.put("currentContractPosition", contractFlow.currentContractPosition());
+        contractFlowPayload.put("expectedContractNumber", contractFlow.expectedContractNumber());
+        contractFlowPayload.put("expectedContractFile", contractFlow.expectedContractFile());
+        contractFlowPayload.put("nextCategoryCode", trim(contractFlow.nextCategoryCode()).isBlank() ? null : contractFlow.nextCategoryCode());
+        contractFlowPayload.put("nextCategoryLabel", trim(contractFlow.nextCategoryLabel()).isBlank() ? null : contractFlow.nextCategoryLabel());
         contractFlowPayload.put("categories", contractFlow.categories());
         payload.put("contractFlow", contractFlowPayload);
         payload.put("selectedCategories", contractFlow.categories().stream()
@@ -839,6 +862,20 @@ private String paymentConfirmationUrl;
                 .orElseThrow(() -> new NoSuchElementException("No hay proceso de matricula para " + mail));
         List<ChatbotContractCategoryProgress> items = ensureContractCategoryProgress(proceso);
         return resolveWritableCategoryProgress(proceso, items, requestedCategoryCode).getCategoryLabel();
+    }
+
+    @Transactional
+    public String validateAndResolveUploadCategoryLabel(String email,
+                                                        String requestedCategoryCode,
+                                                        String pdfFile,
+                                                        String contractName) {
+        String mail = normalizeEmail(email);
+        ChatbotMatriculaProceso proceso = procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail)
+                .orElseThrow(() -> new NoSuchElementException("No hay proceso de matricula para " + mail));
+        List<ChatbotContractCategoryProgress> items = ensureContractCategoryProgress(proceso);
+        ChatbotContractCategoryProgress target = resolveValidatedUploadCategoryProgress(items, requestedCategoryCode);
+        validateExpectedContractUpload(target, pdfFile, contractName, "");
+        return target.getCategoryLabel();
     }
 
     @Transactional(readOnly = true)
@@ -918,25 +955,6 @@ private String paymentConfirmationUrl;
                 contractCategoryProgressRepository.findByProcesoIdOrderByOrderIndexAscIdAsc(proceso.getId())
         );
 
-        // Contratos: el frontend firma 4 PDFs (Contrato1/2/3/4) una sola vez por proceso,
-        // incluso si el estudiante compro multiples categorias (A2/B1/C1).
-        //
-        // Si detectamos que ya existen 4 PDFs firmados a nivel "master" (proceso.signed_contract_files),
-        // propagamos ese mismo set a todas las categorias para que el flujo pueda finalizar.
-        int masterUploadedContracts = countUploadedContracts(proceso.getSignedContractFiles());
-        if (masterUploadedContracts >= 4) {
-            String masterUploadsJson = writeJson(readJsonList(proceso.getSignedContractFiles()));
-            for (ChatbotContractCategoryProgress item : ordered) {
-                if (countUploadedContracts(item.getSignedContractFiles()) >= 4) {
-                    continue;
-                }
-                item.setSignedContractFiles(masterUploadsJson);
-                refreshContractCategoryProgressStatus(item);
-                contractCategoryProgressRepository.save(item);
-                changed = true;
-            }
-        }
-
         syncMasterContractStatus(proceso, ordered);
         if (changed) {
             procesoRepository.save(proceso);
@@ -992,6 +1010,9 @@ private String paymentConfirmationUrl;
             categoryPayload.put("uploadedContracts", uploadedContracts);
             categoryPayload.put("totalContracts", 4);
             categoryPayload.put("currentContractIndex", Math.min(uploadedContracts, 3));
+            categoryPayload.put("currentContractPosition", uploadedContracts >= 4 ? null : uploadedContracts + 1);
+            categoryPayload.put("expectedContractNumber", uploadedContracts >= 4 ? null : uploadedContracts + 1);
+            categoryPayload.put("expectedContractFile", uploadedContracts >= 4 ? null : expectedContractFile(uploadedContracts + 1));
             categoryPayload.put("completed", completedCategory);
             if (item.getCompletedAt() != null) {
                 categoryPayload.put("completedAt", item.getCompletedAt().toString());
@@ -1001,19 +1022,37 @@ private String paymentConfirmationUrl;
 
         boolean allCompleted = total > 0 && completed == total;
         int currentCategoryIndex = current == null ? Math.max(0, total - 1) : safeOrder(current);
+        int currentCategoryPosition = total <= 0 ? 0 : currentCategoryIndex + 1;
         String currentCode = current == null ? "" : trim(current.getCategoryCode());
         String currentLabel = current == null ? "" : trim(current.getCategoryLabel());
         int currentContractIndex = current == null ? 0 : Math.min(countUploadedContracts(current.getSignedContractFiles()), 3);
+        int currentUploadedContracts = current == null ? 0 : countUploadedContracts(current.getSignedContractFiles());
+        Integer currentContractPosition = currentUploadedContracts >= 4 ? null : currentUploadedContracts + 1;
+        Integer expectedContractNumber = currentUploadedContracts >= 4 ? null : currentUploadedContracts + 1;
+        String expectedContractFile = expectedContractNumber == null ? null : expectedContractFile(expectedContractNumber);
+        String nextCategoryCode = "";
+        String nextCategoryLabel = "";
+        if (current != null && currentCategoryIndex >= 0 && currentCategoryIndex + 1 < ordered.size()) {
+            ChatbotContractCategoryProgress next = ordered.get(currentCategoryIndex + 1);
+            nextCategoryCode = trim(next.getCategoryCode());
+            nextCategoryLabel = trim(next.getCategoryLabel());
+        }
 
         return new ContractCategoryFlowSnapshot(
                 allCompleted,
                 currentCode,
                 currentLabel,
                 currentCategoryIndex,
+                currentCategoryPosition,
                 total,
                 completed,
                 Math.max(0, total - completed),
                 currentContractIndex,
+                currentContractPosition,
+                expectedContractNumber,
+                expectedContractFile,
+                nextCategoryCode,
+                nextCategoryLabel,
                 categories
         );
     }
@@ -1086,6 +1125,83 @@ private String paymentConfirmationUrl;
             if (!identity.isBlank()) seen.add(identity);
         }
         return Math.min(seen.size(), 4);
+    }
+
+    private ChatbotContractCategoryProgress resolveValidatedUploadCategoryProgress(List<ChatbotContractCategoryProgress> items,
+                                                                                  String requestedCategoryCode) {
+        ChatbotContractCategoryProgress current = findCurrentCategoryProgress(items)
+                .orElseThrow(() -> new ContractUploadValidationException(
+                        HttpStatus.CONFLICT,
+                        "No hay categorias pendientes para este proceso."
+                ));
+        String requested = normalizeSingleCategoryCode(requestedCategoryCode);
+        if (requested.isBlank()) {
+            throw new ContractUploadValidationException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "categoryCode es obligatorio y debe ser una categoria valida."
+            );
+        }
+        String active = trim(current.getCategoryCode()).toUpperCase(Locale.ROOT);
+        if (!requested.equalsIgnoreCase(active)) {
+            throw new ContractUploadValidationException(
+                    HttpStatus.CONFLICT,
+                    "La categoria activa es " + active + ". Debe cargar los contratos en ese orden."
+            );
+        }
+        return current;
+    }
+
+    private void validateExpectedContractUpload(ChatbotContractCategoryProgress targetProgress,
+                                                String pdfFile,
+                                                String contractName,
+                                                String fileName) {
+        int uploadedContracts = countUploadedContracts(targetProgress.getSignedContractFiles());
+        if (uploadedContracts >= 4) {
+            throw new ContractUploadValidationException(
+                    HttpStatus.CONFLICT,
+                    "La categoria " + trim(targetProgress.getCategoryCode()) + " ya tiene sus 4 contratos firmados."
+            );
+        }
+        int expectedContractNumber = uploadedContracts + 1;
+        Integer providedContractNumber = resolveContractNumber(pdfFile, contractName, fileName);
+        if (providedContractNumber == null) {
+            throw new ContractUploadValidationException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "No se pudo identificar el contrato recibido. Envie pdfFile con el formato Contrato1.pdf a Contrato4.pdf."
+            );
+        }
+        if (providedContractNumber.intValue() != expectedContractNumber) {
+            throw new ContractUploadValidationException(
+                    HttpStatus.CONFLICT,
+                    "Debe cargar " + expectedContractFile(expectedContractNumber) + " para la categoria "
+                            + trim(targetProgress.getCategoryCode()) + "."
+            );
+        }
+    }
+
+    private Integer resolveContractNumber(String pdfFile, String contractName, String fileName) {
+        Integer fromPdfFile = extractContractNumber(pdfFile);
+        if (fromPdfFile != null) return fromPdfFile;
+        Integer fromContractName = extractContractNumber(contractName);
+        if (fromContractName != null) return fromContractName;
+        return extractContractNumber(fileName);
+    }
+
+    private Integer extractContractNumber(String raw) {
+        String value = trim(raw).toUpperCase(Locale.ROOT);
+        if (value.isBlank()) {
+            return null;
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("CONTRATO\\s*([1-4])").matcher(value);
+        if (matcher.find()) {
+            return Integer.parseInt(matcher.group(1));
+        }
+        return null;
+    }
+
+    private String expectedContractFile(int contractNumber) {
+        int safeNumber = Math.max(1, Math.min(contractNumber, 4));
+        return "Contrato" + safeNumber + ".pdf";
     }
 
     private int safeOrder(ChatbotContractCategoryProgress item) {

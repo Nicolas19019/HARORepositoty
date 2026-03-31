@@ -545,6 +545,36 @@ public class VerificationService {
     final String email = normalizeEmail(rawEmail);
     final boolean verified;
 
+    Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+    if (procesoOpt.isPresent()) {
+        ChatbotMatriculaProceso procesoBeforeVerification = procesoOpt.get();
+        try {
+            ChatbotProcesoService.ContractCategoryFlowSnapshot contractFlow = chatbotProcesoService.getContractCategoryFlowByEmail(email);
+            if (!contractFlow.allCompleted()) {
+                return new ContractCompletionResult(
+                        false,
+                        "Aun faltan contratos por firmar antes de finalizar el proceso.",
+                        email,
+                        trim(procesoBeforeVerification.getNumeroDocumento()),
+                        null,
+                        safe(procesoBeforeVerification.getFlowStatus()),
+                        safe(procesoBeforeVerification.getPaymentStatus())
+                );
+            }
+        } catch (Exception ex) {
+            log.warn("No se pudo validar flujo por categorias antes de consumir el codigo email={}: {}", email, ex.getMessage());
+            return new ContractCompletionResult(
+                    false,
+                    "No se pudo validar el estado de contratos por categoria. Intenta nuevamente.",
+                    email,
+                    trim(procesoBeforeVerification.getNumeroDocumento()),
+                    null,
+                    safe(procesoBeforeVerification.getFlowStatus()),
+                    safe(procesoBeforeVerification.getPaymentStatus())
+            );
+        }
+    }
+
     // Marker to confirm the deployed revision is running the non-transactional flow.
     // If you still see UnexpectedRollbackException on commit, this marker likely won't appear (old revision).
     log.info("[contract.complete] v2026-03-19 nonTx txActive={}", TransactionSynchronizationManager.isActualTransactionActive());
@@ -584,7 +614,7 @@ public class VerificationService {
         log.info("[contract.complete] codigo ya consumido pero contrato ya esta SIGNED. email={}", email);
     }
 
-    Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+    procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
     if (procesoOpt.isEmpty()) {
         return new ContractCompletionResult(
                 true,
@@ -598,22 +628,6 @@ public class VerificationService {
     }
 
     ChatbotMatriculaProceso proceso = procesoOpt.get();
-    try {
-        ChatbotProcesoService.ContractCategoryFlowSnapshot contractFlow = chatbotProcesoService.getContractCategoryFlowByEmail(email);
-        if (!contractFlow.allCompleted()) {
-                    return new ContractCompletionResult(
-                            false,
-                            "Aun faltan contratos por firmar antes de finalizar el proceso.",
-                            email,
-                            trim(proceso.getNumeroDocumento()),
-                            null,
-                            safe(proceso.getFlowStatus()),
-                    safe(proceso.getPaymentStatus())
-            );
-        }
-    } catch (Exception ex) {
-        log.warn("No se pudo validar flujo por categorias antes de completar email={}: {}", email, ex.getMessage());
-    }
     try {
         chatbotProcesoService.markContractSignedByEmail(email);
     } catch (Exception ex) {
@@ -665,6 +679,36 @@ public class VerificationService {
         final String email = normalizeEmail(rawEmail);
         log.warn("[contract.complete.recover] email={}", email);
 
+        Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+        if (procesoOpt.isPresent()) {
+            ChatbotMatriculaProceso procesoBeforeVerification = procesoOpt.get();
+            try {
+                ChatbotProcesoService.ContractCategoryFlowSnapshot contractFlow = chatbotProcesoService.getContractCategoryFlowByEmail(email);
+                if (!contractFlow.allCompleted()) {
+                    return new ContractCompletionResult(
+                            false,
+                            "Aun faltan contratos por firmar antes de finalizar el proceso.",
+                            email,
+                            trim(procesoBeforeVerification.getNumeroDocumento()),
+                            null,
+                            safe(procesoBeforeVerification.getFlowStatus()),
+                            safe(procesoBeforeVerification.getPaymentStatus())
+                    );
+                }
+            } catch (Exception ex) {
+                log.warn("[contract.complete.recover] No se pudo validar flujo por categorias antes de consumir el codigo email={}: {}", email, ex.getMessage());
+                return new ContractCompletionResult(
+                        false,
+                        "No se pudo validar el estado de contratos por categoria. Intenta nuevamente.",
+                        email,
+                        trim(procesoBeforeVerification.getNumeroDocumento()),
+                        null,
+                        safe(procesoBeforeVerification.getFlowStatus()),
+                        safe(procesoBeforeVerification.getPaymentStatus())
+                );
+            }
+        }
+
         boolean verified = false;
         try {
             verified = selfProvider.getObject().verifyContractCode(email, rawCode);
@@ -672,7 +716,7 @@ public class VerificationService {
             log.error("[contract.complete.recover] Error verificando codigo email={}: {}", email, ex.getMessage(), ex);
         }
 
-        Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+        procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
         if (procesoOpt.isEmpty()) {
             return new ContractCompletionResult(
                     verified,
@@ -705,22 +749,6 @@ public class VerificationService {
         Long studentId = null;
         String message = "Contrato validado correctamente";
         boolean okResult = true;
-        try {
-            ChatbotProcesoService.ContractCategoryFlowSnapshot contractFlow = chatbotProcesoService.getContractCategoryFlowByEmail(email);
-            if (!contractFlow.allCompleted()) {
-                return new ContractCompletionResult(
-                        false,
-                        "Aun faltan contratos por firmar antes de finalizar el proceso.",
-                        email,
-                        documento,
-                        null,
-                        safe(proceso.getFlowStatus()),
-                        safe(proceso.getPaymentStatus())
-                );
-            }
-        } catch (Exception ex) {
-            log.warn("[contract.complete.recover] No se pudo validar flujo por categorias email={}: {}", email, ex.getMessage());
-        }
         try {
             chatbotProcesoService.markContractSignedByEmail(email);
         } catch (Exception ex) {
@@ -772,6 +800,36 @@ public class VerificationService {
         final String email = normalizeEmail(rawEmail);
         log.info("[contract.complete.v2] email={} outerTxActive={}", email, TransactionSynchronizationManager.isActualTransactionActive());
 
+        Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+        if (procesoOpt.isPresent()) {
+            ChatbotMatriculaProceso procesoBeforeVerification = procesoOpt.get();
+            try {
+                ChatbotProcesoService.ContractCategoryFlowSnapshot contractFlow = chatbotProcesoService.getContractCategoryFlowByEmail(email);
+                if (!contractFlow.allCompleted()) {
+                    return new ContractCompletionResult(
+                            false,
+                            "Aun faltan contratos por firmar antes de finalizar el proceso.",
+                            email,
+                            trim(procesoBeforeVerification.getNumeroDocumento()),
+                            null,
+                            safe(procesoBeforeVerification.getFlowStatus()),
+                            safe(procesoBeforeVerification.getPaymentStatus())
+                    );
+                }
+            } catch (Exception ex) {
+                log.warn("[contract.complete.v2] No se pudo validar flujo por categorias antes de consumir el codigo email={}: {}", email, ex.getMessage());
+                return new ContractCompletionResult(
+                        false,
+                        "No se pudo validar el estado de contratos por categoria. Intenta nuevamente.",
+                        email,
+                        trim(procesoBeforeVerification.getNumeroDocumento()),
+                        null,
+                        safe(procesoBeforeVerification.getFlowStatus()),
+                        safe(procesoBeforeVerification.getPaymentStatus())
+                );
+            }
+        }
+
         Boolean verified = newTx(TransactionDefinition.PROPAGATION_REQUIRES_NEW).execute(status -> {
             try {
                 return selfProvider.getObject().verifyContractCode(email, rawCode);
@@ -792,28 +850,12 @@ public class VerificationService {
             log.info("[contract.complete.v2] codigo ya consumido pero contrato ya esta SIGNED. email={}", email);
         }
 
-        Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+        procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
         if (procesoOpt.isEmpty()) {
             return new ContractCompletionResult(true, "Contrato validado correctamente", email, "", null, "CONTRACT_SIGNED", "");
         }
 
         ChatbotMatriculaProceso proceso = procesoOpt.get();
-        try {
-            ChatbotProcesoService.ContractCategoryFlowSnapshot contractFlow = chatbotProcesoService.getContractCategoryFlowByEmail(email);
-            if (!contractFlow.allCompleted()) {
-                return new ContractCompletionResult(
-                        false,
-                        "Aun faltan contratos por firmar antes de finalizar el proceso.",
-                        email,
-                        trim(proceso.getNumeroDocumento()),
-                        null,
-                        safe(proceso.getFlowStatus()),
-                        safe(proceso.getPaymentStatus())
-                );
-            }
-        } catch (Exception ex) {
-            log.warn("[contract.complete.v2] No se pudo validar flujo por categorias email={}: {}", email, ex.getMessage());
-        }
         newTx(TransactionDefinition.PROPAGATION_REQUIRES_NEW).execute(status -> {
             try {
                 chatbotProcesoService.markContractSignedByEmail(email);
@@ -917,8 +959,16 @@ public class VerificationService {
         String categoryLabel = trim(rawCategoryCode);
         String sede = "";
         try {
-            categoryLabel = chatbotProcesoService.resolveCurrentContractCategoryLabel(email, trim(rawCategoryCode));
+            categoryLabel = chatbotProcesoService.validateAndResolveUploadCategoryLabel(
+                    email,
+                    trim(rawCategoryCode),
+                    trim(rawPdfFile),
+                    contractName
+            );
         } catch (Exception ex) {
+            if (ex instanceof ChatbotProcesoService.ContractUploadValidationException validationEx) {
+                throw validationEx;
+            }
             log.warn("No se pudo resolver categoria actual para almacenamiento email={} categoryCode={}: {}",
                     email, trim(rawCategoryCode), ex.getMessage());
         }
@@ -944,6 +994,8 @@ public class VerificationService {
                     stored.objectKey(),
                     stored.signerFolder()
             );
+        } catch (ChatbotProcesoService.ContractUploadValidationException ex) {
+            throw ex;
         } catch (Exception ex) {
             // El archivo ya fue almacenado; no queremos fallar toda la respuesta por un error de persistencia.
             log.error("Contrato subido a almacenamiento pero no se pudo persistir metadata/form. email={} doc={} fileName={}: {}",

@@ -173,11 +173,20 @@ public ResponseEntity<?> completeContract(@RequestBody VerifyReq req) {
                                                 @RequestParam(name = "pdfFile", required = false) String pdfFile,
                                                 @RequestParam(name = "formData", required = false) String formData,
                                                 @RequestPart("file") MultipartFile file) {
-    VerificationService.ContractUploadResult out =
-            svc.uploadSignedContractDocument(email, code, categoryCode, signerName, contractName, pdfFile, formData, file);
-    return out.ok()
-            ? ResponseEntity.ok(out)
-            : ResponseEntity.badRequest().body(out);
+    try {
+      VerificationService.ContractUploadResult out =
+              svc.uploadSignedContractDocument(email, code, categoryCode, signerName, contractName, pdfFile, formData, file);
+      return out.ok()
+              ? ResponseEntity.ok(out)
+              : ResponseEntity.badRequest().body(out);
+    } catch (com.Aplication.HARO.Service.ChatbotProcesoService.ContractUploadValidationException ex) {
+      Map<String, Object> body = new LinkedHashMap<>();
+      body.put("ok", false);
+      body.put("message", ex.getMessage());
+      body.put("email", email);
+      body.put("categoryCode", categoryCode);
+      return ResponseEntity.status(ex.getStatus()).body(body);
+    }
   }
 
   @GetMapping("/contract/verify")

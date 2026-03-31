@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -26,6 +27,74 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class ChatbotProcesoServiceContractFlowTest {
+
+    @Test
+    void buildContractAccessPayloadByEmail_shouldKeepSingleCategoryFlowStable() {
+        ChatbotMatriculaProcesoRepository procesoRepository = mock(ChatbotMatriculaProcesoRepository.class);
+        ChatbotContractCategoryProgressRepository contractCategoryProgressRepository = mock(ChatbotContractCategoryProgressRepository.class);
+        EstudianteRepository estudianteRepository = mock(EstudianteRepository.class);
+        EstudianteService estudianteService = mock(EstudianteService.class);
+        EstadoCuentaRepository estadoCuentaRepository = mock(EstadoCuentaRepository.class);
+        PagoRepository pagoRepository = mock(PagoRepository.class);
+        ClaseRepository claseRepository = mock(ClaseRepository.class);
+        ProfesorRepository profesorRepository = mock(ProfesorRepository.class);
+        VehiculoRepository vehiculoRepository = mock(VehiculoRepository.class);
+        GoogleCalendarService googleCalendarService = mock(GoogleCalendarService.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+
+        ChatbotProcesoService service = new ChatbotProcesoService(
+                procesoRepository,
+                contractCategoryProgressRepository,
+                estudianteRepository,
+                estudianteService,
+                estadoCuentaRepository,
+                pagoRepository,
+                claseRepository,
+                profesorRepository,
+                vehiculoRepository,
+                googleCalendarService,
+                passwordEncoder
+        );
+
+        ChatbotMatriculaProceso proceso = new ChatbotMatriculaProceso();
+        proceso.setId(10L);
+        proceso.setEmail("single@example.com");
+        proceso.setNombreCompleto("Estudiante Uno");
+        proceso.setNumeroDocumento("123456789");
+        proceso.setCategoria("A2");
+
+        List<ChatbotContractCategoryProgress> stored = new ArrayList<>();
+
+        when(procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc("single@example.com"))
+                .thenReturn(Optional.of(proceso));
+        when(contractCategoryProgressRepository.findByProcesoIdOrderByOrderIndexAscIdAsc(10L))
+                .thenAnswer(invocation -> new ArrayList<>(stored));
+        when(contractCategoryProgressRepository.save(any(ChatbotContractCategoryProgress.class)))
+                .thenAnswer(invocation -> {
+                    ChatbotContractCategoryProgress item = invocation.getArgument(0);
+                    if (item.getId() == null) {
+                        item.setId((long) (stored.size() + 1));
+                    }
+                    stored.removeIf(existing -> existing.getCategoryCode().equalsIgnoreCase(item.getCategoryCode()));
+                    stored.add(item);
+                    return item;
+                });
+        when(procesoRepository.save(any(ChatbotMatriculaProceso.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        Map<String, Object> payload = service.buildContractAccessPayloadByEmail("single@example.com");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> contractFlow = (Map<String, Object>) payload.get("contractFlow");
+        assertEquals(1, contractFlow.get("totalCategories"));
+        assertEquals(1, contractFlow.get("currentCategoryPosition"));
+        assertEquals("A2", contractFlow.get("currentCategoryCode"));
+        assertEquals(0, contractFlow.get("currentContractIndex"));
+        assertEquals(1, contractFlow.get("currentContractPosition"));
+        assertEquals("Contrato1.pdf", contractFlow.get("expectedContractFile"));
+        assertEquals(null, contractFlow.get("nextCategoryCode"));
+        assertEquals(null, contractFlow.get("nextCategoryLabel"));
+    }
 
     @Test
     void buildContractAccessPayloadByEmail_shouldExposeDynamicCategoryFlowForCombo() {
@@ -95,9 +164,15 @@ class ChatbotProcesoServiceContractFlowTest {
 
         assertEquals(3, contractFlow.get("totalCategories"));
         assertEquals(0, contractFlow.get("currentCategoryIndex"));
+        assertEquals(1, contractFlow.get("currentCategoryPosition"));
         assertEquals("A2", contractFlow.get("currentCategoryCode"));
         assertEquals("A2", contractFlow.get("currentCategoryLabel"));
         assertEquals(0, contractFlow.get("currentContractIndex"));
+        assertEquals(1, contractFlow.get("currentContractPosition"));
+        assertEquals(1, contractFlow.get("expectedContractNumber"));
+        assertEquals("Contrato1.pdf", contractFlow.get("expectedContractFile"));
+        assertEquals("B1", contractFlow.get("nextCategoryCode"));
+        assertEquals("B1", contractFlow.get("nextCategoryLabel"));
 
         Object categoriesRaw = contractFlow.get("categories");
         assertInstanceOf(List.class, categoriesRaw);
@@ -109,5 +184,79 @@ class ChatbotProcesoServiceContractFlowTest {
         assertEquals("B1", categories.get(1).get("categoryCode"));
         assertEquals("C1", categories.get(2).get("categoryCode"));
         assertTrue(stored.size() == 3);
+    }
+
+    @Test
+    void getContractCategoryFlowByEmail_shouldKeepNextCategoryPendingAfterCompletingFirstOne() {
+        ChatbotMatriculaProcesoRepository procesoRepository = mock(ChatbotMatriculaProcesoRepository.class);
+        ChatbotContractCategoryProgressRepository contractCategoryProgressRepository = mock(ChatbotContractCategoryProgressRepository.class);
+        EstudianteRepository estudianteRepository = mock(EstudianteRepository.class);
+        EstudianteService estudianteService = mock(EstudianteService.class);
+        EstadoCuentaRepository estadoCuentaRepository = mock(EstadoCuentaRepository.class);
+        PagoRepository pagoRepository = mock(PagoRepository.class);
+        ClaseRepository claseRepository = mock(ClaseRepository.class);
+        ProfesorRepository profesorRepository = mock(ProfesorRepository.class);
+        VehiculoRepository vehiculoRepository = mock(VehiculoRepository.class);
+        GoogleCalendarService googleCalendarService = mock(GoogleCalendarService.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+
+        ChatbotProcesoService service = new ChatbotProcesoService(
+                procesoRepository,
+                contractCategoryProgressRepository,
+                estudianteRepository,
+                estudianteService,
+                estadoCuentaRepository,
+                pagoRepository,
+                claseRepository,
+                profesorRepository,
+                vehiculoRepository,
+                googleCalendarService,
+                passwordEncoder
+        );
+
+        ChatbotMatriculaProceso proceso = new ChatbotMatriculaProceso();
+        proceso.setId(77L);
+        proceso.setEmail("combo@example.com");
+        proceso.setNumeroDocumento("123456789");
+        proceso.setCategoria("A2 y B1");
+
+        ChatbotContractCategoryProgress a2 = new ChatbotContractCategoryProgress();
+        a2.setId(1L);
+        a2.setProceso(proceso);
+        a2.setCategoryCode("A2");
+        a2.setCategoryLabel("A2");
+        a2.setOrderIndex(0);
+        a2.setSignedContractFiles("""
+                [{"pdfFile":"Contrato1.pdf"},{"pdfFile":"Contrato2.pdf"},{"pdfFile":"Contrato3.pdf"},{"pdfFile":"Contrato4.pdf"}]
+                """);
+
+        ChatbotContractCategoryProgress b1 = new ChatbotContractCategoryProgress();
+        b1.setId(2L);
+        b1.setProceso(proceso);
+        b1.setCategoryCode("B1");
+        b1.setCategoryLabel("B1");
+        b1.setOrderIndex(1);
+        b1.setSignedContractFiles("[]");
+
+        List<ChatbotContractCategoryProgress> stored = new ArrayList<>(List.of(a2, b1));
+
+        when(procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc("combo@example.com"))
+                .thenReturn(Optional.of(proceso));
+        when(contractCategoryProgressRepository.findByProcesoIdOrderByOrderIndexAscIdAsc(77L))
+                .thenAnswer(invocation -> new ArrayList<>(stored));
+        when(contractCategoryProgressRepository.save(any(ChatbotContractCategoryProgress.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ChatbotProcesoService.ContractCategoryFlowSnapshot flow = service.getContractCategoryFlowByEmail("combo@example.com");
+
+        assertFalse(flow.allCompleted());
+        assertEquals(2, flow.totalCategories());
+        assertEquals(1, flow.completedCategories());
+        assertEquals("B1", flow.currentCategoryCode());
+        assertEquals(1, flow.currentCategoryIndex());
+        assertEquals(2, flow.currentCategoryPosition());
+        assertEquals("Contrato1.pdf", flow.expectedContractFile());
+        assertTrue(flow.nextCategoryCode().isBlank());
+        assertTrue(flow.nextCategoryLabel().isBlank());
     }
 }

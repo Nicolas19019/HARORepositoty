@@ -91,6 +91,7 @@ class VerificationServiceContractCompleteValidationTest {
                         "Contrato1.pdf",
                         "",
                         "",
+                        List.of("A2", "B1"),
                         List.of(
                                 Map.of("categoryCode", "A2", "completed", true),
                                 Map.of("categoryCode", "B1", "completed", false)

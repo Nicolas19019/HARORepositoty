@@ -841,7 +841,7 @@ public class VerificationService {
 
         if (verified == null || !verified) {
             // Idempotency: if already signed, proceed even if OTP was consumed.
-            Optional<ChatbotMatriculaProceso> procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
+            procesoOpt = chatbotProcesoService.findLatestProcesoByEmail(email);
             boolean alreadySigned = procesoOpt.isPresent()
                     && "SIGNED".equalsIgnoreCase(trim(procesoOpt.get().getContractStatus()));
             if (!alreadySigned) {

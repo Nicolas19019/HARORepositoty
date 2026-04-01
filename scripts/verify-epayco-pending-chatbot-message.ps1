@@ -22,6 +22,10 @@ $checks = @(
         Pattern = 'private String buildPaymentStatusNotificationMessage\(ChatbotMatriculaProceso proceso,'
     },
     @{
+        Name = 'response sync tambien fuerza pagos no aprobados'
+        Pattern = 'syncNonApprovedPaymentToFlow\('
+    },
+    @{
         Name = 'Mensaje pendiente usa estado PENDIENTE'
         Pattern = 'Tu pago aparece como \*PENDIENTE\*'
     },

@@ -499,6 +499,40 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 }
             });
         }
+    } else {
+        PaymentUserStatus nonApprovedStatus = resolvePaymentUserStatus(
+                status,
+                firstNotBlank(
+                        safeTrim(asString(summary.get("codResponse"))),
+                        safeTrim(asString(summary.get("x_cod_response"))),
+                        payloadCodResponse
+                ),
+                firstNotBlank(
+                        payloadReason,
+                        safeTrim(asString(summary.get("reason"))),
+                        safeTrim(asString(summary.get("message")))
+                )
+        );
+        if (nonApprovedStatus == PaymentUserStatus.PENDING
+                || nonApprovedStatus == PaymentUserStatus.REJECTED
+                || nonApprovedStatus == PaymentUserStatus.CANCELLED) {
+            SyncDecision syncDecision = syncNonApprovedPaymentToFlow(
+                    summary,
+                    nonApprovedStatus,
+                    payloadReason,
+                    documentHint,
+                    emailHint,
+                    refPayco,
+                    gatewayRefPayco
+            );
+            chatbotSynced = syncDecision.synced();
+            if (StringUtils.hasText(syncDecision.reason())) {
+                out.put("syncReason", syncDecision.reason());
+            }
+            if (StringUtils.hasText(syncDecision.resolvedBy())) {
+                out.put("syncResolvedBy", syncDecision.resolvedBy());
+            }
+        }
     }
     out.put("status", status);
     if (StringUtils.hasText(refPayco)) {
@@ -549,6 +583,66 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
 
     return ResponseEntity.ok(out);
 }
+
+    private SyncDecision syncNonApprovedPaymentToFlow(Map<String, Object> summary,
+                                                      PaymentUserStatus status,
+                                                      String payloadReason,
+                                                      String documentHint,
+                                                      String emailHint,
+                                                      String refPayco,
+                                                      String gatewayReference) {
+        if (summary == null || status == null || status == PaymentUserStatus.UNKNOWN || status == PaymentUserStatus.APPROVED) {
+            return new SyncDecision(false, "non_approved_sync_not_applicable", "");
+        }
+
+        Long flowId = resolveFlowId(
+                summary.get("flow_id"),
+                summary.get("flowId"),
+                summary.get("x_extra2"),
+                summary.get("extra2")
+        );
+        String documento = firstResolvedDocument(
+                safeTrim(asString(summary.get("document"))),
+                documentHint
+        );
+        String email = firstResolvedEmail(
+                safeTrim(asString(summary.get("email"))),
+                emailHint
+        );
+
+        Optional<ChatbotMatriculaProceso> procesoOpt = resolveProcesoFromHints(flowId, documento, email);
+        if (!StringUtils.hasText(normalizeDocumentoCandidate(documento)) && procesoOpt.isPresent()) {
+            documento = safeTrim(procesoOpt.get().getNumeroDocumento());
+        }
+
+        if (!StringUtils.hasText(normalizeDocumentoCandidate(documento))) {
+            return new SyncDecision(false, "non_approved_sync_without_document", "");
+        }
+
+        String reason = firstNotBlank(
+                payloadReason,
+                safeTrim(asString(summary.get("reason"))),
+                safeTrim(asString(summary.get("message")))
+        );
+        String codResponse = firstNotBlank(
+                safeTrim(asString(summary.get("codResponse"))),
+                safeTrim(asString(summary.get("x_cod_response")))
+        );
+        String estado = firstNotBlank(
+                safeTrim(asString(summary.get("title"))),
+                safeTrim(asString(summary.get("status"))),
+                status.title
+        );
+        String reference = firstNotBlank(
+                refPayco,
+                gatewayReference,
+                safeTrim(asString(summary.get("reference"))),
+                safeTrim(asString(summary.get("gatewayReference")))
+        );
+
+        processNonApprovedPayment(documento, reference, codResponse, estado, reason, status);
+        return new SyncDecision(true, "processed_non_approved_payment", "response_sync");
+    }
 
     private SyncDecision syncApprovedPaymentToFlow(Map<String, Object> summary,
                                                   Map<String, Object> payload,

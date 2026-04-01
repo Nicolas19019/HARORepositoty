@@ -83,13 +83,16 @@ public class ClaseAprendizajeController {
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable String id) {
-        claseService.deleteLogico(resolveClaseId(id));
+        Long claseId = resolveClaseId(id);
+        contenidoService.deleteByClaseFisico(claseId);
+        claseService.deleteFisico(claseId);
         return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/{id}/hard")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteHard(@PathVariable String id) {
+        // Alias de DELETE /{id} (se mantiene por compatibilidad).
         Long claseId = resolveClaseId(id);
         contenidoService.deleteByClaseFisico(claseId);
         claseService.deleteFisico(claseId);

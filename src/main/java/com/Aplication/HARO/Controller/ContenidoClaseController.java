@@ -63,7 +63,7 @@ public class ContenidoClaseController {
     @DeleteMapping("/api/contenidos/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable String id) {
-        service.deleteLogico(resolveContenidoId(id));
+        service.deleteFisico(resolveContenidoId(id));
         return ResponseEntity.noContent().build();
     }
 

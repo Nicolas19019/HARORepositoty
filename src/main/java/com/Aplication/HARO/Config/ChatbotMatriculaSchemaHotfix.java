@@ -203,6 +203,27 @@ public class ChatbotMatriculaSchemaHotfix implements CommandLineRunner {
 
                       IF NOT EXISTS (
                         SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = current_schema()
+                          AND table_name = 'chatbot_matricula_proceso'
+                          AND column_name = 'visible'
+                      ) THEN
+                        ALTER TABLE chatbot_matricula_proceso
+                          ADD COLUMN visible BOOLEAN DEFAULT TRUE;
+                      END IF;
+
+                      UPDATE chatbot_matricula_proceso
+                      SET visible = TRUE
+                      WHERE visible IS NULL;
+
+                      ALTER TABLE chatbot_matricula_proceso
+                        ALTER COLUMN visible SET DEFAULT TRUE;
+
+                      ALTER TABLE chatbot_matricula_proceso
+                        ALTER COLUMN visible SET NOT NULL;
+
+                      IF NOT EXISTS (
+                        SELECT 1
                         FROM information_schema.tables
                         WHERE table_schema = current_schema()
                           AND table_name = 'chatbot_contract_category_progress'

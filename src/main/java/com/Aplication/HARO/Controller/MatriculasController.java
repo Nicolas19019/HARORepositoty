@@ -1,7 +1,6 @@
-package com.Aplication.HARO.Controller;
+﻿package com.Aplication.HARO.Controller;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
-import com.Aplication.HARO.Repository.ChatbotContractCategoryProgressRepository;
 import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
 import com.Aplication.HARO.Service.ServicioLimpiezaSolicitudesEfectivo;
 import com.Aplication.HARO.Service.ChatbotProcesoService;
@@ -21,12 +20,12 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Locale;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
@@ -52,7 +51,6 @@ public class MatriculasController {
     private static final Logger log = LoggerFactory.getLogger(MatriculasController.class);
 
     private final ChatbotMatriculaProcesoRepository procesoRepository;
-    private final ChatbotContractCategoryProgressRepository contractCategoryProgressRepository;
     private final ChatbotProcesoService procesoService;
     private final PaymentApprovalService paymentApprovalService;
     private final ProspectoService prospectoService;
@@ -60,14 +58,12 @@ public class MatriculasController {
     private final JdbcTemplate jdbcTemplate;
 
     public MatriculasController(ChatbotMatriculaProcesoRepository procesoRepository,
-                                ChatbotContractCategoryProgressRepository contractCategoryProgressRepository,
                                 ChatbotProcesoService procesoService,
                                 PaymentApprovalService paymentApprovalService,
                                 ProspectoService prospectoService,
                                 ServicioLimpiezaSolicitudesEfectivo cashCleanupService,
                                 JdbcTemplate jdbcTemplate) {
         this.procesoRepository = procesoRepository;
-        this.contractCategoryProgressRepository = contractCategoryProgressRepository;
         this.procesoService = procesoService;
         this.paymentApprovalService = paymentApprovalService;
         this.prospectoService = prospectoService;
@@ -107,6 +103,9 @@ public class MatriculasController {
     ) {
     }
 
+    public record VisibilityReq(Boolean visible) {
+    }
+
     public record MatriculaRow(
             Long id,
             String nombreEstudiante,
@@ -121,14 +120,16 @@ public class MatriculasController {
             String estadoContrato,
             Instant createdAt,
             Instant updatedAt,
-            boolean prospectoChatbotActivo
+            boolean prospectoChatbotActivo,
+            boolean visible
     ) {
     }
 
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping
     public List<MatriculaRow> list(@RequestParam(value = "limit", defaultValue = "500") int limit,
-                                   @RequestParam(value = "all", defaultValue = "false") boolean all) {
+                                   @RequestParam(value = "all", defaultValue = "false") boolean all,
+                                   @RequestParam(value = "includeHidden", defaultValue = "false") boolean includeHidden) {
         int size = Math.max(1, Math.min(limit, 2000));
         try {
             cashCleanupService.cleanupExpiredCashRequests();
@@ -139,21 +140,22 @@ public class MatriculasController {
             PageRequest page = PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, "updatedAt"));
             List<ChatbotMatriculaProceso> items;
             if (all) {
-                items = procesoRepository.findAll(page).getContent();
+                items = includeHidden
+                        ? procesoRepository.findAll(page).getContent()
+                        : procesoRepository.findByVisibleTrue(page).getContent();
             } else {
-                // HaroGestion: solo solicitudes de pago en efectivo.
-                items = procesoRepository.findByMetodoPagoIgnoreCase("EFECTIVO", page);
+                items = includeHidden
+                        ? procesoRepository.findByMetodoPagoIgnoreCase("EFECTIVO", page)
+                        : procesoRepository.findByMetodoPagoIgnoreCaseAndVisibleTrue("EFECTIVO", page);
             }
             return items.stream().map(this::toRow).toList();
         } catch (Exception ex) {
-            // En prod puede fallar si el esquema del proceso de matrícula está desfasado.
-            // Este fallback evita que HaroGestion se quede sin pantalla: lee lo disponible por JDBC.
             log.warn("Fallo listando solicitudes por JPA, usando fallback JDBC. cause={}", ex.getMessage());
-            return listViaJdbc(size, all);
+            return listViaJdbc(size, all, includeHidden);
         }
     }
 
-    private List<MatriculaRow> listViaJdbc(int limit, boolean all) {
+    private List<MatriculaRow> listViaJdbc(int limit, boolean all, boolean includeHidden) {
         if (jdbcTemplate == null) {
             return List.of();
         }
@@ -172,7 +174,6 @@ public class MatriculasController {
             return List.of();
         }
         if (cols.isEmpty()) {
-            // tabla no existe o no es visible para el usuario DB
             return List.of();
         }
 
@@ -190,19 +191,24 @@ public class MatriculasController {
         String colContractStatus = pickCol(cols, "contract_status", "contractstatus");
         String colCreated = pickCol(cols, "created_at", "createdat");
         String colUpdated = pickCol(cols, "updated_at", "updatedat");
+        String colVisible = pickCol(cols, "visible");
 
         String orderBy = colUpdated != null ? colUpdated : (colCreated != null ? colCreated : (colId != null ? colId : "1"));
-        String where = "";
+        List<String> conditions = new java.util.ArrayList<>();
+        if (!includeHidden && colVisible != null && !colVisible.isBlank()) {
+            conditions.add("coalesce(" + colVisible + ", true) = true");
+        }
         if (!all) {
             if (colMetodo == null || colMetodo.isBlank()) {
-                // Si no se puede filtrar, es más seguro no devolver nada (la pantalla de HaroGestion debe ser "solo efectivo").
                 return List.of();
             }
-            where = "\nwhere coalesce(nullif(btrim(" + colMetodo + "), ''), '') ilike 'EFECTIVO'\n";
+            conditions.add("coalesce(nullif(btrim(" + colMetodo + "), ''), '') ilike 'EFECTIVO'");
         }
+        String where = conditions.isEmpty() ? "" : "\nwhere " + String.join("\n  and ", conditions) + "\n";
 
         String sql = """
                 select
+                  %s,
                   %s,
                   %s,
                   %s,
@@ -233,7 +239,8 @@ public class MatriculasController {
                 expr(cols, colMetodo, "metodo_pago"),
                 expr(cols, colPaymentStatus, "payment_status"),
                 expr(cols, colContractStatus, "contract_status"),
-                expr(cols, colCreated, "created_at") + ",\n  " + expr(cols, colUpdated, "updated_at"),
+                expr(cols, colCreated, "created_at"),
+                expr(cols, colUpdated, "updated_at") + ",\n  " + expr(cols, colVisible, "visible"),
                 where,
                 orderBy
         );
@@ -271,7 +278,7 @@ public class MatriculasController {
 
     private MatriculaRow toRowJdbc(Map<String, Object> row) {
         if (row == null) {
-            return new MatriculaRow(null, "—", "", "", "", "—", "", "", "", "", "", null, null, false);
+            return new MatriculaRow(null, "—", "", "", "", "—", "", "", "", "", "", null, null, false, true);
         }
 
         Long id = toLong(row.get("id"));
@@ -287,6 +294,7 @@ public class MatriculasController {
         String estadoContrato = safeUpperOrRaw(toString(row.get("contract_status")), true);
         Instant createdAt = toInstant(row.get("created_at"));
         Instant updatedAt = toInstant(row.get("updated_at"));
+        boolean visible = toBooleanDefaultTrue(row.get("visible"));
 
         boolean prospectoActivo = false;
         try {
@@ -311,7 +319,8 @@ public class MatriculasController {
                 estadoContrato,
                 createdAt,
                 updatedAt,
-                prospectoActivo
+                prospectoActivo,
+                visible
         );
     }
 
@@ -333,6 +342,14 @@ public class MatriculasController {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private boolean toBooleanDefaultTrue(Object v) {
+        if (v == null) return true;
+        if (v instanceof Boolean b) return b;
+        String raw = String.valueOf(v).trim();
+        if (raw.isBlank()) return true;
+        return Boolean.parseBoolean(raw);
     }
 
     private String toString(Object v) {
@@ -402,23 +419,22 @@ public class MatriculasController {
             proceso = procesoService.setMetodoPago(doc, metodoPago);
         }
 
-        // Campos informativos (no confirman pago).
         if (StringUtils.hasText(req.observacionPago())) {
             proceso.setPaymentObservation(trim(req.observacionPago()));
         }
         if (req.valorPagado() != null && req.valorPagado().signum() >= 0) {
             proceso.setPaymentAmount(req.valorPagado());
         }
+        if (proceso.getVisible() == null) {
+            proceso.setVisible(true);
+        }
 
         String estadoPago = normalizeEstadoPago(req.estadoPago());
 
-        // Si el admin lo registra como EFECTIVO + PENDIENTE, queda en validación manual.
         if ("PENDIENTE".equals(estadoPago) && "EFECTIVO".equalsIgnoreCase(trim(proceso.getMetodoPago()))) {
             proceso = procesoService.markCashPaymentPending(doc);
         }
 
-        // Si lo registra como EFECTIVO + CONFIRMADO, deja el pago aprobado y habilita contratos,
-        // pero NO envía por correo/chatbot automáticamente (eso se hace con las acciones).
         if ("CONFIRMADO".equals(estadoPago) && "EFECTIVO".equalsIgnoreCase(trim(proceso.getMetodoPago()))) {
             PaymentApprovalService.ContractSendResult out = paymentApprovalService.confirmCashPaymentManual(
                     doc,
@@ -528,21 +544,33 @@ public class MatriculasController {
         ChatbotMatriculaProceso proceso = procesoRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Solicitud no encontrada: " + id));
 
-        String bloqueo = validarEliminacion(proceso);
-        if (!bloqueo.isBlank()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
-                    "ok", false,
-                    "message", bloqueo,
-                    "id", id
-            ));
-        }
-
-        contractCategoryProgressRepository.deleteByProcesoId(id);
-        procesoRepository.delete(proceso);
+        proceso.setVisible(false);
+        procesoRepository.save(proceso);
 
         return ResponseEntity.ok(Map.of(
                 "ok", true,
-                "message", "Solicitud eliminada",
+                "message", "Solicitud ocultada",
+                "visible", false,
+                "id", id
+        ));
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PatchMapping("/{id}/visible")
+    @Transactional
+    public ResponseEntity<?> actualizarVisibilidad(@PathVariable Long id,
+                                                   @RequestBody(required = false) VisibilityReq req) {
+        ChatbotMatriculaProceso proceso = procesoRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Solicitud no encontrada: " + id));
+
+        boolean visible = req == null || req.visible() == null || req.visible();
+        proceso.setVisible(visible);
+        procesoRepository.save(proceso);
+
+        return ResponseEntity.ok(Map.of(
+                "ok", true,
+                "message", visible ? "Solicitud visible" : "Solicitud oculta",
+                "visible", visible,
                 "id", id
         ));
     }
@@ -572,7 +600,8 @@ public class MatriculasController {
                 trim(p.getContractStatus()).toUpperCase(Locale.ROOT),
                 p.getCreatedAt(),
                 p.getUpdatedAt(),
-                prospectoActivo
+                prospectoActivo,
+                !Boolean.FALSE.equals(p.getVisible())
         );
     }
 
@@ -586,28 +615,6 @@ public class MatriculasController {
             case "PENDING" -> "PENDIENTE";
             default -> status;
         };
-    }
-
-    private String validarEliminacion(ChatbotMatriculaProceso proceso) {
-        String paymentStatus = trim(proceso.getPaymentStatus()).toUpperCase(Locale.ROOT);
-        if (Set.of("APPROVED", "PAID", "CONFIRMED", "OK").contains(paymentStatus)
-                || proceso.getPaymentConfirmedAt() != null) {
-            return "No se puede eliminar una solicitud con pago confirmado.";
-        }
-
-        if (Boolean.TRUE.equals(proceso.getContractEmailSent())
-                || Boolean.TRUE.equals(proceso.getContractChatbotSent())
-                || StringUtils.hasText(trim(proceso.getContractLink()))) {
-            return "No se puede eliminar una solicitud con contrato ya enviado.";
-        }
-
-        if (proceso.getContractSignedAt() != null
-                || "SIGNED".equalsIgnoreCase(trim(proceso.getContractStatus()))
-                || "COMPLETED".equalsIgnoreCase(trim(proceso.getContractStatus()))) {
-            return "No se puede eliminar una solicitud con contrato ya firmado.";
-        }
-
-        return "";
     }
 
     private String normalizeEstadoPago(String raw) {

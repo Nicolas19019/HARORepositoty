@@ -135,6 +135,9 @@ public class ChatbotMatriculaProceso {
     @Column(name = "contract_chatbot_sent_at")
     private Instant contractChatbotSentAt;
 
+    @Column(name = "visible", columnDefinition = "boolean default true")
+    private Boolean visible = true;
+
     @PrePersist
     void onCreate() {
         if (createdAt == null) createdAt = Instant.now();
@@ -144,11 +147,13 @@ public class ChatbotMatriculaProceso {
         if (flowStatus == null || flowStatus.isBlank()) flowStatus = "DRAFT";
         if (contractEmailSent == null) contractEmailSent = false;
         if (contractChatbotSent == null) contractChatbotSent = false;
+        if (visible == null) visible = true;
     }
 
     @PreUpdate
     void onUpdate() {
         updatedAt = Instant.now();
+        if (visible == null) visible = true;
     }
 
     public Long getId() {
@@ -429,5 +434,13 @@ public class ChatbotMatriculaProceso {
 
     public void setContractChatbotSentAt(Instant contractChatbotSentAt) {
         this.contractChatbotSentAt = contractChatbotSentAt;
+    }
+
+    public Boolean getVisible() {
+        return visible;
+    }
+
+    public void setVisible(Boolean visible) {
+        this.visible = visible;
     }
 }

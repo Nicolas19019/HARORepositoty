@@ -3,6 +3,7 @@ package com.Aplication.HARO.Repository;
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -23,7 +24,11 @@ public interface ChatbotMatriculaProcesoRepository extends JpaRepository<Chatbot
     Optional<ChatbotMatriculaProceso> findTopByPhoneOrderByUpdatedAtDesc(String phone);
     Optional<ChatbotMatriculaProceso> findTopByPaymentLinkContainingOrderByUpdatedAtDesc(String invoiceToken);
 
+    Page<ChatbotMatriculaProceso> findByVisibleTrue(Pageable pageable);
+
     List<ChatbotMatriculaProceso> findByMetodoPagoIgnoreCase(String metodoPago, Pageable pageable);
+
+    List<ChatbotMatriculaProceso> findByMetodoPagoIgnoreCaseAndVisibleTrue(String metodoPago, Pageable pageable);
 
     @Query("""
             select p

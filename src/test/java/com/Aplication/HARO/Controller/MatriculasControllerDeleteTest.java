@@ -1,7 +1,6 @@
-package com.Aplication.HARO.Controller;
+﻿package com.Aplication.HARO.Controller;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
-import com.Aplication.HARO.Repository.ChatbotContractCategoryProgressRepository;
 import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
 import com.Aplication.HARO.Service.ChatbotProcesoService;
 import com.Aplication.HARO.Service.PaymentApprovalService;
@@ -22,9 +21,8 @@ import static org.mockito.Mockito.*;
 class MatriculasControllerDeleteTest {
 
     @Test
-    void eliminarSolicitudDebeResponderOkYEliminarDependencias() {
+    void eliminarSolicitudDebeOcultarlaSinImportarEstadoPago() {
         ChatbotMatriculaProcesoRepository procesoRepository = mock(ChatbotMatriculaProcesoRepository.class);
-        ChatbotContractCategoryProgressRepository progressRepository = mock(ChatbotContractCategoryProgressRepository.class);
         ChatbotProcesoService procesoService = mock(ChatbotProcesoService.class);
         PaymentApprovalService paymentApprovalService = mock(PaymentApprovalService.class);
         ProspectoService prospectoService = mock(ProspectoService.class);
@@ -33,14 +31,14 @@ class MatriculasControllerDeleteTest {
 
         ChatbotMatriculaProceso proceso = new ChatbotMatriculaProceso();
         proceso.setId(42L);
-        proceso.setPaymentStatus("PENDING");
-        proceso.setContractStatus("PENDING_SIGNATURE");
+        proceso.setPaymentStatus("APPROVED");
+        proceso.setVisible(true);
 
         when(procesoRepository.findById(42L)).thenReturn(Optional.of(proceso));
+        when(procesoRepository.save(any(ChatbotMatriculaProceso.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         MatriculasController controller = new MatriculasController(
                 procesoRepository,
-                progressRepository,
                 procesoService,
                 paymentApprovalService,
                 prospectoService,
@@ -51,15 +49,14 @@ class MatriculasControllerDeleteTest {
         ResponseEntity<?> response = controller.eliminarSolicitud(42L);
 
         assertEquals(200, response.getStatusCode().value());
-        assertEquals(Map.of("ok", true, "message", "Solicitud eliminada", "id", 42L), response.getBody());
-        verify(progressRepository).deleteByProcesoId(42L);
-        verify(procesoRepository).delete(proceso);
+        assertEquals(Map.of("ok", true, "message", "Solicitud ocultada", "visible", false, "id", 42L), response.getBody());
+        assertEquals(Boolean.FALSE, proceso.getVisible());
+        verify(procesoRepository).save(proceso);
     }
 
     @Test
-    void eliminarSolicitudDebeFallarSiPagoYaFueConfirmado() {
+    void actualizarVisibilidadDebePermitirMostrarDeNuevo() {
         ChatbotMatriculaProcesoRepository procesoRepository = mock(ChatbotMatriculaProcesoRepository.class);
-        ChatbotContractCategoryProgressRepository progressRepository = mock(ChatbotContractCategoryProgressRepository.class);
         ChatbotProcesoService procesoService = mock(ChatbotProcesoService.class);
         PaymentApprovalService paymentApprovalService = mock(PaymentApprovalService.class);
         ProspectoService prospectoService = mock(ProspectoService.class);
@@ -68,13 +65,13 @@ class MatriculasControllerDeleteTest {
 
         ChatbotMatriculaProceso proceso = new ChatbotMatriculaProceso();
         proceso.setId(7L);
-        proceso.setPaymentStatus("APPROVED");
+        proceso.setVisible(false);
 
         when(procesoRepository.findById(7L)).thenReturn(Optional.of(proceso));
+        when(procesoRepository.save(any(ChatbotMatriculaProceso.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         MatriculasController controller = new MatriculasController(
                 procesoRepository,
-                progressRepository,
                 procesoService,
                 paymentApprovalService,
                 prospectoService,
@@ -82,18 +79,17 @@ class MatriculasControllerDeleteTest {
                 jdbcTemplate
         );
 
-        ResponseEntity<?> response = controller.eliminarSolicitud(7L);
+        ResponseEntity<?> response = controller.actualizarVisibilidad(7L, new MatriculasController.VisibilityReq(true));
 
-        assertEquals(409, response.getStatusCode().value());
-        assertEquals(Map.of("ok", false, "message", "No se puede eliminar una solicitud con pago confirmado.", "id", 7L), response.getBody());
-        verify(progressRepository, never()).deleteByProcesoId(anyLong());
-        verify(procesoRepository, never()).delete(any());
+        assertEquals(200, response.getStatusCode().value());
+        assertEquals(Map.of("ok", true, "message", "Solicitud visible", "visible", true, "id", 7L), response.getBody());
+        assertEquals(Boolean.TRUE, proceso.getVisible());
+        verify(procesoRepository).save(proceso);
     }
 
     @Test
     void eliminarSolicitudDebeResponder404SiNoExiste() {
         ChatbotMatriculaProcesoRepository procesoRepository = mock(ChatbotMatriculaProcesoRepository.class);
-        ChatbotContractCategoryProgressRepository progressRepository = mock(ChatbotContractCategoryProgressRepository.class);
         ChatbotProcesoService procesoService = mock(ChatbotProcesoService.class);
         PaymentApprovalService paymentApprovalService = mock(PaymentApprovalService.class);
         ProspectoService prospectoService = mock(ProspectoService.class);
@@ -104,7 +100,6 @@ class MatriculasControllerDeleteTest {
 
         MatriculasController controller = new MatriculasController(
                 procesoRepository,
-                progressRepository,
                 procesoService,
                 paymentApprovalService,
                 prospectoService,
@@ -113,7 +108,6 @@ class MatriculasControllerDeleteTest {
         );
 
         assertThrows(NoSuchElementException.class, () -> controller.eliminarSolicitud(99L));
-        verify(progressRepository, never()).deleteByProcesoId(anyLong());
-        verify(procesoRepository, never()).delete(any());
+        verify(procesoRepository, never()).save(any());
     }
 }

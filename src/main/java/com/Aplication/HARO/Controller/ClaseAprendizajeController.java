@@ -26,13 +26,6 @@ record ClasePatchEstadoReq(Boolean publicada, Boolean visible) {}
         "/api/clases-contenido",
         "/api/clases-modulo"
 })
-@CrossOrigin(originPatterns = {
-        "http://localhost:*",
-        "http://127.0.0.1:*",
-        "https://ceaharo.com",
-        "https://www.ceaharo.com",
-        "https://*.ceaharo.com"
-})
 public class ClaseAprendizajeController {
 
     private static final Logger log = LoggerFactory.getLogger(ClaseAprendizajeController.class);

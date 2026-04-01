@@ -53,12 +53,16 @@ public class ChatbotInboundController {
     private static final int MAX_SESSIONS = 5000;
     /**
      * Formato esperado (un solo mensaje):
-     *   Nombre(s) + Documento + Categoría
+     *   Nombre(s) + Documento
+     *
+     * Luego el bot mostrará un menú para elegir la categoría.
+     *
+     * Formato legacy (si envías todo en un solo mensaje):
+     *   Nombre(s) + Documento + Categoría (A2, B1, C1, A2 y B1, A2, B1 y C1)
      *
      * Ejemplos:
+     *   Juan Perez 12345678
      *   Juan Perez 12345678 A2
-     *   Juan Perez 12345678 B1
-     *   Juan Perez 12345678 C1
      *   Juan Perez 12345678 A2 y B1
      *   Juan Perez 12345678 A2, B1 y C1
      */
@@ -70,6 +74,16 @@ public class ChatbotInboundController {
                     "|B1\\s*(?:Y|,|\\+|/)\\s*C1" +                       // B1 y C1 (por si luego lo usas)
                     "|A2|B1|C1" +
                     ")\\s*$"
+    );
+
+    // Formato recomendado: Nombre + Documento (sin categoría)
+    private static final Pattern ENROLLMENT_NAME_DOC_PATTERN = Pattern.compile(
+            "(?i)^\\s*(.+?)\\s+(\\d{5,20})\\s*$"
+    );
+
+    // Formato opcional: Nombre + Documento + opción de categoría (1..5)
+    private static final Pattern ENROLLMENT_NAME_DOC_OPTION_PATTERN = Pattern.compile(
+            "(?i)^\\s*(.+?)\\s+(\\d{5,20})\\s+([1-5])\\s*$"
     );
 
     private static final Pattern EMAIL_PATTERN = Pattern.compile(
@@ -144,6 +158,7 @@ public class ChatbotInboundController {
     public record BotResponse(List<BotAction> actions) {}
 
     private record EnrollmentBasic(String nombre, String documento, String categoria) {}
+    private record EnrollmentNameDoc(String nombre, String documento) {}
     private record BookingSlot(String fecha, String hora) {}
 
     enum ChatState {
@@ -152,6 +167,7 @@ public class ChatbotInboundController {
 
         ENROLLMENT_DATA_AUTH_WAIT,
         ENROLLMENT_CAPTURE,
+        ENROLLMENT_CATEGORY_SELECT,
         ENROLLMENT_AGE_CAPTURE,
         ENROLLMENT_EMAIL_CAPTURE,
         ENROLLMENT_PHONE_CAPTURE,
@@ -362,6 +378,7 @@ public class ChatbotInboundController {
 
                 case ENROLLMENT_DATA_AUTH_WAIT -> handleEnrollmentDataAuthWait(text, session, actions);
                 case ENROLLMENT_CAPTURE -> handleEnrollmentCapture(from, rawText, session, actions);
+                case ENROLLMENT_CATEGORY_SELECT -> handleEnrollmentCategorySelect(from, text, session, actions);
                 case ENROLLMENT_AGE_CAPTURE -> handleEnrollmentAgeCapture(text, session, actions);
                 case ENROLLMENT_EMAIL_CAPTURE -> handleEnrollmentEmailCapture(text, session, actions);
                 case ENROLLMENT_PHONE_CAPTURE -> handleEnrollmentPhoneCapture(text, session, actions);
@@ -680,7 +697,7 @@ public class ChatbotInboundController {
         if (isEnrollmentDataAuthAccepted(cmd)) {
             session.state = ChatState.ENROLLMENT_CAPTURE;
             actions.add(textMsg(enrollmentInitialPromptText()));
-            actions.add(textMsg("Despues de ese primer mensaje te pedire tu edad, correo, telefono, direccion y la sede."));
+            actions.add(textMsg("Después de ese primer mensaje te mostraré un menú para elegir la categoría, y luego te pediré tu edad, correo, teléfono, dirección y la sede."));
             actions.add(textMsg("Opciones: MENU | CANCELAR"));
             return;
         }
@@ -692,20 +709,75 @@ public class ChatbotInboundController {
     private void handleEnrollmentCapture(String from, String rawText, SessionData session, List<BotAction> actions) {
         EnrollmentBasic basic = parseEnrollmentBasic(rawText);
         if (basic == null) {
+            basic = parseEnrollmentBasicOption(rawText);
+        }
+
+        // Legacy: si el usuario envía todo junto (incluyendo categoría), lo aceptamos.
+        if (basic != null) {
+            session.nombre = basic.nombre();
+            session.documento = basic.documento();
+            session.categoria = basic.categoria();
+            session.state = ChatState.ENROLLMENT_AGE_CAPTURE;
+
+            trackProspectServiceSafe(from, session, prospectServiceFromCategoria(session.categoria));
+
             actions.add(textMsg(
-                    "⚠️ No pude leer tus datos.\n\n" +
-                            "Envía TODO en un solo mensaje así:\n" +
-                            "Nombre Apellido Documento Categoría\n\n" +
-                            "Ejemplo: Juan Perez 12345678 A2\n\n" +
-                            "Categorías: A2 | B1 | C1 | A2 y B1 | A2, B1 y C1"
+                    "Paso 2 de 8: envía tu edad en años.\n\n" +
+                            "Ejemplo: 18\n\n" +
+                            "Importante: debes tener mínimo 16 años para matricularte."
             ));
             actions.add(textMsg("Opciones: MENU | CANCELAR"));
             return;
         }
 
-        session.nombre = basic.nombre();
-        session.documento = basic.documento();
-        session.categoria = basic.categoria();
+        // Nuevo: primero capturamos nombre + documento, luego se elige categoría por menú.
+        EnrollmentNameDoc nameDoc = parseEnrollmentNameDoc(rawText);
+        if (nameDoc == null) {
+            actions.add(textMsg(
+                    "⚠️ No pude leer tus datos.\n\n" +
+                            "Envía tu *nombre completo* y *número de documento* en un solo mensaje:\n\n" +
+                            "✅ Ejemplo:\n" +
+                            "Juan Perez 12345678\n\n" +
+                            "Luego te mostraré un menú para seleccionar la categoría."
+            ));
+            actions.add(textMsg("Opciones: MENU | CANCELAR"));
+            return;
+        }
+
+        session.nombre = nameDoc.nombre();
+        session.documento = nameDoc.documento();
+        session.state = ChatState.ENROLLMENT_CATEGORY_SELECT;
+
+        actions.add(textMsg(enrollmentCategoryMenuText()));
+        actions.add(textMsg("Opciones: 1 | 2 | 3 | 4 | 5 | MENU | CANCELAR"));
+    }
+
+    private void handleEnrollmentCategorySelect(String from, String text, SessionData session, List<BotAction> actions) {
+        String cmd = normalizeCommandText(text);
+        if (cmd.isBlank()) {
+            actions.add(textMsg("⚠️ Opción inválida. Responde con un número del 1 al 5."));
+            actions.add(textMsg(enrollmentCategoryMenuText()));
+            actions.add(textMsg("Opciones: 1 | 2 | 3 | 4 | 5 | MENU | CANCELAR"));
+            return;
+        }
+
+        String categoria = switch (cmd) {
+            case "1", "a2" -> "A2";
+            case "2", "b1" -> "B1";
+            case "3", "c1" -> "C1";
+            case "4", "a2 y b1", "a2+b1", "a2/b1", "a2 b1", "a2,b1" -> "A2 y B1";
+            case "5", "a2, b1 y c1", "a2 b1 y c1", "a2+b1+c1", "a2/b1/c1", "a2,b1,c1" -> "A2, B1 y C1";
+            default -> "";
+        };
+
+        if (categoria.isBlank()) {
+            actions.add(textMsg("⚠️ Opción no reconocida. Responde con un número del 1 al 5."));
+            actions.add(textMsg(enrollmentCategoryMenuText()));
+            actions.add(textMsg("Opciones: 1 | 2 | 3 | 4 | 5 | MENU | CANCELAR"));
+            return;
+        }
+
+        session.categoria = categoria;
         session.state = ChatState.ENROLLMENT_AGE_CAPTURE;
 
         trackProspectServiceSafe(from, session, prospectServiceFromCategoria(session.categoria));
@@ -938,7 +1010,7 @@ public class ChatbotInboundController {
                 clearEnrollmentData(session);
                 session.state = ChatState.ENROLLMENT_CAPTURE;
                 actions.add(textMsg(enrollmentInitialPromptText()));
-                actions.add(textMsg("Despues de ese primer mensaje te pedire tu edad, correo, telefono, direccion y la sede."));
+                actions.add(textMsg("Después de ese primer mensaje te mostraré un menú para elegir la categoría, y luego te pediré tu edad, correo, teléfono, dirección y la sede."));
                 actions.add(textMsg("Opciones: MENU | CANCELAR"));
             }
             case "3", "no", "cancelar" -> {
@@ -2122,8 +2194,12 @@ public class ChatbotInboundController {
             }
             case ENROLLMENT_CAPTURE -> {
                 actions.add(textMsg(enrollmentInitialPromptText()));
-                actions.add(textMsg("Despues de ese primer mensaje te pedire tu edad, correo, telefono, direccion y la sede."));
+                actions.add(textMsg("Después de ese primer mensaje te mostraré un menú para elegir la categoría, y luego te pediré tu edad, correo, teléfono, dirección y la sede."));
                 actions.add(textMsg("Opciones: MENU | CANCELAR | TERMINAR"));
+            }
+            case ENROLLMENT_CATEGORY_SELECT -> {
+                actions.add(textMsg(enrollmentCategoryMenuText()));
+                actions.add(textMsg("Opciones: 1 | 2 | 3 | 4 | 5 | MENU | CANCELAR | TERMINAR"));
             }
             case ENROLLMENT_AGE_CAPTURE -> {
                 actions.add(textMsg(
@@ -2408,6 +2484,37 @@ public class ChatbotInboundController {
 
         if (nombre.length() < 3) return null;
         return new EnrollmentBasic(nombre, documento, categoria);
+    }
+
+    private EnrollmentBasic parseEnrollmentBasicOption(String rawText) {
+        Matcher matcher = ENROLLMENT_NAME_DOC_OPTION_PATTERN.matcher(trim(rawText));
+        if (!matcher.matches()) return null;
+
+        String nombre = collapseSpaces(matcher.group(1));
+        String documento = matcher.group(2);
+        String opt = matcher.group(3);
+
+        if (nombre.length() < 3) return null;
+        String categoria = switch (opt) {
+            case "1" -> "A2";
+            case "2" -> "B1";
+            case "3" -> "C1";
+            case "4" -> "A2 y B1";
+            case "5" -> "A2, B1 y C1";
+            default -> "";
+        };
+        if (categoria.isBlank()) return null;
+        return new EnrollmentBasic(nombre, documento, categoria);
+    }
+
+    private EnrollmentNameDoc parseEnrollmentNameDoc(String rawText) {
+        Matcher matcher = ENROLLMENT_NAME_DOC_PATTERN.matcher(trim(rawText));
+        if (!matcher.matches()) return null;
+
+        String nombre = collapseSpaces(matcher.group(1));
+        String documento = matcher.group(2);
+        if (nombre.length() < 3) return null;
+        return new EnrollmentNameDoc(nombre, documento);
     }
 
     private BookingSlot parseBookingSlot(String rawText) {
@@ -2759,6 +2866,7 @@ public class ChatbotInboundController {
         return switch (state) {
             case ENROLLMENT_DATA_AUTH_WAIT,
                     ENROLLMENT_CAPTURE,
+                    ENROLLMENT_CATEGORY_SELECT,
                     ENROLLMENT_EMAIL_CAPTURE,
                     ENROLLMENT_PHONE_CAPTURE,
                     ENROLLMENT_ADDRESS_CAPTURE,
@@ -3204,10 +3312,19 @@ public class ChatbotInboundController {
                 "Para continuar, envíame esta información *en un solo mensaje*:\n\n" +
                 "1) Nombre completo (como aparece en tu documento)\n" +
                 "2) Número de documento (sin puntos ni comas)\n" +
-                "3) Categoría que deseas realizar (A2, B1, C1, A2 y B1, A2, B1 y C1)\n\n" +
                 "✅ Ejemplo:\n" +
-                "Juan Perez 12345678 A2\n\n" +
-                "Luego te pediré tu edad, correo, teléfono, dirección y la sede (Kennedy o CC El Eden).";
+                "Juan Perez 12345678\n\n" +
+                "Después te mostraré un menú para seleccionar la categoría (A2, B1, C1, A2 y B1, A2, B1 y C1).";
+    }
+
+    private String enrollmentCategoryMenuText() {
+        return "📌 Selecciona la categoría que deseas realizar:\n\n" +
+                "1) 🏍️ A2\n" +
+                "2) 🚗 B1\n" +
+                "3) 🚕 C1\n" +
+                "4) 🏍️🚗 A2 y B1\n" +
+                "5) 🏍️🚗🚕 A2, B1 y C1\n\n" +
+                "✍️ Responde con un número del 1 al 5.";
     }
 
     private String infoText() {

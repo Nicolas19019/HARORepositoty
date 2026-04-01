@@ -13,6 +13,13 @@ record FavoritosModuloRequest(String curso, List<String> modulos) {}
 
 @RestController
 @RequestMapping("/api/modulos-aprendizaje")
+@CrossOrigin(originPatterns = {
+        "http://localhost:*",
+        "http://127.0.0.1:*",
+        "https://ceaharo.com",
+        "https://www.ceaharo.com",
+        "https://*.ceaharo.com"
+})
 public class ModuloAprendizajeController {
 
     private final ModuloAprendizajeService service;

@@ -11,7 +11,13 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
-@CrossOrigin(origins = "*")
+@CrossOrigin(originPatterns = {
+        "http://localhost:*",
+        "http://127.0.0.1:*",
+        "https://ceaharo.com",
+        "https://www.ceaharo.com",
+        "https://*.ceaharo.com"
+})
 public class ContenidoClaseController {
 
     private final ContenidoClaseService service;

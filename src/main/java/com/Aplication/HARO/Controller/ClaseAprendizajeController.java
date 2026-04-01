@@ -26,7 +26,6 @@ record ClasePatchEstadoReq(Boolean publicada, Boolean visible) {}
         "/api/clases-contenido",
         "/api/clases-modulo"
 })
-@CrossOrigin(origins = "*")
 public class ClaseAprendizajeController {
 
     private static final Logger log = LoggerFactory.getLogger(ClaseAprendizajeController.class);

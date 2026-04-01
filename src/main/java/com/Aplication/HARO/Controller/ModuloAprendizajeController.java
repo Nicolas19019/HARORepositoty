@@ -13,7 +13,6 @@ record FavoritosModuloRequest(String curso, List<String> modulos) {}
 
 @RestController
 @RequestMapping("/api/modulos-aprendizaje")
-@CrossOrigin(origins = "*")
 public class ModuloAprendizajeController {
 
     private final ModuloAprendizajeService service;

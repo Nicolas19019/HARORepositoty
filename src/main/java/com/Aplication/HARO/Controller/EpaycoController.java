@@ -499,6 +499,40 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 }
             });
         }
+    } else {
+        PaymentUserStatus nonApprovedStatus = resolvePaymentUserStatus(
+                status,
+                firstNotBlank(
+                        safeTrim(asString(summary.get("codResponse"))),
+                        safeTrim(asString(summary.get("x_cod_response"))),
+                        payloadCodResponse
+                ),
+                firstNotBlank(
+                        payloadReason,
+                        safeTrim(asString(summary.get("reason"))),
+                        safeTrim(asString(summary.get("message")))
+                )
+        );
+        if (nonApprovedStatus == PaymentUserStatus.PENDING
+                || nonApprovedStatus == PaymentUserStatus.REJECTED
+                || nonApprovedStatus == PaymentUserStatus.CANCELLED) {
+            SyncDecision syncDecision = syncNonApprovedPaymentToFlow(
+                    summary,
+                    nonApprovedStatus,
+                    payloadReason,
+                    documentHint,
+                    emailHint,
+                    refPayco,
+                    gatewayRefPayco
+            );
+            chatbotSynced = syncDecision.synced();
+            if (StringUtils.hasText(syncDecision.reason())) {
+                out.put("syncReason", syncDecision.reason());
+            }
+            if (StringUtils.hasText(syncDecision.resolvedBy())) {
+                out.put("syncResolvedBy", syncDecision.resolvedBy());
+            }
+        }
     }
     out.put("status", status);
     if (StringUtils.hasText(refPayco)) {
@@ -549,6 +583,66 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
 
     return ResponseEntity.ok(out);
 }
+
+    private SyncDecision syncNonApprovedPaymentToFlow(Map<String, Object> summary,
+                                                      PaymentUserStatus status,
+                                                      String payloadReason,
+                                                      String documentHint,
+                                                      String emailHint,
+                                                      String refPayco,
+                                                      String gatewayReference) {
+        if (summary == null || status == null || status == PaymentUserStatus.UNKNOWN || status == PaymentUserStatus.APPROVED) {
+            return new SyncDecision(false, "non_approved_sync_not_applicable", "");
+        }
+
+        Long flowId = resolveFlowId(
+                summary.get("flow_id"),
+                summary.get("flowId"),
+                summary.get("x_extra2"),
+                summary.get("extra2")
+        );
+        String documento = firstResolvedDocument(
+                safeTrim(asString(summary.get("document"))),
+                documentHint
+        );
+        String email = firstResolvedEmail(
+                safeTrim(asString(summary.get("email"))),
+                emailHint
+        );
+
+        Optional<ChatbotMatriculaProceso> procesoOpt = resolveProcesoFromHints(flowId, documento, email);
+        if (!StringUtils.hasText(normalizeDocumentoCandidate(documento)) && procesoOpt.isPresent()) {
+            documento = safeTrim(procesoOpt.get().getNumeroDocumento());
+        }
+
+        if (!StringUtils.hasText(normalizeDocumentoCandidate(documento))) {
+            return new SyncDecision(false, "non_approved_sync_without_document", "");
+        }
+
+        String reason = firstNotBlank(
+                payloadReason,
+                safeTrim(asString(summary.get("reason"))),
+                safeTrim(asString(summary.get("message")))
+        );
+        String codResponse = firstNotBlank(
+                safeTrim(asString(summary.get("codResponse"))),
+                safeTrim(asString(summary.get("x_cod_response")))
+        );
+        String estado = firstNotBlank(
+                safeTrim(asString(summary.get("title"))),
+                safeTrim(asString(summary.get("status"))),
+                status.title
+        );
+        String reference = firstNotBlank(
+                refPayco,
+                gatewayReference,
+                safeTrim(asString(summary.get("reference"))),
+                safeTrim(asString(summary.get("gatewayReference")))
+        );
+
+        processNonApprovedPayment(documento, reference, codResponse, estado, reason, status);
+        return new SyncDecision(true, "processed_non_approved_payment", "response_sync");
+    }
 
     private SyncDecision syncApprovedPaymentToFlow(Map<String, Object> summary,
                                                   Map<String, Object> payload,
@@ -2074,15 +2168,47 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             }
         }
 
+        String msg = buildPaymentStatusNotificationMessage(proceso, status, detail, paymentLink);
+
+        try {
+            waService.sendTextMessage(phone, msg);
+            try {
+                chatbotProcesoService.markPaymentStatusNotified(documento, status.code);
+            } catch (Exception ignored) {
+                // best-effort: no bloquea el flujo por falla guardando marca anti-spam.
+            }
+            log.info("Notificacion de pago no aprobado enviada doc={} to={} status={} ref={}",
+                    documento, maskPhone(phone), status.code, xRefPayco);
+        } catch (Exception ex) {
+            log.error("No se pudo enviar notificacion de pago no aprobado doc={} to={} status={} ref={}: {}",
+                    documento, maskPhone(phone), status.code, xRefPayco, ex.getMessage(), ex);
+        }
+    }
+
+    private String buildPaymentStatusNotificationMessage(ChatbotMatriculaProceso proceso,
+                                                         PaymentUserStatus status,
+                                                         String detailRaw,
+                                                         String paymentLinkRaw) {
+        String detail = safeTrim(detailRaw);
+        String paymentLink = safeTrim(paymentLinkRaw);
+        String studentName = resolveStudentDisplayName(proceso);
+
         StringBuilder msg = new StringBuilder();
+        if (StringUtils.hasText(studentName)) {
+            msg.append("Hola ").append(studentName).append(".\n\n");
+        }
 
         if (status == PaymentUserStatus.PENDING) {
-            msg.append("⏳ Tu pago está pendiente de validación.");
+            msg.append("⏳ Tu pago aparece como *PENDIENTE*.");
             if (StringUtils.hasText(detail)) {
                 msg.append("\n🧾 Detalle: ").append(detail);
             }
-            msg.append("\n\nCuando sea aprobado, te enviaremos automáticamente el enlace para firmar los contratos.");
-            msg.append("\nℹ️ No necesitas hacer nada por ahora. Si tu banco tarda, espera unos minutos y vuelve a consultar.");
+            msg.append("\n\nEsto puede tardar unos minutos dependiendo del banco.");
+            msg.append("\nCuando sea aprobado, te enviaremos automáticamente el enlace para firmar los contratos.");
+            if (StringUtils.hasText(paymentLink)) {
+                msg.append("\n\n🔁 Si necesitas el enlace nuevamente, aquí lo tienes:\n").append(paymentLink);
+            }
+            msg.append("\n\nℹ️ No necesitas hacer nada por ahora. Si el estado no cambia luego de unos minutos, escribe ASESOR.");
         } else {
             String headline = status == PaymentUserStatus.CANCELLED
                     ? "❌ Tu pago fue cancelado o no finalizado."
@@ -2098,20 +2224,18 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
 
         msg.append(ADVISOR_PROMPT);
+        return msg.toString();
+    }
 
-        try {
-            waService.sendTextMessage(phone, msg.toString());
-            try {
-                chatbotProcesoService.markPaymentStatusNotified(documento, status.code);
-            } catch (Exception ignored) {
-                // best-effort: no bloquea el flujo por falla guardando marca anti-spam.
-            }
-            log.info("Notificacion de pago no aprobado enviada doc={} to={} status={} ref={}",
-                    documento, maskPhone(phone), status.code, xRefPayco);
-        } catch (Exception ex) {
-            log.error("No se pudo enviar notificacion de pago no aprobado doc={} to={} status={} ref={}: {}",
-                    documento, maskPhone(phone), status.code, xRefPayco, ex.getMessage(), ex);
+    private String resolveStudentDisplayName(ChatbotMatriculaProceso proceso) {
+        if (proceso == null) {
+            return "";
         }
+        String nombre = safeTrim(proceso.getNombreCompleto());
+        if (!StringUtils.hasText(nombre)) {
+            return "";
+        }
+        return nombre.replaceAll("\\s+", " ");
     }
 
     private boolean shouldSkipPaymentStatusNotification(ChatbotMatriculaProceso proceso, PaymentUserStatus status) {

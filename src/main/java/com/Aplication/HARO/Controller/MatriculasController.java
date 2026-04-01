@@ -1,4 +1,4 @@
-﻿package com.Aplication.HARO.Controller;
+package com.Aplication.HARO.Controller;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
@@ -145,8 +145,10 @@ public class MatriculasController {
                         : procesoRepository.findByVisibleTrue(page).getContent();
             } else {
                 items = includeHidden
-                        ? procesoRepository.findByMetodoPagoIgnoreCase("EFECTIVO", page)
-                        : procesoRepository.findByMetodoPagoIgnoreCaseAndVisibleTrue("EFECTIVO", page);
+                        ? procesoRepository.findByMetodoPagoIgnoreCaseOrFlowStatusIgnoreCaseOrFlowStatusIgnoreCase(
+                        "EFECTIVO", "PENDING_CASH_VALIDATION", "PENDING_PAYMENT", page)
+                        : procesoRepository.findByVisibleTrueAndMetodoPagoIgnoreCaseOrVisibleTrueAndFlowStatusIgnoreCaseOrVisibleTrueAndFlowStatusIgnoreCase(
+                        "EFECTIVO", "PENDING_CASH_VALIDATION", "PENDING_PAYMENT", page);
             }
             return items.stream().map(this::toRow).toList();
         } catch (Exception ex) {
@@ -187,6 +189,7 @@ public class MatriculasController {
         String colSede = pickCol(cols, "sede");
         String colOrigen = pickCol(cols, "origen_registro", "origenregistro");
         String colMetodo = pickCol(cols, "metodo_pago", "metodopago");
+        String colFlow = pickCol(cols, "flow_status", "flowstatus");
         String colPaymentStatus = pickCol(cols, "payment_status", "paymentstatus");
         String colContractStatus = pickCol(cols, "contract_status", "contractstatus");
         String colCreated = pickCol(cols, "created_at", "createdat");
@@ -199,10 +202,18 @@ public class MatriculasController {
             conditions.add("coalesce(" + colVisible + ", true) = true");
         }
         if (!all) {
-            if (colMetodo == null || colMetodo.isBlank()) {
+            List<String> cashOr = new java.util.ArrayList<>();
+            if (colMetodo != null && !colMetodo.isBlank()) {
+                cashOr.add("coalesce(nullif(btrim(" + colMetodo + "), ''), '') ilike 'EFECTIVO'");
+            }
+            if (colFlow != null && !colFlow.isBlank()) {
+                cashOr.add("coalesce(nullif(btrim(" + colFlow + "), ''), '') ilike 'PENDING_CASH_VALIDATION'");
+                cashOr.add("coalesce(nullif(btrim(" + colFlow + "), ''), '') ilike 'PENDING_PAYMENT'");
+            }
+            if (cashOr.isEmpty()) {
                 return List.of();
             }
-            conditions.add("coalesce(nullif(btrim(" + colMetodo + "), ''), '') ilike 'EFECTIVO'");
+            conditions.add("(" + String.join(" or ", cashOr) + ")");
         }
         String where = conditions.isEmpty() ? "" : "\nwhere " + String.join("\n  and ", conditions) + "\n";
 
@@ -431,7 +442,13 @@ public class MatriculasController {
 
         String estadoPago = normalizeEstadoPago(req.estadoPago());
 
-        if ("PENDIENTE".equals(estadoPago) && "EFECTIVO".equalsIgnoreCase(trim(proceso.getMetodoPago()))) {
+        // HaroGestion legacy: puede enviar estadoPago=PENDIENTE sin metodoPago.
+        // En ese caso lo tratamos como EFECTIVO para que aparezca en la cola de validacion manual.
+        boolean metodoPagoBlankEnReq = !StringUtils.hasText(metodoPago);
+        boolean metodoPagoBlankEnProceso = !StringUtils.hasText(trim(proceso.getMetodoPago()));
+        if ("PENDIENTE".equals(estadoPago)
+                && ("EFECTIVO".equalsIgnoreCase(trim(proceso.getMetodoPago()))
+                || (metodoPagoBlankEnReq && metodoPagoBlankEnProceso))) {
             proceso = procesoService.markCashPaymentPending(doc);
         }
 
@@ -473,7 +490,8 @@ public class MatriculasController {
         }
 
         boolean sendEmail = req == null || req.sendEmail() == null || req.sendEmail();
-        boolean sendChatbot = req != null && req.sendChatbot() != null && req.sendChatbot();
+        // Default TRUE: el flujo de EFECTIVO (chatbot) espera que al confirmar el pago se envie el link por WhatsApp.
+        boolean sendChatbot = req == null || req.sendChatbot() == null || req.sendChatbot();
         boolean requireProspect = req == null || req.requireProspect() == null || req.requireProspect();
 
         PaymentApprovalService.ContractSendResult out = paymentApprovalService.confirmCashPaymentManual(

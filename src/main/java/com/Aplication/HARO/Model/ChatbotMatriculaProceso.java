@@ -90,6 +90,15 @@ public class ChatbotMatriculaProceso {
     private String paymentObservation;
 
     /**
+     * Para evitar spam en WhatsApp: ultimo estado de pago notificado al usuario (PENDING/REJECTED/CANCELLED/etc).
+     */
+    @Column(name = "payment_status_notified", length = 40)
+    private String paymentStatusNotified;
+
+    @Column(name = "payment_status_notified_at")
+    private Instant paymentStatusNotifiedAt;
+
+    /**
      * FULL / HALF. Se usa para saber si el link de pago corresponde a pago completo o abono (50%).
      * Si viene null/vacio, se asume FULL.
      */
@@ -322,6 +331,22 @@ public class ChatbotMatriculaProceso {
 
     public void setPaymentObservation(String paymentObservation) {
         this.paymentObservation = paymentObservation;
+    }
+
+    public String getPaymentStatusNotified() {
+        return paymentStatusNotified;
+    }
+
+    public void setPaymentStatusNotified(String paymentStatusNotified) {
+        this.paymentStatusNotified = paymentStatusNotified;
+    }
+
+    public Instant getPaymentStatusNotifiedAt() {
+        return paymentStatusNotifiedAt;
+    }
+
+    public void setPaymentStatusNotifiedAt(Instant paymentStatusNotifiedAt) {
+        this.paymentStatusNotifiedAt = paymentStatusNotifiedAt;
     }
 
     public String getPaymentPlan() {

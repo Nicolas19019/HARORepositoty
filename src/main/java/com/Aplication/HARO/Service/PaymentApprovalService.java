@@ -5,6 +5,8 @@ import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +37,9 @@ public class PaymentApprovalService {
     private static final DateTimeFormatter CONTRACT_EXPIRES_FMT =
             DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(CONTRACT_ZONE);
 
+    private static final String LOGO_CLASSPATH = "email-assets/logoHARO.png";
+    private static final String LOGO_CID = "logoHaro";
+
     private final ChatbotMatriculaProcesoRepository procesoRepository;
     private final VerificationService verificationService;
     private final ChatbotProcesoService chatbotProcesoService;
@@ -57,6 +62,9 @@ public class PaymentApprovalService {
 
     @Value("${chatbot.contract.email.subject:Enlace de contratos - CEA HARO}")
     private String contractEmailSubject;
+
+    @Value("${app.verification.logo-url:}")
+    private String verificationLogoUrl;
 
     @Value("${app.internal-api-base-url:}")
     private String internalApiBaseUrl;
@@ -645,9 +653,9 @@ public class PaymentApprovalService {
     }
 
     private boolean sendContractLinkByEmailInternal(ChatbotMatriculaProceso proceso,
-                                                   String contractLinkRaw,
-                                                   Instant expiresAt,
-                                                   boolean forceResend) {
+                                                    String contractLinkRaw,
+                                                    Instant expiresAt,
+                                                    boolean forceResend) {
         if (proceso == null) return false;
 
         String email = trim(proceso.getEmail());
@@ -669,7 +677,13 @@ public class PaymentApprovalService {
         String plain = buildContractLinkEmailPlain(proceso, contractLink, expiresAt);
 
         try {
-            mailService.sendHtml(email, subject, html, plain);
+            Resource logo = new ClassPathResource(LOGO_CLASSPATH);
+            boolean useInlineLogo = !StringUtils.hasText(trim(verificationLogoUrl)) && logo.exists();
+            if (useInlineLogo) {
+                mailService.sendHtmlWithInlineImage(email, subject, html, plain, LOGO_CID, logo, "image/png");
+            } else {
+                mailService.sendHtml(email, subject, html, plain);
+            }
         } catch (Exception ex) {
             log.error("No se pudo enviar correo de contratos email={} doc={}: {}",
                     maskEmail(email), safe(proceso.getNumeroDocumento()), ex.getMessage(), ex);
@@ -684,28 +698,112 @@ public class PaymentApprovalService {
 
     private String buildContractLinkEmailHtml(ChatbotMatriculaProceso proceso, String contractLink, Instant expiresAt) {
         String nombre = escapeHtml(firstNotBlank(trim(proceso.getNombreCompleto()), "Estudiante"));
-        String expiry = escapeHtml(buildContractExpiryHint(expiresAt));
+        String expiry = escapeHtml(buildContractExpiryHint(expiresAt).replace("*LINK*", "LINK"));
         String linkEscaped = escapeHtml(contractLink);
+        String logoSrc = escapeHtml(resolveEmailLogoSrc());
         return """
-                <div style="font-family:Segoe UI, Arial, sans-serif; color:#111827; line-height:1.5;">
-                  <h2 style="margin:0 0 12px 0;">Enlace para firma de contratos</h2>
-                  <p style="margin:0 0 12px 0;">Hola %s,</p>
-                  <p style="margin:0 0 12px 0;">Tu proceso ya tiene habilitada la etapa de firma de contratos. Ingresa al siguiente enlace:</p>
-                  <p style="margin:0 0 12px 0;"><a href="%s" target="_blank" rel="noopener">%s</a></p>
-                  <p style="margin:0 0 12px 0;">%s</p>
-                  <p style="margin:0;">Si necesitas ayuda, responde a este mensaje o escribe ASESOR por WhatsApp.</p>
-                </div>
-                """.formatted(nombre, linkEscaped, linkEscaped, expiry);
+<div style="background-color:#f4f4f4;padding:24px;font-family:'Segoe UI',Arial,sans-serif;color:#1a1a1a;">
+  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" style="max-width:520px;margin:0 auto;border-collapse:collapse;">
+
+    <!-- ENCABEZADO CON LOGO -->
+    <tr>
+      <td style="text-align:center;background:#ffffff;border-radius:8px 8px 0 0;padding:0px 24px;">
+        <img src="%s"
+             alt="CEA HARO"
+             style="max-width:140px;height:auto;display:inline-block;border:0;outline:none;text-decoration:none;background:#ffffff;padding:8px 12px;border-radius:6px;">
+      </td>
+    </tr>
+
+        <!-- CUERPO TARJETA -->
+    <tr>
+      <td style="background-color:#ffffff;border-radius:0 0 8px 8px;box-shadow:0 4px 12px rgba(0,0,0,0.07);padding:24px;border-top:4px solid #ffcc00;">
+
+        <h2 style="margin:0 0 12px 0;font-size:18px;font-weight:600;color:#111827;">
+          Firma de contratos
+        </h2>
+
+        <p style="margin:0 0 16px 0;font-size:14px;line-height:1.5;color:#374151;">
+          Hola %s,
+          <br><br>
+          Tu pago ya fue confirmado y tu proceso tiene habilitada la etapa de
+          <strong style="color:#d00000;">firma de contratos</strong>.
+          Para continuar, abre el enlace:
+        </p>
+
+        <div style="margin:0 0 16px 0;padding:12px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;line-height:1.5;color:#374151;">
+          <strong>Pasos:</strong><br>
+          1) Abre el enlace.<br>
+          2) Diligencia la información solicitada y firma los contratos.<br>
+          3) Al finalizar, verás la confirmación en pantalla.
+        </div>
+
+        <div style="text-align:center;margin:0 0 16px 0;">
+          <a href="%s" target="_blank" rel="noopener noreferrer"
+             style="display:inline-block;background:#d00000;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700;">
+            Abrir enlace de contratos
+          </a>
+        </div>
+
+        <p style="margin:0 0 8px 0;font-size:12px;line-height:1.5;color:#6b7280;">
+          Si el botón no abre, copia y pega este enlace en tu navegador:
+        </p>
+
+        <div style="font-size:12px;line-height:1.5;color:#111827;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin:0 0 16px 0;word-break:break-all;">
+          <a href="%s" target="_blank" rel="noopener noreferrer" style="color:#111827;">%s</a>
+        </div>
+
+        <div style="margin:0 0 16px 0;padding:10px 12px;border-left:4px solid #ffcc00;background:#fff7cc;border-radius:8px;font-size:13px;line-height:1.5;color:#374151;">
+          %s
+        </div>
+
+        <p style="margin:0 0 16px 0;font-size:12px;line-height:1.5;color:#6b7280;">
+          Este enlace es personal. Por seguridad, no lo compartas.
+        </p>
+
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+
+        <p style="margin:0;font-size:12px;line-height:1.4;color:#6b7280;">
+          Atentamente,<br>
+          <strong style="color:#d00000;">CEA HARO</strong><br>
+          Centro de Enseñanza Automovilística<br>
+          Tel: (322) 329 2939
+        </p>
+
+        <div style="margin-top:16px;font-size:11px;line-height:1.4;color:#9ca3af;text-align:center;border-left:4px solid #ffcc00;padding-left:8px;">
+          Este es un mensaje automático, por favor no respondas a este correo.
+          <br>
+          🤖 ASESOR: Si necesitas ayuda, escribe ASESOR.
+        </div>
+
+      </td>
+    </tr>
+
+  </table>
+</div>
+                """.formatted(logoSrc, nombre, linkEscaped, linkEscaped, linkEscaped, expiry);
     }
 
     private String buildContractLinkEmailPlain(ChatbotMatriculaProceso proceso, String contractLink, Instant expiresAt) {
         String nombre = firstNotBlank(trim(proceso == null ? "" : proceso.getNombreCompleto()), "Estudiante");
-        return "Enlace para firma de contratos\n\n"
+        return "CEA HARO - Firma de contratos\n\n"
                 + "Hola " + nombre + ",\n\n"
-                + "Tu proceso ya tiene habilitada la etapa de firma de contratos. Ingresa al siguiente enlace:\n"
+                + "Tu pago ya fue confirmado y tu proceso tiene habilitada la etapa de firma de contratos.\n\n"
+                + "Pasos:\n"
+                + "1) Abre el enlace.\n"
+                + "2) Diligencia la información solicitada y firma los contratos.\n"
+                + "3) Al finalizar verás la confirmación.\n\n"
+                + "Enlace:\n"
                 + contractLink + "\n\n"
-                + buildContractExpiryHint(expiresAt) + "\n\n"
-                + "Si necesitas ayuda, escribe ASESOR.";
+                + buildContractExpiryHint(expiresAt).replace("*LINK*", "LINK") + "\n\n"
+                + "🤖 ASESOR: Si necesitas ayuda, escribe ASESOR.";
+    }
+
+    private String resolveEmailLogoSrc() {
+        String logoUrl = trim(verificationLogoUrl);
+        if (StringUtils.hasText(logoUrl)) {
+            return logoUrl.replace("\"", "%22");
+        }
+        return "cid:" + LOGO_CID;
     }
 
     private boolean sendWhatsappText(String phoneRaw, String message) {

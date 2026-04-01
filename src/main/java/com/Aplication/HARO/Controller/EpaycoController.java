@@ -6,9 +6,11 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.Currency;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -54,6 +56,8 @@ public class EpaycoController {
     private static final Logger log = LoggerFactory.getLogger(EpaycoController.class);
     private record SyncDecision(boolean synced, String reason, String resolvedBy) {}
     private record ContractAccessParams(String email, String code) {}
+
+    private static final String ADVISOR_PROMPT = "\n\n🤖 ASESOR: Si necesitas ayuda, escribe ASESOR.";
 
     private final EpaycoService epaycoService;
     private final EpaycoCheckoutContextService checkoutContextService;
@@ -2033,10 +2037,6 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             return;
         }
 
-        if (status == PaymentUserStatus.PENDING) {
-            return;
-        }
-
         Optional<ChatbotMatriculaProceso> currentOpt = chatbotProcesoService.findProcesoByDocumento(documento);
         if (currentOpt.isEmpty()) {
             log.warn("No existe proceso de matricula para notificar pago no aprobado doc={} ref={}", documento, xRefPayco);
@@ -2046,12 +2046,21 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         ChatbotMatriculaProceso proceso = currentOpt.get();
         String phone = safeTrim(proceso.getPhone());
         if (!StringUtils.hasText(phone)) {
+            phone = safeTrim(proceso.getTelefono());
+        }
+        if (!StringUtils.hasText(phone)) {
             log.warn("Pago no aprobado doc={} sin telefono para notificar. ref={}", documento, xRefPayco);
             return;
         }
 
         if (!waService.getConfigStatus().ready()) {
             log.warn("Pago no aprobado doc={} pero WhatsApp no esta listo: {}", documento, waService.getConfigStatus().message());
+            return;
+        }
+
+        if (shouldSkipPaymentStatusNotification(proceso, status)) {
+            log.info("Notificacion de pago omitida (ya enviada recientemente) doc={} status={} ref={}",
+                    documento, status.code, xRefPayco);
             return;
         }
 
@@ -2065,28 +2074,60 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             }
         }
 
-        String headline = status == PaymentUserStatus.CANCELLED
-                ? "❌ Tu pago fue cancelado o no finalizado."
-                : "🚫 Tu pago no fue aprobado.";
-
         StringBuilder msg = new StringBuilder();
-        msg.append(headline);
-        if (StringUtils.hasText(detail)) {
-            msg.append("\n🧾 Detalle: ").append(detail);
+
+        if (status == PaymentUserStatus.PENDING) {
+            msg.append("⏳ Tu pago está pendiente de validación.");
+            if (StringUtils.hasText(detail)) {
+                msg.append("\n🧾 Detalle: ").append(detail);
+            }
+            msg.append("\n\nCuando sea aprobado, te enviaremos automáticamente el enlace para firmar los contratos.");
+            msg.append("\nℹ️ No necesitas hacer nada por ahora. Si tu banco tarda, espera unos minutos y vuelve a consultar.");
+        } else {
+            String headline = status == PaymentUserStatus.CANCELLED
+                    ? "❌ Tu pago fue cancelado o no finalizado."
+                    : "🚫 Tu pago no fue aprobado.";
+
+            msg.append(headline);
+            if (StringUtils.hasText(detail)) {
+                msg.append("\n🧾 Detalle: ").append(detail);
+            }
+            if (StringUtils.hasText(paymentLink)) {
+                msg.append("\n\n🔁 Puedes reintentar aquí:\n").append(paymentLink);
+            }
         }
-        if (StringUtils.hasText(paymentLink)) {
-            msg.append("\n\n🔁 Puedes reintentar aquí:\n").append(paymentLink);
-        }
-        msg.append("\n\n🤝 Si necesitas ayuda, escribe ASESOR.");
+
+        msg.append(ADVISOR_PROMPT);
 
         try {
             waService.sendTextMessage(phone, msg.toString());
+            try {
+                chatbotProcesoService.markPaymentStatusNotified(documento, status.code);
+            } catch (Exception ignored) {
+                // best-effort: no bloquea el flujo por falla guardando marca anti-spam.
+            }
             log.info("Notificacion de pago no aprobado enviada doc={} to={} status={} ref={}",
                     documento, maskPhone(phone), status.code, xRefPayco);
         } catch (Exception ex) {
             log.error("No se pudo enviar notificacion de pago no aprobado doc={} to={} status={} ref={}: {}",
                     documento, maskPhone(phone), status.code, xRefPayco, ex.getMessage(), ex);
         }
+    }
+
+    private boolean shouldSkipPaymentStatusNotification(ChatbotMatriculaProceso proceso, PaymentUserStatus status) {
+        if (proceso == null || status == null) {
+            return false;
+        }
+        String last = safeTrim(proceso.getPaymentStatusNotified()).toUpperCase(Locale.ROOT);
+        if (!StringUtils.hasText(last) || !last.equalsIgnoreCase(status.code)) {
+            return false;
+        }
+        Instant at = proceso.getPaymentStatusNotifiedAt();
+        if (at == null) {
+            return false;
+        }
+        long cooldownMinutes = (status == PaymentUserStatus.PENDING) ? 15L : 60L;
+        return Instant.now().isBefore(at.plus(cooldownMinutes, ChronoUnit.MINUTES));
     }
 
     private boolean isApproved(String estadoRaw, String codRaw) {

@@ -29,6 +29,10 @@ public interface ChatbotMatriculaProcesoRepository extends JpaRepository<Chatbot
     List<ChatbotMatriculaProceso> findByMetodoPagoIgnoreCase(String metodoPago, Pageable pageable);
 
     List<ChatbotMatriculaProceso> findByMetodoPagoIgnoreCaseAndVisibleTrue(String metodoPago, Pageable pageable);
+    List<ChatbotMatriculaProceso> findByMetodoPagoIgnoreCaseOrFlowStatusIgnoreCase(String metodoPago, String flowStatus, Pageable pageable);
+    List<ChatbotMatriculaProceso> findByVisibleTrueAndMetodoPagoIgnoreCaseOrVisibleTrueAndFlowStatusIgnoreCase(String metodoPago, String flowStatus, Pageable pageable);
+    List<ChatbotMatriculaProceso> findByMetodoPagoIgnoreCaseOrFlowStatusIgnoreCaseOrFlowStatusIgnoreCase(String metodoPago, String flowStatus1, String flowStatus2, Pageable pageable);
+    List<ChatbotMatriculaProceso> findByVisibleTrueAndMetodoPagoIgnoreCaseOrVisibleTrueAndFlowStatusIgnoreCaseOrVisibleTrueAndFlowStatusIgnoreCase(String metodoPago, String flowStatus1, String flowStatus2, Pageable pageable);
 
     @Query("""
             select p

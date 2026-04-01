@@ -462,6 +462,20 @@ private String paymentConfirmationUrl;
                 saved.getPaymentAmount());
         return saved;
     }
+
+    @Transactional
+    public ChatbotMatriculaProceso markPaymentStatusNotified(String documento, String statusCodeRaw) {
+        ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
+        String status = trim(statusCodeRaw).toUpperCase(Locale.ROOT);
+        if (status.isBlank()) {
+            p.setPaymentStatusNotified(null);
+            p.setPaymentStatusNotifiedAt(null);
+        } else {
+            p.setPaymentStatusNotified(status);
+            p.setPaymentStatusNotifiedAt(Instant.now());
+        }
+        return procesoRepository.save(p);
+    }
     @Transactional
     public ChatbotMatriculaProceso markContractLinkSent(String documento, String contractLink) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);

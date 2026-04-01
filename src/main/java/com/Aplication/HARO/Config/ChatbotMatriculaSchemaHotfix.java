@@ -162,6 +162,28 @@ public class ChatbotMatriculaSchemaHotfix implements CommandLineRunner {
                         FROM information_schema.columns
                         WHERE table_schema = current_schema()
                           AND table_name = 'chatbot_matricula_proceso'
+                          AND column_name = 'payment_status_notified'
+                      ) THEN
+                        ALTER TABLE chatbot_matricula_proceso
+                          ADD COLUMN payment_status_notified VARCHAR(40);
+                      END IF;
+
+                      IF NOT EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = current_schema()
+                          AND table_name = 'chatbot_matricula_proceso'
+                          AND column_name = 'payment_status_notified_at'
+                      ) THEN
+                        ALTER TABLE chatbot_matricula_proceso
+                          ADD COLUMN payment_status_notified_at TIMESTAMPTZ;
+                      END IF;
+
+                      IF NOT EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = current_schema()
+                          AND table_name = 'chatbot_matricula_proceso'
                           AND column_name = 'contract_email_sent'
                       ) THEN
                         ALTER TABLE chatbot_matricula_proceso
@@ -277,7 +299,9 @@ public class ChatbotMatriculaSchemaHotfix implements CommandLineRunner {
                     CREATE OR REPLACE VIEW chatbot_matricula_proceso_efectivo AS
                     SELECT p.*
                     FROM chatbot_matricula_proceso p
-                    WHERE COALESCE(NULLIF(btrim(p.metodo_pago), ''), '') ILIKE 'EFECTIVO';
+                    WHERE COALESCE(NULLIF(btrim(p.metodo_pago), ''), '') ILIKE 'EFECTIVO'
+                       OR COALESCE(NULLIF(btrim(p.flow_status), ''), '') ILIKE 'PENDING_CASH_VALIDATION'
+                       OR COALESCE(NULLIF(btrim(p.flow_status), ''), '') ILIKE 'PENDING_PAYMENT';
                     """);
             log.info("Vistas creadas/actualizadas: chatbot_matricula_proceso_epayco, chatbot_matricula_proceso_efectivo");
         } catch (Exception ex) {

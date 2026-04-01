@@ -103,9 +103,28 @@ class EstudianteServiceFechaMatriculaTest {
         assertEquals("CHATBOT", out.getOrigenMatricula());
     }
 
+    @Test
+    void updateDebePermitirModificarConsecutivo() {
+        EstudianteRepository repo = mock(EstudianteRepository.class);
+        PasswordEncoder encoder = mock(PasswordEncoder.class);
+        when(repo.findById(5L)).thenReturn(Optional.of(estudianteBase(5L)));
+        when(repo.findByConsecutivo(123L)).thenReturn(Optional.empty());
+        when(repo.save(any(Estudiante.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        EstudianteService service = new EstudianteService(repo, encoder);
+
+        Estudiante patch = new Estudiante();
+        patch.setConsecutivo(123L);
+
+        Estudiante out = service.updateEstudiante(5L, patch);
+
+        assertEquals(123L, out.getConsecutivo());
+    }
+
     private Estudiante estudianteBase(Long id) {
         Estudiante e = new Estudiante();
         e.setId(id);
+        e.setConsecutivo(10L);
         e.setNombre("Base");
         e.setApellido("Student");
         e.setNumeroDocumento("55555");

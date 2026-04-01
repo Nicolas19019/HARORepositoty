@@ -19,7 +19,6 @@ public class Estudiante {
 	private Long id;
 
 	@Column(name = "consecutivo")
-	@JsonProperty(access = JsonProperty.Access.READ_ONLY)
 	private Long consecutivo;
 	@Column(name = "nombre")
 	private String nombre;

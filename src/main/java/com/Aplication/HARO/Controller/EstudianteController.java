@@ -167,7 +167,7 @@ public class EstudianteController {
 				"direccion", "usuario"));
 		out.put("opcionales", List.of(
 				"tipoEstudiante", "horas", "tipoPase",
-				"aproboExamenTeorico", "estado", "visible", "fotoPerfil", "fechaMatricula", "origenMatricula", "contrasena"));
+				"aproboExamenTeorico", "estado", "visible", "fotoPerfil", "fechaMatricula", "origenMatricula", "contrasena", "consecutivo"));
 		out.put("soloLectura", List.of("id", "fechaCreacion"));
 
 		Map<String, String> reglas = new LinkedHashMap<>();
@@ -177,6 +177,7 @@ public class EstudianteController {
 		reglas.put("contrasena", "Opcional. Si se envia en texto plano, el backend la hashea. Si no se envia al crear, usa un valor por defecto.");
 		reglas.put("tipoPase", "Solo permite: carro, moto, carro,moto");
 		reglas.put("horas", "No puede ser negativo");
+		reglas.put("consecutivo", "Si se envia en PUT /api/estudiantes/{id}, debe ser unico y mayor que cero.");
 		reglas.put("fechaMatricula", "Si el estudiante queda matriculado y no se envia, el backend la asigna automaticamente.");
 		reglas.put("origenMatricula", "Solo permite CHATBOT o PRESENCIAL. Si el estudiante queda matriculado y no se envia, el backend asigna PRESENCIAL en el flujo generico.");
 		out.put("reglas", reglas);

@@ -43,6 +43,7 @@ public interface EstudianteRepository extends JpaRepository<Estudiante, Long> {
   Optional<Estudiante> findByUsuarioIgnoreCase(String u);
   Optional<Estudiante> findByEmailIgnoreCase(String e);
   Optional<Estudiante> findByNumeroDocumento(String d);
+  Optional<Estudiante> findByConsecutivo(Long consecutivo);
 
   @Query(value = "SELECT nextval('estudiante_consecutivo_seq')", nativeQuery = true)
   Long nextConsecutivo();

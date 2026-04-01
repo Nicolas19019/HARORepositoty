@@ -214,6 +214,19 @@ public class EstudianteService {
       db.setNumeroDocumento(incoming.getNumeroDocumento());
     }
 
+    if (incoming.getConsecutivo() != null && !incoming.getConsecutivo().equals(db.getConsecutivo())) {
+      if (incoming.getConsecutivo() <= 0) {
+        throw new IllegalArgumentException("consecutivo debe ser mayor que cero");
+      }
+      Optional<Estudiante> existing = repo.findByConsecutivo(incoming.getConsecutivo());
+      if (existing.isPresent()
+          && existing.get().getId() != null
+          && !existing.get().getId().equals(db.getId())) {
+        throw new IllegalStateException("Ya existe un estudiante con ese consecutivo: " + incoming.getConsecutivo());
+      }
+      db.setConsecutivo(incoming.getConsecutivo());
+    }
+
     // Otros campos simples (solo si vienen)
     if (incoming.getNombre() != null) db.setNombre(incoming.getNombre());
     if (incoming.getApellido() != null) db.setApellido(incoming.getApellido());

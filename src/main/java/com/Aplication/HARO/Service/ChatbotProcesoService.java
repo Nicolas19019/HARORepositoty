@@ -682,7 +682,10 @@ private String paymentConfirmationUrl;
                         categoryProgressList,
                         purchasedCategories,
                         requiredContractCategories,
-                        requestedCategoryCode
+                        requestedCategoryCode,
+                        pdfFile,
+                        contractName,
+                        fileName
                 );
         validateExpectedContractUpload(targetProgress, pdfFile, contractName, fileName);
 
@@ -914,7 +917,10 @@ private String paymentConfirmationUrl;
                 items,
                 splitPurchasedCategories(proceso.getCategoria()),
                 splitContractRequiredCategories(proceso.getCategoria()),
-                requestedCategoryCode
+                requestedCategoryCode,
+                pdfFile,
+                contractName,
+                ""
         );
         validateExpectedContractUpload(target, pdfFile, contractName, "");
         return target.getCategoryLabel();
@@ -1213,15 +1219,28 @@ private String paymentConfirmationUrl;
     }
 
     private int countUploadedContracts(String signedContractFilesJson) {
+        // Prefer contract number (1..4) when it can be extracted, because older payloads may
+        // alternate between `pdfFile` vs `contractName` and should not count as "different" uploads.
+        Set<Integer> contractNumbers = new LinkedHashSet<>();
         Set<String> seen = new LinkedHashSet<>();
         for (Map<String, Object> upload : readJsonList(signedContractFilesJson)) {
-            // Prefer pdfFile (stable key), but fall back to contractName/fileName for older payloads.
-            String identity = firstNotBlank(
-                    trim(asString(upload.get("pdfFile"))),
-                    trim(asString(upload.get("contractName"))),
-                    trim(asString(upload.get("fileName")))
-            );
-            if (!identity.isBlank()) seen.add(identity);
+            String pdfFile = trim(asString(upload.get("pdfFile")));
+            String contractName = trim(asString(upload.get("contractName")));
+            String fileName = trim(asString(upload.get("fileName")));
+            Integer contractNumber = resolveContractNumber(pdfFile, contractName, fileName);
+            if (contractNumber != null) {
+                contractNumbers.add(contractNumber);
+                continue;
+            }
+
+            // Fallback for legacy/unknown payloads.
+            String identity = firstNotBlank(pdfFile, contractName, fileName);
+            if (!identity.isBlank()) {
+                seen.add(identity);
+            }
+        }
+        if (!contractNumbers.isEmpty()) {
+            return Math.min(contractNumbers.size(), 4);
         }
         return Math.min(seen.size(), 4);
     }
@@ -1229,7 +1248,10 @@ private String paymentConfirmationUrl;
     private ChatbotContractCategoryProgress resolveValidatedUploadCategoryProgress(List<ChatbotContractCategoryProgress> items,
                                                                                   List<String> purchasedCategories,
                                                                                   List<String> requiredContractCategories,
-                                                                                  String requestedCategoryCode) {
+                                                                                  String requestedCategoryCode,
+                                                                                  String pdfFile,
+                                                                                  String contractName,
+                                                                                  String fileName) {
         ChatbotContractCategoryProgress current = findCurrentCategoryProgress(items)
                 .orElseThrow(() -> new ContractUploadValidationException(
                         HttpStatus.CONFLICT,
@@ -1252,6 +1274,29 @@ private String paymentConfirmationUrl;
         }
         String active = trim(current.getCategoryCode()).toUpperCase(Locale.ROOT);
         if (!requested.equalsIgnoreCase(active)) {
+            // Allow re-uploading (replacement) of a contract already uploaded in a completed category.
+            // This makes the endpoint idempotent against browser retries/double-clicks.
+            ChatbotContractCategoryProgress requestedProgress = items.stream()
+                    .filter(item -> requested.equalsIgnoreCase(trim(item.getCategoryCode())))
+                    .findFirst()
+                    .orElseThrow(() -> new ContractUploadValidationException(
+                            HttpStatus.UNPROCESSABLE_ENTITY,
+                            "La categoria " + requested + " no pertenece al proceso."
+                    ));
+
+            Integer providedContractNumber = resolveContractNumber(pdfFile, contractName, fileName);
+            if (providedContractNumber == null) {
+                throw new ContractUploadValidationException(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "No se pudo identificar el contrato recibido. Envie pdfFile con el formato Contrato1.pdf a Contrato4.pdf."
+                );
+            }
+
+            Set<Integer> uploadedNumbers = resolveUploadedContractNumbers(requestedProgress.getSignedContractFiles());
+            if (uploadedNumbers.contains(providedContractNumber)) {
+                return requestedProgress;
+            }
+
             throw new ContractUploadValidationException(
                     HttpStatus.CONFLICT,
                     "La categoria activa es " + active + ". Debe cargar los contratos en ese orden."
@@ -1264,14 +1309,6 @@ private String paymentConfirmationUrl;
                                                 String pdfFile,
                                                 String contractName,
                                                 String fileName) {
-        int uploadedContracts = countUploadedContracts(targetProgress.getSignedContractFiles());
-        if (uploadedContracts >= 4) {
-            throw new ContractUploadValidationException(
-                    HttpStatus.CONFLICT,
-                    "La categoria " + trim(targetProgress.getCategoryCode()) + " ya tiene sus 4 contratos firmados."
-            );
-        }
-        int expectedContractNumber = uploadedContracts + 1;
         Integer providedContractNumber = resolveContractNumber(pdfFile, contractName, fileName);
         if (providedContractNumber == null) {
             throw new ContractUploadValidationException(
@@ -1279,6 +1316,22 @@ private String paymentConfirmationUrl;
                     "No se pudo identificar el contrato recibido. Envie pdfFile con el formato Contrato1.pdf a Contrato4.pdf."
             );
         }
+
+        Set<Integer> uploadedNumbers = resolveUploadedContractNumbers(targetProgress.getSignedContractFiles());
+        if (uploadedNumbers.contains(providedContractNumber)) {
+            // Replacement uploads are allowed (idempotent).
+            return;
+        }
+
+        int uploadedContracts = countUploadedContracts(targetProgress.getSignedContractFiles());
+        if (uploadedContracts >= 4) {
+            throw new ContractUploadValidationException(
+                    HttpStatus.CONFLICT,
+                    "La categoria " + trim(targetProgress.getCategoryCode()) + " ya tiene sus 4 contratos firmados."
+            );
+        }
+
+        int expectedContractNumber = uploadedContracts + 1;
         if (providedContractNumber.intValue() != expectedContractNumber) {
             throw new ContractUploadValidationException(
                     HttpStatus.CONFLICT,
@@ -1286,6 +1339,20 @@ private String paymentConfirmationUrl;
                             + trim(targetProgress.getCategoryCode()) + "."
             );
         }
+    }
+
+    private Set<Integer> resolveUploadedContractNumbers(String signedContractFilesJson) {
+        Set<Integer> numbers = new LinkedHashSet<>();
+        for (Map<String, Object> upload : readJsonList(signedContractFilesJson)) {
+            String pdfFile = trim(asString(upload.get("pdfFile")));
+            String contractName = trim(asString(upload.get("contractName")));
+            String fileName = trim(asString(upload.get("fileName")));
+            Integer n = resolveContractNumber(pdfFile, contractName, fileName);
+            if (n != null) {
+                numbers.add(n);
+            }
+        }
+        return numbers;
     }
 
     private Integer resolveContractNumber(String pdfFile, String contractName, String fileName) {
@@ -1691,27 +1758,50 @@ private String paymentConfirmationUrl;
         if (uploads == null || incoming == null || incoming.isEmpty()) {
             return;
         }
-        String identity = firstNotBlank(
-                stringValue(incoming.get("pdfFile")),
-                stringValue(incoming.get("contractName")),
-                stringValue(incoming.get("fileName"))
-        );
+        String inPdfFile = stringValue(incoming.get("pdfFile"));
+        String inContractName = stringValue(incoming.get("contractName"));
+        String inFileName = stringValue(incoming.get("fileName"));
+        Integer inContractNumber = resolveContractNumber(inPdfFile, inContractName, inFileName);
+        String identity = inContractNumber != null
+                ? ("CONTRATO" + inContractNumber)
+                : firstNotBlank(inPdfFile, inContractName, inFileName);
         if (identity.isBlank()) {
             uploads.add(incoming);
             return;
         }
 
+        int replaceIndex = -1;
         for (int i = 0; i < uploads.size(); i++) {
             Map<String, Object> current = uploads.get(i);
-            String currentIdentity = firstNotBlank(
-                    stringValue(current.get("pdfFile")),
-                    stringValue(current.get("contractName")),
-                    stringValue(current.get("fileName"))
-            );
+            String currentPdfFile = stringValue(current.get("pdfFile"));
+            String currentContractName = stringValue(current.get("contractName"));
+            String currentFileName = stringValue(current.get("fileName"));
+            Integer currentContractNumber = resolveContractNumber(currentPdfFile, currentContractName, currentFileName);
+            String currentIdentity = currentContractNumber != null
+                    ? ("CONTRATO" + currentContractNumber)
+                    : firstNotBlank(currentPdfFile, currentContractName, currentFileName);
             if (identity.equalsIgnoreCase(currentIdentity)) {
-                uploads.set(i, incoming);
-                return;
+                replaceIndex = i;
+                break;
             }
+        }
+        if (replaceIndex >= 0) {
+            uploads.set(replaceIndex, incoming);
+            // If duplicated records exist due to legacy identity mismatches, keep only the latest.
+            for (int i = uploads.size() - 1; i > replaceIndex; i--) {
+                Map<String, Object> current = uploads.get(i);
+                String currentPdfFile = stringValue(current.get("pdfFile"));
+                String currentContractName = stringValue(current.get("contractName"));
+                String currentFileName = stringValue(current.get("fileName"));
+                Integer currentContractNumber = resolveContractNumber(currentPdfFile, currentContractName, currentFileName);
+                String currentIdentity = currentContractNumber != null
+                        ? ("CONTRATO" + currentContractNumber)
+                        : firstNotBlank(currentPdfFile, currentContractName, currentFileName);
+                if (identity.equalsIgnoreCase(currentIdentity)) {
+                    uploads.remove(i);
+                }
+            }
+            return;
         }
         uploads.add(incoming);
     }

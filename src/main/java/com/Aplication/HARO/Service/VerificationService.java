@@ -996,6 +996,13 @@ public class VerificationService {
                     stored.signerFolder()
             );
         } catch (ChatbotProcesoService.ContractUploadValidationException ex) {
+            // The file was already stored (S3/local). Roll it back so the response remains consistent.
+            try {
+                contractDocumentStorageService.deleteStoredContract(stored.objectKey());
+            } catch (Exception deleteEx) {
+                log.warn("No se pudo hacer rollback del almacenamiento de contrato email={} key={}: {}",
+                        email, safe(stored.objectKey()), deleteEx.getMessage());
+            }
             throw ex;
         } catch (Exception ex) {
             // El archivo ya fue almacenado; no queremos fallar toda la respuesta por un error de persistencia.

@@ -1,6 +1,8 @@
 package com.Aplication.HARO.Service;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -8,6 +10,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
@@ -21,6 +24,8 @@ import java.util.Locale;
 
 @Service
 public class ContractDocumentStorageService {
+
+    private static final Logger log = LoggerFactory.getLogger(ContractDocumentStorageService.class);
 
     private static final DateTimeFormatter TS_FORMAT = DateTimeFormatter
             .ofPattern("yyyyMMdd-HHmmss")
@@ -95,6 +100,39 @@ public class ContractDocumentStorageService {
             return storeInS3(file, relativeFolder, fileName, signerFolder);
         }
         return storeLocal(file, relativeFolder, fileName, signerFolder);
+    }
+
+    /** Best-effort rollback when an upload must be rejected after storage. */
+    public void deleteStoredContract(String objectKey) {
+        String key = safe(objectKey);
+        if (key.isBlank()) {
+            return;
+        }
+        if ("s3".equals(storageProvider)) {
+            if (s3Client == null || s3Bucket.isBlank()) {
+                return;
+            }
+            try {
+                s3Client.deleteObject(DeleteObjectRequest.builder()
+                        .bucket(s3Bucket)
+                        .key(key)
+                        .build());
+            } catch (Exception ex) {
+                log.warn("No se pudo borrar contrato en S3 key={}: {}", key, ex.getMessage());
+            }
+            return;
+        }
+
+        try {
+            Path resolved = uploadDir.resolve(key).normalize();
+            if (!resolved.startsWith(uploadDir)) {
+                log.warn("Se omitio borrado de contrato fuera del uploadDir: {}", resolved);
+                return;
+            }
+            Files.deleteIfExists(resolved);
+        } catch (Exception ex) {
+            log.warn("No se pudo borrar contrato local key={}: {}", key, ex.getMessage());
+        }
     }
 
     private StoredDocument storeInS3(MultipartFile file,

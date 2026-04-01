@@ -2074,15 +2074,47 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             }
         }
 
+        String msg = buildPaymentStatusNotificationMessage(proceso, status, detail, paymentLink);
+
+        try {
+            waService.sendTextMessage(phone, msg);
+            try {
+                chatbotProcesoService.markPaymentStatusNotified(documento, status.code);
+            } catch (Exception ignored) {
+                // best-effort: no bloquea el flujo por falla guardando marca anti-spam.
+            }
+            log.info("Notificacion de pago no aprobado enviada doc={} to={} status={} ref={}",
+                    documento, maskPhone(phone), status.code, xRefPayco);
+        } catch (Exception ex) {
+            log.error("No se pudo enviar notificacion de pago no aprobado doc={} to={} status={} ref={}: {}",
+                    documento, maskPhone(phone), status.code, xRefPayco, ex.getMessage(), ex);
+        }
+    }
+
+    private String buildPaymentStatusNotificationMessage(ChatbotMatriculaProceso proceso,
+                                                         PaymentUserStatus status,
+                                                         String detailRaw,
+                                                         String paymentLinkRaw) {
+        String detail = safeTrim(detailRaw);
+        String paymentLink = safeTrim(paymentLinkRaw);
+        String studentName = resolveStudentDisplayName(proceso);
+
         StringBuilder msg = new StringBuilder();
+        if (StringUtils.hasText(studentName)) {
+            msg.append("Hola ").append(studentName).append(".\n\n");
+        }
 
         if (status == PaymentUserStatus.PENDING) {
-            msg.append("⏳ Tu pago está pendiente de validación.");
+            msg.append("⏳ Tu pago aparece como *PENDIENTE*.");
             if (StringUtils.hasText(detail)) {
                 msg.append("\n🧾 Detalle: ").append(detail);
             }
-            msg.append("\n\nCuando sea aprobado, te enviaremos automáticamente el enlace para firmar los contratos.");
-            msg.append("\nℹ️ No necesitas hacer nada por ahora. Si tu banco tarda, espera unos minutos y vuelve a consultar.");
+            msg.append("\n\nEsto puede tardar unos minutos dependiendo del banco.");
+            msg.append("\nCuando sea aprobado, te enviaremos automáticamente el enlace para firmar los contratos.");
+            if (StringUtils.hasText(paymentLink)) {
+                msg.append("\n\n🔁 Si necesitas el enlace nuevamente, aquí lo tienes:\n").append(paymentLink);
+            }
+            msg.append("\n\nℹ️ No necesitas hacer nada por ahora. Si el estado no cambia luego de unos minutos, escribe ASESOR.");
         } else {
             String headline = status == PaymentUserStatus.CANCELLED
                     ? "❌ Tu pago fue cancelado o no finalizado."
@@ -2098,20 +2130,18 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
 
         msg.append(ADVISOR_PROMPT);
+        return msg.toString();
+    }
 
-        try {
-            waService.sendTextMessage(phone, msg.toString());
-            try {
-                chatbotProcesoService.markPaymentStatusNotified(documento, status.code);
-            } catch (Exception ignored) {
-                // best-effort: no bloquea el flujo por falla guardando marca anti-spam.
-            }
-            log.info("Notificacion de pago no aprobado enviada doc={} to={} status={} ref={}",
-                    documento, maskPhone(phone), status.code, xRefPayco);
-        } catch (Exception ex) {
-            log.error("No se pudo enviar notificacion de pago no aprobado doc={} to={} status={} ref={}: {}",
-                    documento, maskPhone(phone), status.code, xRefPayco, ex.getMessage(), ex);
+    private String resolveStudentDisplayName(ChatbotMatriculaProceso proceso) {
+        if (proceso == null) {
+            return "";
         }
+        String nombre = safeTrim(proceso.getNombreCompleto());
+        if (!StringUtils.hasText(nombre)) {
+            return "";
+        }
+        return nombre.replaceAll("\\s+", " ");
     }
 
     private boolean shouldSkipPaymentStatusNotification(ChatbotMatriculaProceso proceso, PaymentUserStatus status) {

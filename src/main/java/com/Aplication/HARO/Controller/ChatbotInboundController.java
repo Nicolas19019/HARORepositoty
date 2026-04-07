@@ -57,6 +57,7 @@ public class ChatbotInboundController {
     private static final String CMD_CANCEL = "98";
     private static final String CMD_END = "99";
     private static final String CMD_BACK = "0";
+    private static final String FEEDBACK_FORM_URL = "https://forms.cloud.microsoft/r/AMvUFPUL2X";
 
     private static final int MAX_SESSIONS = 5000;
     /**
@@ -413,6 +414,7 @@ public class ChatbotInboundController {
                 case DONE -> {
                 sessions.remove(from);
                 actions.add(textMsg("✅ Tu proceso ya fue completado.\n\nResponde " + CMD_MENU + " (MENU) para iniciar una nueva solicitud."));
+                actions.add(textMsg(feedbackSurveyText()));
             }
             }
 
@@ -1104,10 +1106,10 @@ public class ChatbotInboundController {
                     "Paso 8 de 8: realiza el pago para continuar (" + planLabel + ").\n\n" +
                             "Enlace de pago:\n" + link + "\n\n" +
                             "Cuando lo realices, vuelve a este chat.\n" +
-                            "Si necesitas el enlace otra vez responde 1.\n\n" +
-                            paymentFlowInfo()
+                            "Si necesitas el enlace otra vez, responde 1.\n" +
+                            "Si ya pagaste, responde 2."
             ));
-            actions.add(textMsg("Opciones: " + CMD_MENU + " (MENU) | " + CMD_END + " (TERMINAR)"));
+            actions.add(textMsg("Opciones: 1 | 2 | " + CMD_MENU + " (MENU) | " + CMD_END + " (TERMINAR)"));
         } catch (Exception e) {
             log.error("No se pudo iniciar pago plan={} from={} doc={} email={}",
                     plan,
@@ -1209,24 +1211,6 @@ public class ChatbotInboundController {
                         "Si ya pagaste, no necesitas enviar nada: te avisaremos apenas se confirme."
         ));
         actions.add(textMsg("Opciones: 1 | 2 | " + CMD_MENU + " (MENU) | " + CMD_END + " (TERMINAR)"));
-    }
-
-    private String paymentFlowInfo() {
-        String confirmation = safe(procesoService.getPaymentConfirmationUrl());
-        String response = safe(procesoService.getPaymentReturnUrl());
-
-        if (confirmation.isBlank() && response.isBlank()) {
-            return "";
-        }
-
-        StringBuilder out = new StringBuilder("Configuración del flujo de pago:\n");
-        if (!confirmation.isBlank()) {
-            out.append("- Confirmación: ").append(confirmation).append("\n");
-        }
-        if (!response.isBlank()) {
-            out.append("- Retorno: ").append(response).append("\n");
-        }
-        return out.toString().trim();
     }
 
     private void capturePaymentContextFromChat(String paymentLink, SessionData session, String source) {
@@ -1381,6 +1365,7 @@ public class ChatbotInboundController {
                                 "Responde " + CMD_MENU + " (MENU) para continuar."
                 ));
                 actions.add(textMsg("Opciones: " + CMD_MENU + " (MENU) | " + CMD_END + " (TERMINAR)"));
+                actions.add(textMsg(feedbackSurveyText()));
                 return true;
             }
 
@@ -1585,6 +1570,7 @@ public class ChatbotInboundController {
                     "🆔 Referencia estudiante: " + studentId + "\n\n" +
                     "Gracias por completar tu proceso con *CEA HARO*."
             ));
+            actions.add(textMsg(feedbackSurveyText()));
 
             sessions.remove(from);
 
@@ -2954,6 +2940,14 @@ public class ChatbotInboundController {
         return "👋 Conversación finalizada.\n\n" +
                 "Gracias por escribir a CEA HARO.\n" +
                 "Si deseas iniciar de nuevo, responde " + CMD_MENU + " (MENU).";
+    }
+
+    private String feedbackSurveyText() {
+        return "📋 Encuesta\n\n" +
+                "¿Quieres contarnos cómo te fue en el proceso?\n" +
+                "Tu respuesta nos ayuda a mejorar.\n\n" +
+                "Formulario:\n" +
+                FEEDBACK_FORM_URL;
     }
 
     private String studentGreetingText(String studentName) {

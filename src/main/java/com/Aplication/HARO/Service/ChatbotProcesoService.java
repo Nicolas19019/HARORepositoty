@@ -1890,7 +1890,14 @@ private String paymentConfirmationUrl;
         try {
             return normalizePhone(value);
         } catch (Exception ex) {
-            return value.replaceAll("[^0-9+]", "");
+            String digits = value.replaceAll("\\D+", "");
+            if (digits.startsWith("00")) {
+                digits = digits.substring(2);
+            }
+            if (digits.startsWith("57") && digits.length() > 10) {
+                digits = digits.substring(Math.max(0, digits.length() - 10));
+            }
+            return digits;
         }
     }
 
@@ -2938,7 +2945,7 @@ private String paymentConfirmationUrl;
 
     private String normalizeDoc(String doc) {
         String out = trim(doc).replaceAll("\\D+", "");
-        if (out.length() < 5) {
+        if (out.length() < 5 || out.length() > 20) {
             throw new IllegalArgumentException("Documento invalido");
         }
         return out;
@@ -2953,9 +2960,22 @@ private String paymentConfirmationUrl;
     }
 
     private String normalizePhone(String phone) {
-        String out = trim(phone).replaceAll("[^0-9+]", "");
+        String out = trim(phone);
         if (out.isBlank()) {
             throw new IllegalArgumentException("Telefono requerido");
+        }
+
+        // Canonico: solo digitos (sin '+', espacios, guiones, etc.).
+        out = out.replaceAll("\\D+", "");
+        if (out.startsWith("00")) {
+            out = out.substring(2);
+        }
+        // Colombia: si viene con prefijo 57, guarda solo el numero local (ultimos 10 digitos).
+        if (out.startsWith("57") && out.length() > 10) {
+            out = out.substring(Math.max(0, out.length() - 10));
+        }
+        if (out.length() < 7) {
+            throw new IllegalArgumentException("Telefono invalido");
         }
         return out;
     }

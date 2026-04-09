@@ -105,6 +105,13 @@ public class ProspectoService {
         if (out.startsWith("00")) {
             out = out.substring(2);
         }
+        // Colombia: si viene con prefijo 57, guarda solo el numero local (ultimos 10 digitos).
+        if (out.startsWith("57") && out.length() > 10) {
+            out = out.substring(Math.max(0, out.length() - 10));
+        }
+        if (out.length() < 7) {
+            return "";
+        }
         return out;
     }
 

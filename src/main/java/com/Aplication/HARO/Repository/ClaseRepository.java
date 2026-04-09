@@ -36,6 +36,7 @@ public interface ClaseRepository extends JpaRepository<Clase, Long> {
               AND c.fecha = :fecha
               AND c.horaInicio < :horaFin
               AND c.horaFin > :horaInicio
+              AND (c.estado IS NULL OR UPPER(c.estado) NOT LIKE '%CANCEL%')
             """)
     boolean existsStudentOverlap(@Param("idEstudiante") Long idEstudiante,
                                  @Param("fecha") LocalDate fecha,
@@ -49,6 +50,7 @@ public interface ClaseRepository extends JpaRepository<Clase, Long> {
               AND c.fecha = :fecha
               AND c.horaInicio < :horaFin
               AND c.horaFin > :horaInicio
+              AND (c.estado IS NULL OR UPPER(c.estado) NOT LIKE '%CANCEL%')
             """)
     boolean existsProfesorOverlap(@Param("idProfesor") Long idProfesor,
                                   @Param("fecha") LocalDate fecha,
@@ -62,6 +64,7 @@ public interface ClaseRepository extends JpaRepository<Clase, Long> {
               AND c.fecha = :fecha
               AND c.horaInicio < :horaFin
               AND c.horaFin > :horaInicio
+              AND (c.estado IS NULL OR UPPER(c.estado) NOT LIKE '%CANCEL%')
             """)
     boolean existsVehiculoOverlap(@Param("placaVehiculo") String placaVehiculo,
                                   @Param("fecha") LocalDate fecha,
@@ -75,6 +78,7 @@ public interface ClaseRepository extends JpaRepository<Clase, Long> {
               AND c.fecha = :fecha
               AND c.horaInicio < :horaFin
               AND c.horaFin > :horaInicio
+              AND (c.estado IS NULL OR UPPER(c.estado) NOT LIKE '%CANCEL%')
             """)
     List<Long> findBusyProfesorIds(@Param("fecha") LocalDate fecha,
                                    @Param("horaInicio") LocalTime horaInicio,
@@ -87,6 +91,7 @@ public interface ClaseRepository extends JpaRepository<Clase, Long> {
               AND c.fecha = :fecha
               AND c.horaInicio < :horaFin
               AND c.horaFin > :horaInicio
+              AND (c.estado IS NULL OR UPPER(c.estado) NOT LIKE '%CANCEL%')
             """)
     List<String> findBusyVehiculoPlacas(@Param("fecha") LocalDate fecha,
                                         @Param("horaInicio") LocalTime horaInicio,

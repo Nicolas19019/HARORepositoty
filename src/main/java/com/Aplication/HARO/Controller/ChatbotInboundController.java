@@ -76,30 +76,32 @@ public class ChatbotInboundController {
      *   Juan Perez 12345678 A2, B1 y C1
      */
     private static final Pattern ENROLLMENT_BASIC_PATTERN = Pattern.compile(
-            "(?i)^\\s*(.+?)\\s+(\\d{5,20})\\s+(" +
-                    "A2\\s*(?:Y|,|\\+|/)\\s*B1\\s*(?:Y|,|\\+|/)\\s*C1" + // A2 y B1 y C1
-                    "|A2\\s*(?:Y|,|\\+|/)\\s*B1" +                       // A2 y B1
-                    "|A2\\s*(?:Y|,|\\+|/)\\s*C1" +                       // A2 y C1 (por si luego lo usas)
-                    "|B1\\s*(?:Y|,|\\+|/)\\s*C1" +                       // B1 y C1 (por si luego lo usas)
+            // Documento puede venir con separadores (puntos, espacios, guiones, comas); luego se normaliza a solo digitos.
+            "(?i)^\\s*(.+?)\\s+([0-9][0-9\\s\\.,-]{3,40}[0-9])\\s+(" +
+                    "A2\\s*(?:Y|,|\\+|/|-)\\s*B1\\s*(?:Y|,|\\+|/|-)\\s*C1" + // A2 y B1 y C1
+                    "|A2\\s*(?:Y|,|\\+|/|-)\\s*B1" +                         // A2 y B1
+                    "|A2\\s*(?:Y|,|\\+|/|-)\\s*C1" +                         // A2 y C1 (incluye A2 - C1)
+                    "|B1\\s*(?:Y|,|\\+|/|-)\\s*C1" +                         // B1 y C1
                     "|A2|B1|C1" +
                     ")\\s*$"
     );
 
     // Formato recomendado: Nombre + Documento (sin categoría)
     private static final Pattern ENROLLMENT_NAME_DOC_PATTERN = Pattern.compile(
-            "(?i)^\\s*(.+?)\\s+(\\d{5,20})\\s*$"
+            "(?i)^\\s*(.+?)\\s+([0-9][0-9\\s\\.,-]{3,40}[0-9])\\s*$"
     );
 
     // Formato opcional: Nombre + Documento + opción de categoría (1..5)
     private static final Pattern ENROLLMENT_NAME_DOC_OPTION_PATTERN = Pattern.compile(
-            "(?i)^\\s*(.+?)\\s+(\\d{5,20})\\s+([1-5])\\s*$"
+            "(?i)^\\s*(.+?)\\s+([0-9][0-9\\s\\.,-]{3,40}[0-9])\\s+([1-5])\\s*$"
     );
 
     private static final Pattern EMAIL_PATTERN = Pattern.compile(
             "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"
     );
 
-    private static final Pattern PHONE_PATTERN = Pattern.compile("^\\+?\\d{8,15}$");
+    // Normalizamos el telefono a solo digitos (sin +57) y exigimos 10 digitos para Colombia.
+    private static final Pattern PHONE_PATTERN = Pattern.compile("^\\d{10}$");
 
     // YYYY-MM-DD HH:mm
     private static final Pattern BOOKING_SLOT_PATTERN = Pattern.compile(
@@ -861,24 +863,32 @@ public class ChatbotInboundController {
 
         actions.add(textMsg(
                 "Paso 4 de 8: envia tu telefono de contacto.\n" +
-                        "Ejemplo: 573001112233"
+                        "Ejemplo: 3001112233 (sin +57)"
         ));
         actions.add(textMsg("Opciones: " + CMD_MENU + " (MENU) | " + CMD_CANCEL + " (CANCELAR)"));
     }
 
     private void handleEnrollmentPhoneCapture(String text, SessionData session, List<BotAction> actions) {
-        String phone = trim(text).replaceAll("\\s+", "");
-        if (!PHONE_PATTERN.matcher(phone).matches()) {
+        String digits = trim(text).replaceAll("\\D+", "");
+        if (digits.startsWith("00")) {
+            digits = digits.substring(2);
+        }
+        // Si viene con prefijo 57, nos quedamos con el numero local (ultimos 10 digitos).
+        if (digits.startsWith("57") && digits.length() > 10) {
+            digits = digits.substring(Math.max(0, digits.length() - 10));
+        }
+        if (!PHONE_PATTERN.matcher(digits).matches()) {
             actions.add(textMsg(
-                    "Telefono invalido.\n\n" +
-                            "Debes enviar entre 8 y 15 digitos (puede iniciar con +).\n" +
-                            "Ejemplo: 573001112233"
+                    "⚠️ Teléfono inválido.\n\n" +
+                            "Envíalo sin +57, solo 10 dígitos.\n" +
+                            "Ejemplo: 3001112233\n\n" +
+                            "Tip: si lo envías como +57 3001112233 o 573001112233, yo lo limpio automáticamente."
             ));
             actions.add(textMsg("Opciones: " + CMD_MENU + " (MENU) | " + CMD_CANCEL + " (CANCELAR)"));
             return;
         }
 
-        session.telefono = phone;
+        session.telefono = digits;
         session.state = ChatState.ENROLLMENT_ADDRESS_CAPTURE;
         actions.add(textMsg(
                 "Paso 5 de 8: envia tu direccion de residencia.\n\n" +
@@ -2204,7 +2214,7 @@ public class ChatbotInboundController {
             case ENROLLMENT_PHONE_CAPTURE -> {
                 actions.add(textMsg(
                         "Paso 4 de 8: envia tu telefono de contacto.\n" +
-                                "Ejemplo: 573001112233"
+                                "Ejemplo: 3001112233 (sin +57)"
                 ));
                 actions.add(textMsg("Opciones: " + CMD_MENU + " (MENU) | " + CMD_CANCEL + " (CANCELAR) | " + CMD_END + " (TERMINAR)"));
             }
@@ -2466,7 +2476,11 @@ public class ChatbotInboundController {
         if (!matcher.matches()) return null;
 
         String nombre = collapseSpaces(matcher.group(1));
-        String documento = matcher.group(2);
+        if (containsDigit(nombre)) return null;
+
+        String documento = trim(matcher.group(2)).replaceAll("\\D+", "");
+        if (!DOCUMENT_PATTERN.matcher(documento).matches()) return null;
+
         String categoria = normalizeCategory(matcher.group(3));
 
         if (nombre.length() < 3) return null;
@@ -2478,7 +2492,11 @@ public class ChatbotInboundController {
         if (!matcher.matches()) return null;
 
         String nombre = collapseSpaces(matcher.group(1));
-        String documento = matcher.group(2);
+        if (containsDigit(nombre)) return null;
+
+        String documento = trim(matcher.group(2)).replaceAll("\\D+", "");
+        if (!DOCUMENT_PATTERN.matcher(documento).matches()) return null;
+
         String opt = matcher.group(3);
 
         if (nombre.length() < 3) return null;
@@ -2499,7 +2517,11 @@ public class ChatbotInboundController {
         if (!matcher.matches()) return null;
 
         String nombre = collapseSpaces(matcher.group(1));
-        String documento = matcher.group(2);
+        if (containsDigit(nombre)) return null;
+
+        String documento = trim(matcher.group(2)).replaceAll("\\D+", "");
+        if (!DOCUMENT_PATTERN.matcher(documento).matches()) return null;
+
         if (nombre.length() < 3) return null;
         return new EnrollmentNameDoc(nombre, documento);
     }
@@ -3063,7 +3085,8 @@ public class ChatbotInboundController {
                 .replace(" ", "")
                 .replace("+", "y")
                 .replace("/", "y")
-                .replace(",", "y");
+                .replace(",", "y")
+                .replace("-", "y");
 
         while (n.contains("yy")) n = n.replace("yy", "y");
 
@@ -3081,6 +3104,18 @@ public class ChatbotInboundController {
         if (hasB1 && hasC1) return "B1 y C1";
 
         return "A2";
+    }
+
+    private boolean containsDigit(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            if (Character.isDigit(value.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String collapseSpaces(String value) {
@@ -3307,8 +3342,8 @@ public class ChatbotInboundController {
     private String enrollmentInitialPromptText() {
         return "📝 Perfecto. Vamos a iniciar tu matrícula en CEA HARO.\n\n" +
                 "Para continuar, envíame esta información *en un solo mensaje*:\n\n" +
-                "1) Nombre completo (como aparece en tu documento)\n" +
-                "2) Número de documento (sin puntos ni comas)\n" +
+                "1) Nombre completo (solo letras, sin números)\n" +
+                "2) Número de documento (puede incluir puntos o espacios; yo lo limpio)\n" +
                 "✅ Ejemplo:\n" +
                 "Juan Perez 12345678\n\n" +
                 "Después te mostraré un menú para seleccionar la categoría (A2, B1, C1, A2 y B1, A2, B1 y C1).";

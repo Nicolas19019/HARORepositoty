@@ -1,9 +1,11 @@
 package com.Aplication.HARO.Controller;
 
 import org.springframework.http.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import com.Aplication.HARO.Security.AdminSedeGuard;
 import com.Aplication.HARO.Security.DetallesUsuarioAplicacion;
 import com.Aplication.HARO.Model.Estudiante;
 import com.Aplication.HARO.Service.EstudianteService;
@@ -24,30 +26,48 @@ public class EstudianteController {
 	private final EstudianteService service;
 	private final VerificationService verificationService;
 	private final EstudianteModuloAccesoService estudianteModuloAccesoService;
+	private final AdminSedeGuard adminSedeGuard;
 
 	public EstudianteController(EstudianteService service,
 			VerificationService verificationService,
-			EstudianteModuloAccesoService estudianteModuloAccesoService) {
+			EstudianteModuloAccesoService estudianteModuloAccesoService,
+			AdminSedeGuard adminSedeGuard) {
 		this.service = service;
 		this.verificationService = verificationService;
 		this.estudianteModuloAccesoService = estudianteModuloAccesoService;
+		this.adminSedeGuard = adminSedeGuard;
 	}
 
 	public record RegistroModuloRequest(String email, String code, String password, String usuario, String origen) {}
 
 	@GetMapping
-	public List<Estudiante> getAll() {
-		return service.getAllEstudiantes();
+	@PreAuthorize("hasRole('ADMIN')")
+	public List<Estudiante> getAll(Authentication authentication) {
+		AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
+		List<Estudiante> out = service.getAllEstudiantes();
+		if (!adminCtx.superAdmin()) {
+			out = out.stream()
+					.filter(e -> adminSedeGuard.canAccess(adminCtx, e.getSede()))
+					.toList();
+		}
+		return out;
 	}
 
 	@GetMapping("/{id}")
-	public Estudiante getById(@PathVariable long id) { // <-- long
-		return service.getEstudianteById(id)
+	@PreAuthorize("hasRole('ADMIN')")
+	public Estudiante getById(@PathVariable long id, Authentication authentication) { // <-- long
+		AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
+		Estudiante e = service.getEstudianteById(id)
 				.orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado: " + id));
+		adminSedeGuard.assertCanAccess(adminCtx, e.getSede());
+		return e;
 	}
 
 	@PostMapping
-	public ResponseEntity<Estudiante> create(@RequestBody Estudiante e) {
+	@PreAuthorize("hasRole('ADMIN')")
+	public ResponseEntity<Estudiante> create(@RequestBody Estudiante e, Authentication authentication) {
+		AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
+		e.setSede(adminSedeGuard.enforceRequestSede(adminCtx, e.getSede()));
 		e.setId(null); // <-- CLAVE: garantiza INSERT
 		Estudiante created = service.createEstudiante(e);
 		return ResponseEntity.created(URI.create("/api/estudiantes/" + created.getId())).body(created);
@@ -87,12 +107,27 @@ public class EstudianteController {
 	}
 
 	@PutMapping("/{id}")
-	public Estudiante update(@PathVariable long id, @RequestBody Estudiante e) {
+	@PreAuthorize("hasRole('ADMIN')")
+	public Estudiante update(@PathVariable long id, @RequestBody Estudiante e, Authentication authentication) {
+		AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
+		Estudiante current = service.getEstudianteById(id)
+				.orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado: " + id));
+		adminSedeGuard.assertCanAccess(adminCtx, current.getSede());
+		if (e.getSede() != null) {
+			e.setSede(adminSedeGuard.enforceRequestSede(adminCtx, e.getSede()));
+		}
 		return service.updateEstudiante(id, e);
 	}
 
 	@PatchMapping("/{id}/foto-perfil")
-	public Estudiante updateFotoPerfil(@PathVariable long id, @RequestBody Map<String, String> body) {
+	@PreAuthorize("hasRole('ADMIN')")
+	public Estudiante updateFotoPerfil(@PathVariable long id,
+									  @RequestBody Map<String, String> body,
+									  Authentication authentication) {
+		AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
+		Estudiante current = service.getEstudianteById(id)
+				.orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado: " + id));
+		adminSedeGuard.assertCanAccess(adminCtx, current.getSede());
 		if (body == null || !body.containsKey("fotoPerfil")) {
 			throw new IllegalArgumentException("Debes enviar fotoPerfil");
 		}
@@ -102,7 +137,14 @@ public class EstudianteController {
 	}
 
 	@PatchMapping("/{id}/aprobo-examen-teorico")
-	public Estudiante updateAproboExamenTeorico(@PathVariable long id, @RequestBody Map<String, Boolean> body) {
+	@PreAuthorize("hasRole('ADMIN')")
+	public Estudiante updateAproboExamenTeorico(@PathVariable long id,
+											   @RequestBody Map<String, Boolean> body,
+											   Authentication authentication) {
+		AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
+		Estudiante current = service.getEstudianteById(id)
+				.orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado: " + id));
+		adminSedeGuard.assertCanAccess(adminCtx, current.getSede());
 		if (body == null || !body.containsKey("aproboExamenTeorico")) {
 			throw new IllegalArgumentException("Debes enviar aproboExamenTeorico");
 		}
@@ -112,7 +154,12 @@ public class EstudianteController {
 	}
 
 	@DeleteMapping("/{id}")
-	public ResponseEntity<Void> delete(@PathVariable long id) { // <-- long
+	@PreAuthorize("hasRole('ADMIN')")
+	public ResponseEntity<Void> delete(@PathVariable long id, Authentication authentication) { // <-- long
+		AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
+		Estudiante current = service.getEstudianteById(id)
+				.orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado: " + id));
+		adminSedeGuard.assertCanAccess(adminCtx, current.getSede());
 		service.deleteEstudiante(id);
 		return ResponseEntity.noContent().build();
 	}

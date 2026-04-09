@@ -57,7 +57,8 @@ public class EpaycoController {
     private record SyncDecision(boolean synced, String reason, String resolvedBy) {}
     private record ContractAccessParams(String email, String code) {}
 
-    private static final String ADVISOR_PROMPT = "\n\n🤖 ASESOR: Si necesitas ayuda, escribe ASESOR.";
+    private static final String ADVISOR_PROMPT =
+            "\n\n🤖 Si necesitas ayuda, responde 9 en WhatsApp para ver el menú y elige contactar un asesor.";
 
     private final EpaycoService epaycoService;
     private final EpaycoCheckoutContextService checkoutContextService;
@@ -1752,7 +1753,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 "APPROVED",
                 "Pago aprobado",
                 "Recibimos tu pago correctamente.",
-                "Te enviaremos el enlace de contratos. Si no lo recibes en pocos minutos, escribe MENU en WhatsApp."
+                "Te enviaremos el enlace de contratos. Si no lo recibes en pocos minutos, responde 9 en WhatsApp para ver el menú."
         ),
         PENDING(
                 "PENDING",
@@ -2208,7 +2209,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             if (StringUtils.hasText(paymentLink)) {
                 msg.append("\n\n🔁 Si necesitas el enlace nuevamente, aquí lo tienes:\n").append(paymentLink);
             }
-            msg.append("\n\nℹ️ No necesitas hacer nada por ahora. Si el estado no cambia luego de unos minutos, escribe ASESOR.");
+            msg.append("\n\nℹ️ No necesitas hacer nada por ahora. Si el estado no cambia luego de unos minutos, contáctanos por WhatsApp.");
         } else {
             String headline = status == PaymentUserStatus.CANCELLED
                     ? "❌ Tu pago fue cancelado o no finalizado."
@@ -2328,7 +2329,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
 
         return "✅ Pago aprobado.\n\n📄 Continúa con la contratación en este enlace:\n"
                 + contractLink
-                + "\n\n🤝 Si necesitas ayuda, escribe ASESOR.";
+                + ADVISOR_PROMPT;
     }
 
     private String injectContractUrl(String templateRaw, String contractLink) {

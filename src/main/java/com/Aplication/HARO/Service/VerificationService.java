@@ -1198,7 +1198,7 @@ public class VerificationService {
         }
 
         message.append("\uD83D\uDCC5 En este grupo se enviar\u00e1 la programaci\u00f3n de las clases del d\u00eda siguiente.\n\n")
-                .append("Si necesitas ayuda, escribe ASESOR.");
+                .append("Si necesitas ayuda, responde 9 para ver el menú y elige contactar un asesor.");
 
         return message.toString();
     }
@@ -1208,7 +1208,7 @@ public class VerificationService {
                 + "\u23F0 En tu pr\u00f3xima clase debes llegar 30 minutos antes para la toma de biom\u00e9tricos "
                 + "y finalizar tu proceso de matr\u00edcula.\n\n"
                 + "Gracias por escoger CEA HARO.\n\n"
-                + "Ya puedes escribir MENU para volver al men\u00fa o TERMINAR para salir.";
+                + "Para ver opciones, responde 9.";
     }
 
     private void sendWhatsappText(String normalizedPhone, String message) {

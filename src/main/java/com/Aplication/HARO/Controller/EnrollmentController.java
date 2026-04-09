@@ -1,12 +1,14 @@
 package com.Aplication.HARO.Controller;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
+import com.Aplication.HARO.Security.AdminSedeGuard;
 import com.Aplication.HARO.Service.ChatbotProcesoService;
 import com.Aplication.HARO.Service.PaymentApprovalService;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,11 +22,14 @@ public class EnrollmentController {
 
     private final ChatbotProcesoService procesoService;
     private final PaymentApprovalService paymentApprovalService;
+    private final AdminSedeGuard adminSedeGuard;
 
     public EnrollmentController(ChatbotProcesoService procesoService,
-                                PaymentApprovalService paymentApprovalService) {
+                                PaymentApprovalService paymentApprovalService,
+                                AdminSedeGuard adminSedeGuard) {
         this.procesoService = procesoService;
         this.paymentApprovalService = paymentApprovalService;
+        this.adminSedeGuard = adminSedeGuard;
     }
 
     public record UpsertProcesoReq(
@@ -42,7 +47,17 @@ public class EnrollmentController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/process/upsert")
-    public ResponseEntity<?> upsertProceso(@RequestBody UpsertProcesoReq req) {
+    public ResponseEntity<?> upsertProceso(@RequestBody UpsertProcesoReq req, Authentication authentication) {
+        AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
+        String documento = req == null ? "" : req.documento();
+        if (StringUtils.hasText(documento)) {
+            procesoService.findProcesoByDocumento(documento).ifPresent(existing -> {
+                if (StringUtils.hasText(existing.getSede())) {
+                    adminSedeGuard.assertCanAccess(adminCtx, existing.getSede());
+                }
+            });
+        }
+        String sede = adminSedeGuard.enforceRequestSede(adminCtx, req == null ? "" : req.sede());
         ChatbotMatriculaProceso proceso = procesoService.upsertDraft(
                 req.phone(),
                 req.nombreCompleto(),
@@ -51,7 +66,7 @@ public class EnrollmentController {
                 req.email(),
                 req.telefono(),
                 req.direccion() == null ? "" : req.direccion(),
-                req.sede() == null ? "" : req.sede()
+                sede
         );
 
         // Por defecto, si viene de este endpoint asumimos HAROGESTION.
@@ -88,7 +103,12 @@ public class EnrollmentController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/payment/cash/confirm")
-    public ResponseEntity<?> confirmCash(@RequestBody ManualCashConfirmReq req) {
+    public ResponseEntity<?> confirmCash(@RequestBody ManualCashConfirmReq req, Authentication authentication) {
+        AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
+        ChatbotMatriculaProceso proceso = procesoService.findProcesoByDocumento(req == null ? "" : req.documento())
+                .orElseThrow(() -> new java.util.NoSuchElementException("No existe proceso de matricula para documento " + (req == null ? "" : req.documento())));
+        adminSedeGuard.assertCanAccess(adminCtx, proceso.getSede());
+
         boolean sendEmail = req.sendEmail() == null || req.sendEmail();
         boolean sendChatbot = req.sendChatbot() != null && req.sendChatbot();
         boolean requireProspect = req.requireProspect() == null || req.requireProspect();
@@ -96,7 +116,7 @@ public class EnrollmentController {
         PaymentApprovalService.ContractSendResult out = paymentApprovalService.confirmCashPaymentManual(
                 req.documento(),
                 req.valorPagado(),
-                req.adminId(),
+                adminCtx.adminId(),
                 req.observacion(),
                 sendEmail,
                 sendChatbot,
@@ -117,7 +137,12 @@ public class EnrollmentController {
      */
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/payment/cash/confirm-and-send")
-    public ResponseEntity<?> confirmCashAndSend(@RequestBody ManualCashConfirmReq req) {
+    public ResponseEntity<?> confirmCashAndSend(@RequestBody ManualCashConfirmReq req, Authentication authentication) {
+        AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
+        ChatbotMatriculaProceso proceso = procesoService.findProcesoByDocumento(req == null ? "" : req.documento())
+                .orElseThrow(() -> new java.util.NoSuchElementException("No existe proceso de matricula para documento " + (req == null ? "" : req.documento())));
+        adminSedeGuard.assertCanAccess(adminCtx, proceso.getSede());
+
         boolean sendEmail = req.sendEmail() == null || req.sendEmail();
         boolean sendChatbot = req.sendChatbot() == null || req.sendChatbot();
         boolean requireProspect = req.requireProspect() == null || req.requireProspect();
@@ -125,7 +150,7 @@ public class EnrollmentController {
         PaymentApprovalService.ContractSendResult out = paymentApprovalService.confirmCashPaymentManual(
                 req.documento(),
                 req.valorPagado(),
-                req.adminId(),
+                adminCtx.adminId(),
                 req.observacion(),
                 sendEmail,
                 sendChatbot,
@@ -144,7 +169,12 @@ public class EnrollmentController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/contracts/email/send")
-    public ResponseEntity<?> sendContractEmail(@RequestBody SendContractReq req) {
+    public ResponseEntity<?> sendContractEmail(@RequestBody SendContractReq req, Authentication authentication) {
+        AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
+        ChatbotMatriculaProceso proceso = procesoService.findProcesoByDocumento(req == null ? "" : req.documento())
+                .orElseThrow(() -> new java.util.NoSuchElementException("No existe proceso de matricula para documento " + (req == null ? "" : req.documento())));
+        adminSedeGuard.assertCanAccess(adminCtx, proceso.getSede());
+
         boolean force = req.force() != null && req.force();
         PaymentApprovalService.ContractSendResult out = paymentApprovalService.sendContractLinkByEmail(req.documento(), force);
         HttpStatus status = out.ok() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
@@ -153,7 +183,12 @@ public class EnrollmentController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/contracts/chatbot/send")
-    public ResponseEntity<?> sendContractChatbot(@RequestBody SendContractReq req) {
+    public ResponseEntity<?> sendContractChatbot(@RequestBody SendContractReq req, Authentication authentication) {
+        AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
+        ChatbotMatriculaProceso proceso = procesoService.findProcesoByDocumento(req == null ? "" : req.documento())
+                .orElseThrow(() -> new java.util.NoSuchElementException("No existe proceso de matricula para documento " + (req == null ? "" : req.documento())));
+        adminSedeGuard.assertCanAccess(adminCtx, proceso.getSede());
+
         boolean force = req.force() != null && req.force();
         boolean requireProspect = req.requireProspect() == null || req.requireProspect();
         PaymentApprovalService.ContractSendResult out = paymentApprovalService.sendContractLinkByChatbot(req.documento(), requireProspect, force);

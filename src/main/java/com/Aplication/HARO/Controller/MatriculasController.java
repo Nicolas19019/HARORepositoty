@@ -2,6 +2,7 @@ package com.Aplication.HARO.Controller;
 
 import com.Aplication.HARO.Model.ChatbotMatriculaProceso;
 import com.Aplication.HARO.Repository.ChatbotMatriculaProcesoRepository;
+import com.Aplication.HARO.Security.AdminSedeGuard;
 import com.Aplication.HARO.Service.ServicioLimpiezaSolicitudesEfectivo;
 import com.Aplication.HARO.Service.ChatbotProcesoService;
 import com.Aplication.HARO.Service.PaymentApprovalService;
@@ -15,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -56,19 +58,22 @@ public class MatriculasController {
     private final ProspectoService prospectoService;
     private final ServicioLimpiezaSolicitudesEfectivo cashCleanupService;
     private final JdbcTemplate jdbcTemplate;
+    private final AdminSedeGuard adminSedeGuard;
 
     public MatriculasController(ChatbotMatriculaProcesoRepository procesoRepository,
                                 ChatbotProcesoService procesoService,
                                 PaymentApprovalService paymentApprovalService,
                                 ProspectoService prospectoService,
                                 ServicioLimpiezaSolicitudesEfectivo cashCleanupService,
-                                JdbcTemplate jdbcTemplate) {
+                                JdbcTemplate jdbcTemplate,
+                                AdminSedeGuard adminSedeGuard) {
         this.procesoRepository = procesoRepository;
         this.procesoService = procesoService;
         this.paymentApprovalService = paymentApprovalService;
         this.prospectoService = prospectoService;
         this.cashCleanupService = cashCleanupService;
         this.jdbcTemplate = jdbcTemplate;
+        this.adminSedeGuard = adminSedeGuard;
     }
 
     public record CrearReq(
@@ -129,7 +134,9 @@ public class MatriculasController {
     @GetMapping
     public List<MatriculaRow> list(@RequestParam(value = "limit", defaultValue = "500") int limit,
                                    @RequestParam(value = "all", defaultValue = "false") boolean all,
-                                   @RequestParam(value = "includeHidden", defaultValue = "false") boolean includeHidden) {
+                                   @RequestParam(value = "includeHidden", defaultValue = "false") boolean includeHidden,
+                                   Authentication authentication) {
+        AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
         int size = Math.max(1, Math.min(limit, 2000));
         try {
             cashCleanupService.cleanupExpiredCashRequests();
@@ -150,10 +157,21 @@ public class MatriculasController {
                         : procesoRepository.findByVisibleTrueAndMetodoPagoIgnoreCaseOrVisibleTrueAndFlowStatusIgnoreCaseOrVisibleTrueAndFlowStatusIgnoreCase(
                         "EFECTIVO", "PENDING_CASH_VALIDATION", "PENDING_PAYMENT", page);
             }
+            if (!adminCtx.superAdmin()) {
+                items = items.stream()
+                        .filter(p -> adminSedeGuard.canAccess(adminCtx, p.getSede()))
+                        .toList();
+            }
             return items.stream().map(this::toRow).toList();
         } catch (Exception ex) {
             log.warn("Fallo listando solicitudes por JPA, usando fallback JDBC. cause={}", ex.getMessage());
-            return listViaJdbc(size, all, includeHidden);
+            List<MatriculaRow> rows = listViaJdbc(size, all, includeHidden);
+            if (!adminCtx.superAdmin()) {
+                rows = rows.stream()
+                        .filter(r -> adminSedeGuard.canAccess(adminCtx, r.sede()))
+                        .toList();
+            }
+            return rows;
         }
     }
 
@@ -376,7 +394,8 @@ public class MatriculasController {
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     @Transactional
-    public ResponseEntity<?> create(@RequestBody CrearReq req) {
+    public ResponseEntity<?> create(@RequestBody CrearReq req, Authentication authentication) {
+        AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
         if (req == null || req.estudiante() == null) {
             throw new IllegalArgumentException("estudiante es requerido");
         }
@@ -408,7 +427,14 @@ public class MatriculasController {
             nombreCompleto = "Estudiante";
         }
 
-        String sede = trim(req.sede());
+        String sede = adminSedeGuard.enforceRequestSede(adminCtx, req.sede());
+
+        // Evita que un admin "tome" solicitudes ya creadas en otra sede.
+        procesoRepository.findByNumeroDocumento(doc).ifPresent(existing -> {
+            if (StringUtils.hasText(trim(existing.getSede()))) {
+                adminSedeGuard.assertCanAccess(adminCtx, existing.getSede());
+            }
+        });
 
         ChatbotMatriculaProceso proceso = procesoService.upsertDraft(
                 telefono,
@@ -456,7 +482,7 @@ public class MatriculasController {
             PaymentApprovalService.ContractSendResult out = paymentApprovalService.confirmCashPaymentManual(
                     doc,
                     req.valorPagado(),
-                    null,
+                    adminCtx.adminId(),
                     req.observacionPago(),
                     false,
                     false,
@@ -481,9 +507,14 @@ public class MatriculasController {
             },
             method = {RequestMethod.POST, RequestMethod.PATCH}
     )
-    public ResponseEntity<?> confirmarPago(@PathVariable Long id, @RequestBody(required = false) ActionReq req) {
+    public ResponseEntity<?> confirmarPago(@PathVariable Long id,
+                                          @RequestBody(required = false) ActionReq req,
+                                          Authentication authentication) {
+        AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
         ChatbotMatriculaProceso p = procesoRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Solicitud no encontrada: " + id));
+
+        adminSedeGuard.assertCanAccess(adminCtx, p.getSede());
 
         if (StringUtils.hasText(trim(p.getMetodoPago())) && !"EFECTIVO".equalsIgnoreCase(trim(p.getMetodoPago()))) {
             return ResponseEntity.badRequest().body("Esta acción solo aplica para pagos en EFECTIVO.");
@@ -497,7 +528,7 @@ public class MatriculasController {
         PaymentApprovalService.ContractSendResult out = paymentApprovalService.confirmCashPaymentManual(
                 p.getNumeroDocumento(),
                 req == null ? null : req.valorPagado(),
-                req == null ? null : req.validadoPorAdminId(),
+                adminCtx.adminId(),
                 req == null ? null : req.observacionPago(),
                 sendEmail,
                 sendChatbot,
@@ -518,9 +549,14 @@ public class MatriculasController {
             },
             method = {RequestMethod.POST, RequestMethod.PATCH}
     )
-    public ResponseEntity<?> enviarCorreo(@PathVariable Long id, @RequestBody(required = false) ActionReq req) {
+    public ResponseEntity<?> enviarCorreo(@PathVariable Long id,
+                                          @RequestBody(required = false) ActionReq req,
+                                          Authentication authentication) {
+        AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
         ChatbotMatriculaProceso p = procesoRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Solicitud no encontrada: " + id));
+
+        adminSedeGuard.assertCanAccess(adminCtx, p.getSede());
 
         boolean force = req != null && req.force() != null && req.force();
         PaymentApprovalService.ContractSendResult out = paymentApprovalService.sendContractLinkByEmail(p.getNumeroDocumento(), force);
@@ -539,9 +575,14 @@ public class MatriculasController {
             },
             method = {RequestMethod.POST, RequestMethod.PATCH}
     )
-    public ResponseEntity<?> enviarChatbot(@PathVariable Long id, @RequestBody(required = false) ActionReq req) {
+    public ResponseEntity<?> enviarChatbot(@PathVariable Long id,
+                                           @RequestBody(required = false) ActionReq req,
+                                           Authentication authentication) {
+        AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
         ChatbotMatriculaProceso p = procesoRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Solicitud no encontrada: " + id));
+
+        adminSedeGuard.assertCanAccess(adminCtx, p.getSede());
 
         String origen = trim(p.getOrigenRegistro()).toUpperCase(Locale.ROOT);
         if (StringUtils.hasText(origen) && !"HAROGESTION".equals(origen)) {
@@ -558,9 +599,12 @@ public class MatriculasController {
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     @Transactional
-    public ResponseEntity<?> eliminarSolicitud(@PathVariable Long id) {
+    public ResponseEntity<?> eliminarSolicitud(@PathVariable Long id, Authentication authentication) {
+        AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
         ChatbotMatriculaProceso proceso = procesoRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Solicitud no encontrada: " + id));
+
+        adminSedeGuard.assertCanAccess(adminCtx, proceso.getSede());
 
         proceso.setVisible(false);
         procesoRepository.save(proceso);
@@ -577,9 +621,13 @@ public class MatriculasController {
     @PatchMapping("/{id}/visible")
     @Transactional
     public ResponseEntity<?> actualizarVisibilidad(@PathVariable Long id,
-                                                   @RequestBody(required = false) VisibilityReq req) {
+                                                   @RequestBody(required = false) VisibilityReq req,
+                                                   Authentication authentication) {
+        AdminSedeGuard.AdminCtx adminCtx = adminSedeGuard.resolve(authentication);
         ChatbotMatriculaProceso proceso = procesoRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Solicitud no encontrada: " + id));
+
+        adminSedeGuard.assertCanAccess(adminCtx, proceso.getSede());
 
         boolean visible = req == null || req.visible() == null || req.visible();
         proceso.setVisible(visible);

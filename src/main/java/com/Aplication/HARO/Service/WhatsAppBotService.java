@@ -215,22 +215,22 @@ public class WhatsAppBotService {
     private String buildReply(WhatsAppWebhookService.InboundMessage msg) {
         String normalized = normalize(msg.text());
         if (!StringUtils.hasText(normalized)) {
-            return "🤖 Recibimos tu mensaje. Escribe MENU para ver opciones.";
+            return "🤖 Recibimos tu mensaje. Responde 9 para ver opciones.";
         }
 
-        if (normalized.equals("menu") || normalized.equals("hola") || normalized.equals("buenas")) {
+        if (normalized.equals("9") || normalized.equals("menu") || normalized.equals("hola") || normalized.equals("buenas")) {
             return menuText();
         }
-        if (normalized.equals("1") || normalized.contains("inscripcion")) {
+        if (normalized.equals("1")) {
             return "📝 Inscripciones: escribe tu nombre completo y categoría de licencia (A2, B1, C1).";
         }
-        if (normalized.equals("2") || normalized.contains("horario")) {
+        if (normalized.equals("2")) {
             return "🕒 Horarios CEA HARO: Lun-Vie 7:00 a.m. a 6:00 p.m., Sábado 7:00 a.m. a 1:00 p.m.";
         }
-        if (normalized.equals("3") || normalized.contains("asesor") || normalized.contains("humano")) {
+        if (normalized.equals("3")) {
             return "🙋 Perfecto. Un asesor te responderá en breve. Si deseas, comparte tu nombre y número de documento.";
         }
-        if (normalized.equals("4") || normalized.contains("precio") || normalized.contains("costo")) {
+        if (normalized.equals("4")) {
             return "💰 Para cotizarte, indícanos categoría de licencia y ciudad. Te respondemos de inmediato.";
         }
 
@@ -243,7 +243,7 @@ public class WhatsAppBotService {
         if (StringUtils.hasText(configured)) {
             return configured;
         }
-        return "👋 ¡Bienvenido a CEA HARO! Soy tu asistente virtual. Escribe MENU para continuar.";
+        return "👋 ¡Bienvenido a CEA HARO! Soy tu asistente virtual. Responde 9 para ver opciones.";
     }
 
     private String menuText() {

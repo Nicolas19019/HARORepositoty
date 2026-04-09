@@ -772,7 +772,7 @@ public class PaymentApprovalService {
         <div style="margin-top:16px;font-size:11px;line-height:1.4;color:#9ca3af;text-align:center;border-left:4px solid #ffcc00;padding-left:8px;">
           Este es un mensaje automático, por favor no respondas a este correo.
           <br>
-          🤖 ASESOR: Si necesitas ayuda, escribe ASESOR.
+          🤖 Si necesitas ayuda, responde 9 en WhatsApp para ver el menú y elige contactar un asesor.
         </div>
 
       </td>
@@ -795,7 +795,7 @@ public class PaymentApprovalService {
                 + "Enlace:\n"
                 + contractLink + "\n\n"
                 + buildContractExpiryHint(expiresAt).replace("*LINK*", "LINK") + "\n\n"
-                + "🤖 ASESOR: Si necesitas ayuda, escribe ASESOR.";
+                + "🤖 Si necesitas ayuda, responde 9 en WhatsApp para ver el menú y elige contactar un asesor.";
     }
 
     private String resolveEmailLogoSrc() {

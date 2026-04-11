@@ -3,9 +3,11 @@ package com.Aplication.HARO.Controller;
 import com.Aplication.HARO.Security.DetallesUsuarioAplicacion;
 import com.Aplication.HARO.Security.ServicioJwt;
 import com.Aplication.HARO.Security.ServicioUsuariosCombinado;
+import com.Aplication.HARO.Service.AdminPasswordRecoveryService;
 import com.Aplication.HARO.Service.EstudianteModuloAccesoService;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import io.jsonwebtoken.Claims;
+import java.util.Map;
 import java.util.Locale;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -33,6 +35,18 @@ record PeticionInicioSesion(
 record PeticionRefresco(String tokenRefresco) {}
 record RespuestaTokens(String tokenAcceso, String tokenRefresco, String rol, Long uid,
                        long accesoExpiraEnSeg, long refrescoExpiraEnSeg) {}
+record PeticionForgotPassword(
+    @JsonAlias({"correo", "email"}) String correo
+) {}
+record PeticionForgotPasswordVerify(
+    @JsonAlias({"correo", "email"}) String correo,
+    @JsonAlias({"codigo", "code"}) String code
+) {}
+record PeticionResetPassword(
+    @JsonAlias({"correo", "email"}) String correo,
+    @JsonAlias({"codigo", "code"}) String code,
+    @JsonAlias({"nuevaContrasena", "newPassword"}) String nuevaContrasena
+) {}
 
 @RestController
 @RequestMapping("/api/auth")
@@ -46,15 +60,18 @@ public class AutenticacionController {
   private final ServicioUsuariosCombinado usuarios;
   private final ServicioJwt jwt;
   private final EstudianteModuloAccesoService estudianteModuloAccesoService;
+  private final AdminPasswordRecoveryService adminPasswordRecoveryService;
 
   public AutenticacionController(AuthenticationManager authManager,
                                  ServicioUsuariosCombinado usuarios,
                                  ServicioJwt jwt,
-                                 EstudianteModuloAccesoService estudianteModuloAccesoService) {
+                                 EstudianteModuloAccesoService estudianteModuloAccesoService,
+                                 AdminPasswordRecoveryService adminPasswordRecoveryService) {
     this.authManager = authManager;
     this.usuarios = usuarios;
     this.jwt = jwt;
     this.estudianteModuloAccesoService = estudianteModuloAccesoService;
+    this.adminPasswordRecoveryService = adminPasswordRecoveryService;
   }
 
   private boolean rolPermitido(String rol) {
@@ -164,6 +181,62 @@ public class AutenticacionController {
           .build();
     } catch (Exception e) {
       return ResponseEntity.status(401).body("Token invalido");
+    }
+  }
+
+  @PostMapping("/forgot-password")
+  public ResponseEntity<?> forgotPassword(@RequestBody(required = false) PeticionForgotPassword req) {
+    try {
+      String correo = req == null ? null : req.correo();
+      adminPasswordRecoveryService.requestRecovery(correo);
+      return ResponseEntity.ok(Map.of(
+          "ok", true,
+          "message", "Se envio un codigo de recuperacion al correo"
+      ));
+    } catch (IllegalArgumentException ex) {
+      return ResponseEntity.badRequest().body(Map.of(
+          "ok", false,
+          "message", ex.getMessage()
+      ));
+    }
+  }
+
+  @PostMapping("/forgot-password/verify")
+  public ResponseEntity<?> verifyForgotPassword(@RequestBody(required = false) PeticionForgotPasswordVerify req) {
+    try {
+      var out = adminPasswordRecoveryService.verifyCode(
+          req == null ? null : req.correo(),
+          req == null ? null : req.code()
+      );
+      if (!out.ok()) {
+        return ResponseEntity.badRequest().body(Map.of("ok", false, "message", out.message()));
+      }
+      return ResponseEntity.ok(Map.of("ok", true, "message", out.message()));
+    } catch (IllegalArgumentException ex) {
+      return ResponseEntity.badRequest().body(Map.of(
+          "ok", false,
+          "message", ex.getMessage()
+      ));
+    }
+  }
+
+  @PostMapping("/reset-password")
+  public ResponseEntity<?> resetPassword(@RequestBody(required = false) PeticionResetPassword req) {
+    try {
+      var out = adminPasswordRecoveryService.resetPassword(
+          req == null ? null : req.correo(),
+          req == null ? null : req.code(),
+          req == null ? null : req.nuevaContrasena()
+      );
+      if (!out.ok()) {
+        return ResponseEntity.badRequest().body(Map.of("ok", false, "message", out.message()));
+      }
+      return ResponseEntity.ok(Map.of("ok", true, "message", out.message()));
+    } catch (IllegalArgumentException ex) {
+      return ResponseEntity.badRequest().body(Map.of(
+          "ok", false,
+          "message", ex.getMessage()
+      ));
     }
   }
 }

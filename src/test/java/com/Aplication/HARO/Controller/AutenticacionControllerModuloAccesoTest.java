@@ -3,6 +3,7 @@ package com.Aplication.HARO.Controller;
 import com.Aplication.HARO.Security.DetallesUsuarioAplicacion;
 import com.Aplication.HARO.Security.ServicioJwt;
 import com.Aplication.HARO.Security.ServicioUsuariosCombinado;
+import com.Aplication.HARO.Service.AdminPasswordRecoveryService;
 import com.Aplication.HARO.Service.EstudianteModuloAccesoService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,7 @@ class AutenticacionControllerModuloAccesoTest {
         ServicioUsuariosCombinado usuarios = mock(ServicioUsuariosCombinado.class);
         ServicioJwt jwt = mock(ServicioJwt.class);
         EstudianteModuloAccesoService accesoService = mock(EstudianteModuloAccesoService.class);
+        AdminPasswordRecoveryService recoveryService = mock(AdminPasswordRecoveryService.class);
 
         when(authManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenReturn(new UsernamePasswordAuthenticationToken("estudiante@correo.com", "secret"));
@@ -32,7 +34,7 @@ class AutenticacionControllerModuloAccesoTest {
         when(jwt.getAccessTtlSeconds()).thenReturn(900L);
         when(jwt.getRefreshTtlSeconds()).thenReturn(604800L);
 
-        AutenticacionController controller = new AutenticacionController(authManager, usuarios, jwt, accesoService);
+        AutenticacionController controller = new AutenticacionController(authManager, usuarios, jwt, accesoService, recoveryService);
 
         ResponseEntity<?> response = controller.login(new PeticionInicioSesion("estudiante@correo.com", "secret"));
 
@@ -47,6 +49,7 @@ class AutenticacionControllerModuloAccesoTest {
         ServicioUsuariosCombinado usuarios = mock(ServicioUsuariosCombinado.class);
         ServicioJwt jwt = mock(ServicioJwt.class);
         EstudianteModuloAccesoService accesoService = mock(EstudianteModuloAccesoService.class);
+        AdminPasswordRecoveryService recoveryService = mock(AdminPasswordRecoveryService.class);
 
         when(authManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenReturn(new UsernamePasswordAuthenticationToken("admin@correo.com", "secret"));
@@ -57,7 +60,7 @@ class AutenticacionControllerModuloAccesoTest {
         when(jwt.getAccessTtlSeconds()).thenReturn(900L);
         when(jwt.getRefreshTtlSeconds()).thenReturn(604800L);
 
-        AutenticacionController controller = new AutenticacionController(authManager, usuarios, jwt, accesoService);
+        AutenticacionController controller = new AutenticacionController(authManager, usuarios, jwt, accesoService, recoveryService);
 
         ResponseEntity<?> response = controller.login(new PeticionInicioSesion("admin@correo.com", "secret"));
 

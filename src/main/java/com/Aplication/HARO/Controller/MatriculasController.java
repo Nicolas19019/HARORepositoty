@@ -156,6 +156,10 @@ public class MatriculasController {
                         "EFECTIVO", "PENDING_CASH_VALIDATION", "PENDING_PAYMENT", page)
                         : procesoRepository.findByVisibleTrueAndMetodoPagoIgnoreCaseOrVisibleTrueAndFlowStatusIgnoreCaseOrVisibleTrueAndFlowStatusIgnoreCase(
                         "EFECTIVO", "PENDING_CASH_VALIDATION", "PENDING_PAYMENT", page);
+                items = items.stream()
+                        .filter(this::isOperationalEnrollmentFlow)
+                        .limit(size)
+                        .toList();
             }
             if (!adminCtx.superAdmin()) {
                 items = items.stream()
@@ -690,6 +694,23 @@ public class MatriculasController {
         if (v.startsWith("PEND")) return "PENDIENTE";
         if ("APROBADO".equals(v) || "APPROVED".equals(v) || "PAID".equals(v)) return "CONFIRMADO";
         return v;
+    }
+
+    private boolean isOperationalEnrollmentFlow(ChatbotMatriculaProceso proceso) {
+        if (proceso == null) {
+            return false;
+        }
+        String flowStatus = trim(proceso.getFlowStatus()).toUpperCase(Locale.ROOT);
+        String contractStatus = trim(proceso.getContractStatus()).toUpperCase(Locale.ROOT);
+        Long studentId = proceso.getStudentId();
+
+        if ("STUDENT_CREATED".equals(flowStatus)) {
+            return false;
+        }
+        if ("SIGNED".equals(contractStatus) && studentId != null && studentId > 0) {
+            return false;
+        }
+        return true;
     }
 
     private String trim(String value) {

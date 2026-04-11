@@ -1430,7 +1430,7 @@ private String paymentConfirmationUrl;
 
         ContractStudentProfile profile = extractStudentProfile(proceso);
 
-        Optional<Estudiante> existing = estudianteRepository.findByNumeroDocumento(doc);
+        Optional<Estudiante> existing = findExistingStudentForEnrollment(doc, profile.email());
         if (existing.isPresent()) {
             Estudiante e = existing.get();
             applyContractProfileToStudent(e, profile, proceso);
@@ -1551,7 +1551,7 @@ private String paymentConfirmationUrl;
 
         ContractStudentProfile profile = extractStudentProfile(proceso);
 
-        Optional<Estudiante> existing = estudianteRepository.findByNumeroDocumento(doc);
+        Optional<Estudiante> existing = findExistingStudentForEnrollment(doc, profile.email());
         final Long studentId;
         if (existing.isPresent()) {
             Estudiante e = existing.get();
@@ -1717,6 +1717,12 @@ private String paymentConfirmationUrl;
         if (!profile.tipoDocumento().isBlank()) {
             estudiante.setTipoDocumento(profile.tipoDocumento());
         }
+        if (proceso != null) {
+            String numeroDocumento = normalizeDoc(proceso.getNumeroDocumento());
+            if (!numeroDocumento.isBlank()) {
+                estudiante.setNumeroDocumento(numeroDocumento);
+            }
+        }
         if (!profile.telefono().isBlank()) {
             estudiante.setTelefono(profile.telefono());
         }
@@ -1746,12 +1752,30 @@ private String paymentConfirmationUrl;
         if (estadoActual.isBlank() || "pendiente".equalsIgnoreCase(estadoActual)) {
             estudiante.setEstado("Activo");
         }
-        if (estudiante.getVisible() == null) {
-            estudiante.setVisible(true);
-        }
+        estudiante.setVisible(true);
         if ((estudiante.getUsuario() == null || estudiante.getUsuario().isBlank()) && proceso != null) {
             estudiante.setUsuario(generateUniqueUsername(profile.email(), proceso.getNumeroDocumento()));
         }
+    }
+
+    private Optional<Estudiante> findExistingStudentForEnrollment(String documento, String email) {
+        String doc = normalizeDoc(documento);
+        if (!doc.isBlank()) {
+            Optional<Estudiante> byDocumento = estudianteRepository.findByNumeroDocumento(doc);
+            if (byDocumento.isPresent()) {
+                return byDocumento;
+            }
+        }
+
+        String normalizedEmail = normalizeEmailIfPossible(email);
+        if (!normalizedEmail.isBlank()) {
+            Optional<Estudiante> byEmail = estudianteRepository.findByEmailNormalizado(normalizedEmail);
+            if (byEmail.isPresent()) {
+                return byEmail;
+            }
+        }
+
+        return Optional.empty();
     }
 
     private void upsertContractUpload(List<Map<String, Object>> uploads, Map<String, Object> incoming) {

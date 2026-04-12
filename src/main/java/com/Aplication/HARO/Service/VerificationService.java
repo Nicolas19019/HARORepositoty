@@ -46,8 +46,7 @@ public class VerificationService {
     private static final String[] REQUIRED_SIGNED_CONTRACTS = {
             "Contrato1.pdf",
             "Contrato2.pdf",
-            "Contrato3.pdf",
-            "Contrato4.pdf"
+            "Contrato3.pdf"
     };
 
     private final OtpTokenRepository repo;
@@ -964,7 +963,8 @@ public class VerificationService {
                     email,
                     trim(rawCategoryCode),
                     trim(rawPdfFile),
-                    contractName
+                    contractName,
+                    safe(file == null ? "" : file.getOriginalFilename())
             );
         } catch (Exception ex) {
             if (ex instanceof ChatbotProcesoService.ContractUploadValidationException validationEx) {

@@ -58,6 +58,9 @@ import java.util.Set;
 @Service
 public class ChatbotProcesoService {
     private static final Logger log = LoggerFactory.getLogger(ChatbotProcesoService.class);
+    // En el sitio de contratos actualmente se manejan 3 PDFs base (Contrato1..Contrato3).
+    // Mantener este numero consistente evita conflictos 409 por "Contrato4.pdf" cuando el front aun es de 3 contratos.
+    private static final int CONTRACTS_PER_CATEGORY = 3;
 
     private final ChatbotMatriculaProcesoRepository procesoRepository;
     private final ChatbotContractCategoryProgressRepository contractCategoryProgressRepository;
@@ -908,7 +911,8 @@ private String paymentConfirmationUrl;
     public String validateAndResolveUploadCategoryLabel(String email,
                                                         String requestedCategoryCode,
                                                         String pdfFile,
-                                                        String contractName) {
+                                                        String contractName,
+                                                        String fileName) {
         String mail = normalizeEmail(email);
         ChatbotMatriculaProceso proceso = procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(mail)
                 .orElseThrow(() -> new NoSuchElementException("No hay proceso de matricula para " + mail));
@@ -920,9 +924,9 @@ private String paymentConfirmationUrl;
                 requestedCategoryCode,
                 pdfFile,
                 contractName,
-                ""
+                fileName
         );
-        validateExpectedContractUpload(target, pdfFile, contractName, "");
+        validateExpectedContractUpload(target, pdfFile, contractName, fileName);
         return target.getCategoryLabel();
     }
 
@@ -1094,7 +1098,7 @@ private String paymentConfirmationUrl;
                 categoryPayload.put("orderIndex", purchasedIndex);
                 categoryPayload.put("status", "PENDING");
                 categoryPayload.put("uploadedContracts", 0);
-                categoryPayload.put("totalContracts", 4);
+                categoryPayload.put("totalContracts", CONTRACTS_PER_CATEGORY);
                 categoryPayload.put("currentContractIndex", 0);
                 categoryPayload.put("currentContractPosition", 1);
                 categoryPayload.put("expectedContractNumber", 1);
@@ -1112,11 +1116,11 @@ private String paymentConfirmationUrl;
             categoryPayload.put("orderIndex", safeOrder(item));
             categoryPayload.put("status", trim(item.getStatus()));
             categoryPayload.put("uploadedContracts", uploadedContracts);
-            categoryPayload.put("totalContracts", 4);
-            categoryPayload.put("currentContractIndex", Math.min(uploadedContracts, 3));
-            categoryPayload.put("currentContractPosition", uploadedContracts >= 4 ? null : uploadedContracts + 1);
-            categoryPayload.put("expectedContractNumber", uploadedContracts >= 4 ? null : uploadedContracts + 1);
-            categoryPayload.put("expectedContractFile", uploadedContracts >= 4 ? null : expectedContractFile(uploadedContracts + 1));
+            categoryPayload.put("totalContracts", CONTRACTS_PER_CATEGORY);
+            categoryPayload.put("currentContractIndex", Math.min(uploadedContracts, CONTRACTS_PER_CATEGORY - 1));
+            categoryPayload.put("currentContractPosition", uploadedContracts >= CONTRACTS_PER_CATEGORY ? null : uploadedContracts + 1);
+            categoryPayload.put("expectedContractNumber", uploadedContracts >= CONTRACTS_PER_CATEGORY ? null : uploadedContracts + 1);
+            categoryPayload.put("expectedContractFile", uploadedContracts >= CONTRACTS_PER_CATEGORY ? null : expectedContractFile(uploadedContracts + 1));
             categoryPayload.put("completed", completedCategory);
             if (item.getCompletedAt() != null) {
                 categoryPayload.put("completedAt", item.getCompletedAt().toString());
@@ -1129,10 +1133,10 @@ private String paymentConfirmationUrl;
         int currentCategoryPosition = total <= 0 ? 0 : currentCategoryIndex + 1;
         String currentCode = current == null ? "" : trim(current.getCategoryCode());
         String currentLabel = current == null ? "" : trim(current.getCategoryLabel());
-        int currentContractIndex = current == null ? 0 : Math.min(countUploadedContracts(current.getSignedContractFiles()), 3);
+        int currentContractIndex = current == null ? 0 : Math.min(countUploadedContracts(current.getSignedContractFiles()), CONTRACTS_PER_CATEGORY - 1);
         int currentUploadedContracts = current == null ? 0 : countUploadedContracts(current.getSignedContractFiles());
-        Integer currentContractPosition = currentUploadedContracts >= 4 ? null : currentUploadedContracts + 1;
-        Integer expectedContractNumber = currentUploadedContracts >= 4 ? null : currentUploadedContracts + 1;
+        Integer currentContractPosition = currentUploadedContracts >= CONTRACTS_PER_CATEGORY ? null : currentUploadedContracts + 1;
+        Integer expectedContractNumber = currentUploadedContracts >= CONTRACTS_PER_CATEGORY ? null : currentUploadedContracts + 1;
         String expectedContractFile = expectedContractNumber == null ? null : expectedContractFile(expectedContractNumber);
         String nextCategoryCode = "";
         String nextCategoryLabel = "";
@@ -1167,9 +1171,9 @@ private String paymentConfirmationUrl;
             return;
         }
         int uploadedContracts = countUploadedContracts(item.getSignedContractFiles());
-        if (uploadedContracts >= 4) {
+        if (uploadedContracts >= CONTRACTS_PER_CATEGORY) {
             item.setStatus("COMPLETED");
-            item.setCurrentContractIndex(3);
+            item.setCurrentContractIndex(CONTRACTS_PER_CATEGORY - 1);
             if (item.getCompletedAt() == null) {
                 item.setCompletedAt(Instant.now());
             }
@@ -1219,7 +1223,7 @@ private String paymentConfirmationUrl;
     }
 
     private int countUploadedContracts(String signedContractFilesJson) {
-        // Prefer contract number (1..4) when it can be extracted, because older payloads may
+        // Prefer contract number (1..N) when it can be extracted, because older payloads may
         // alternate between `pdfFile` vs `contractName` and should not count as "different" uploads.
         Set<Integer> contractNumbers = new LinkedHashSet<>();
         Set<String> seen = new LinkedHashSet<>();
@@ -1240,9 +1244,9 @@ private String paymentConfirmationUrl;
             }
         }
         if (!contractNumbers.isEmpty()) {
-            return Math.min(contractNumbers.size(), 4);
+            return Math.min(contractNumbers.size(), CONTRACTS_PER_CATEGORY);
         }
-        return Math.min(seen.size(), 4);
+        return Math.min(seen.size(), CONTRACTS_PER_CATEGORY);
     }
 
     private ChatbotContractCategoryProgress resolveValidatedUploadCategoryProgress(List<ChatbotContractCategoryProgress> items,
@@ -1258,37 +1262,33 @@ private String paymentConfirmationUrl;
                         "No hay categorias pendientes para este proceso."
                 ));
         String requested = normalizeSingleCategoryCode(requestedCategoryCode);
-        if (requested.isBlank()) {
-            throw new ContractUploadValidationException(
-                    HttpStatus.UNPROCESSABLE_ENTITY,
-                    "categoryCode es obligatorio y debe ser una categoria valida."
-            );
-        }
-        boolean purchased = purchasedCategories.stream().anyMatch(code -> code.equalsIgnoreCase(requested));
-        boolean required = requiredContractCategories.stream().anyMatch(code -> code.equalsIgnoreCase(requested));
+        String active = trim(current.getCategoryCode()).toUpperCase(Locale.ROOT);
+        // Backwards compatible: if the client doesn't send categoryCode, assume the current active category.
+        final String requestedResolved = requested.isBlank() ? active : requested;
+        boolean purchased = purchasedCategories.stream().anyMatch(code -> code.equalsIgnoreCase(requestedResolved));
+        boolean required = requiredContractCategories.stream().anyMatch(code -> code.equalsIgnoreCase(requestedResolved));
         if (purchased && !required) {
             throw new ContractUploadValidationException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
-                    "La categoria " + requested + " no requiere contrato en este combo."
+                    "La categoria " + requestedResolved + " no requiere contrato en este combo."
             );
         }
-        String active = trim(current.getCategoryCode()).toUpperCase(Locale.ROOT);
-        if (!requested.equalsIgnoreCase(active)) {
+        if (!requestedResolved.equalsIgnoreCase(active)) {
             // Allow re-uploading (replacement) of a contract already uploaded in a completed category.
             // This makes the endpoint idempotent against browser retries/double-clicks.
             ChatbotContractCategoryProgress requestedProgress = items.stream()
-                    .filter(item -> requested.equalsIgnoreCase(trim(item.getCategoryCode())))
+                    .filter(item -> requestedResolved.equalsIgnoreCase(trim(item.getCategoryCode())))
                     .findFirst()
                     .orElseThrow(() -> new ContractUploadValidationException(
                             HttpStatus.UNPROCESSABLE_ENTITY,
-                            "La categoria " + requested + " no pertenece al proceso."
+                            "La categoria " + requestedResolved + " no pertenece al proceso."
                     ));
 
             Integer providedContractNumber = resolveContractNumber(pdfFile, contractName, fileName);
             if (providedContractNumber == null) {
                 throw new ContractUploadValidationException(
                         HttpStatus.UNPROCESSABLE_ENTITY,
-                        "No se pudo identificar el contrato recibido. Envie pdfFile con el formato Contrato1.pdf a Contrato4.pdf."
+                        "No se pudo identificar el contrato recibido. Envie pdfFile con el formato Contrato1.pdf a Contrato3.pdf."
                 );
             }
 
@@ -1313,7 +1313,7 @@ private String paymentConfirmationUrl;
         if (providedContractNumber == null) {
             throw new ContractUploadValidationException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
-                    "No se pudo identificar el contrato recibido. Envie pdfFile con el formato Contrato1.pdf a Contrato4.pdf."
+                    "No se pudo identificar el contrato recibido. Envie pdfFile con el formato Contrato1.pdf a Contrato3.pdf."
             );
         }
 
@@ -1324,10 +1324,10 @@ private String paymentConfirmationUrl;
         }
 
         int uploadedContracts = countUploadedContracts(targetProgress.getSignedContractFiles());
-        if (uploadedContracts >= 4) {
+        if (uploadedContracts >= CONTRACTS_PER_CATEGORY) {
             throw new ContractUploadValidationException(
                     HttpStatus.CONFLICT,
-                    "La categoria " + trim(targetProgress.getCategoryCode()) + " ya tiene sus 4 contratos firmados."
+                    "La categoria " + trim(targetProgress.getCategoryCode()) + " ya tiene sus " + CONTRACTS_PER_CATEGORY + " contratos firmados."
             );
         }
 
@@ -1368,7 +1368,7 @@ private String paymentConfirmationUrl;
         if (value.isBlank()) {
             return null;
         }
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("CONTRATO\\s*([1-4])").matcher(value);
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("CONTRATO\\s*([1-" + CONTRACTS_PER_CATEGORY + "])").matcher(value);
         if (matcher.find()) {
             return Integer.parseInt(matcher.group(1));
         }
@@ -1376,7 +1376,7 @@ private String paymentConfirmationUrl;
     }
 
     private String expectedContractFile(int contractNumber) {
-        int safeNumber = Math.max(1, Math.min(contractNumber, 4));
+        int safeNumber = Math.max(1, Math.min(contractNumber, CONTRACTS_PER_CATEGORY));
         return "Contrato" + safeNumber + ".pdf";
     }
 

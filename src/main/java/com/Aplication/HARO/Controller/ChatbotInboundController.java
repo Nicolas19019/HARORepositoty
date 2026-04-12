@@ -2812,7 +2812,7 @@ public class ChatbotInboundController {
     }
 
     private String feedbackSurveyText() {
-        return "📋 Encuesta\n\n" +
+        return "📋 Encuesta (opcional)\n\n" +
                 "¿Quieres contarnos cómo te fue en el proceso?\n" +
                 "Tu respuesta nos ayuda a mejorar.\n\n" +
                 "Formulario:\n" +

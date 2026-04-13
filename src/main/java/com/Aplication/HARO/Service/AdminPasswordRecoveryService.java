@@ -42,7 +42,7 @@ public class AdminPasswordRecoveryService {
     @Value("${app.admin-recovery.max-attempts:5}")
     private int maxAttempts;
 
-    @Value("${app.admin-recovery.subject:Recuperacion de contrasena - CEA HARO}")
+    @Value("${app.admin-recovery.subject:Recuperacion de contrasena - HaroGestion}")
     private String subject;
 
     public record VerificationResult(boolean ok, String message) {}
@@ -249,12 +249,12 @@ public class AdminPasswordRecoveryService {
     <tr><td>
       <h2 style="margin:0 0 12px 0;color:#111827;">Recuperacion de contrasena</h2>
       <p style="margin:0 0 12px 0;">Hola %s,</p>
-      <p style="margin:0 0 12px 0;">Recibimos una solicitud para restablecer tu acceso administrativo.</p>
-      <p style="margin:0 0 8px 0;">Usa este codigo de recuperacion:</p>
+      <p style="margin:0 0 12px 0;">Recibimos una solicitud para restablecer la contrasena de tu cuenta de administrador en <strong>HaroGestion</strong>.</p>
+      <p style="margin:0 0 8px 0;">Usa este codigo OTP en HaroGestion:</p>
       <div style="font-size:24px;font-weight:700;letter-spacing:4px;text-align:center;color:#d00000;border:2px solid #d00000;border-radius:8px;padding:12px 16px;margin:0 0 16px 0;">
         %s
       </div>
-      <p style="margin:0 0 12px 0;">El codigo vence pronto y solo puede usarse una vez.</p>
+      <p style="margin:0 0 12px 0;">Este codigo vence pronto y solo puede usarse una vez.</p>
       <p style="margin:0;color:#6b7280;font-size:12px;">Si no solicitaste este cambio, ignora este mensaje.</p>
     </td></tr>
   </table>
@@ -263,9 +263,10 @@ public class AdminPasswordRecoveryService {
     }
 
     private String buildPlain(Administrador admin, String code) {
-        return "CEA HARO - Recuperacion de contrasena\n\n"
+        return "HaroGestion - Recuperacion de contrasena\n\n"
                 + "Hola " + safeName(admin) + ",\n"
-                + "Usa este codigo para restablecer tu acceso administrativo: " + code + "\n"
+                + "Recibimos una solicitud para restablecer la contrasena de tu cuenta de administrador en HaroGestion.\n"
+                + "Tu codigo OTP es: " + code + "\n"
                 + "El codigo vence pronto y solo puede usarse una vez.";
     }
 }

@@ -186,6 +186,15 @@ public class AutenticacionController {
 
   @PostMapping("/forgot-password")
   public ResponseEntity<?> forgotPassword(@RequestBody(required = false) PeticionForgotPassword req) {
+    return forgotPasswordInternal(req);
+  }
+
+  @PostMapping("/harogestion/forgot-password")
+  public ResponseEntity<?> forgotPasswordHaroGestion(@RequestBody(required = false) PeticionForgotPassword req) {
+    return forgotPasswordInternal(req);
+  }
+
+  private ResponseEntity<?> forgotPasswordInternal(PeticionForgotPassword req) {
     try {
       String correo = req == null ? null : req.correo();
       adminPasswordRecoveryService.requestRecovery(correo);
@@ -203,6 +212,15 @@ public class AutenticacionController {
 
   @PostMapping("/forgot-password/verify")
   public ResponseEntity<?> verifyForgotPassword(@RequestBody(required = false) PeticionForgotPasswordVerify req) {
+    return verifyForgotPasswordInternal(req);
+  }
+
+  @PostMapping("/harogestion/forgot-password/verify")
+  public ResponseEntity<?> verifyForgotPasswordHaroGestion(@RequestBody(required = false) PeticionForgotPasswordVerify req) {
+    return verifyForgotPasswordInternal(req);
+  }
+
+  private ResponseEntity<?> verifyForgotPasswordInternal(PeticionForgotPasswordVerify req) {
     try {
       var out = adminPasswordRecoveryService.verifyCode(
           req == null ? null : req.correo(),
@@ -222,6 +240,15 @@ public class AutenticacionController {
 
   @PostMapping("/reset-password")
   public ResponseEntity<?> resetPassword(@RequestBody(required = false) PeticionResetPassword req) {
+    return resetPasswordInternal(req);
+  }
+
+  @PostMapping("/harogestion/reset-password")
+  public ResponseEntity<?> resetPasswordHaroGestion(@RequestBody(required = false) PeticionResetPassword req) {
+    return resetPasswordInternal(req);
+  }
+
+  private ResponseEntity<?> resetPasswordInternal(PeticionResetPassword req) {
     try {
       var out = adminPasswordRecoveryService.resetPassword(
           req == null ? null : req.correo(),

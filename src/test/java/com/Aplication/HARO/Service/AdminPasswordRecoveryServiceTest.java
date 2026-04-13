@@ -38,7 +38,7 @@ class AdminPasswordRecoveryServiceTest {
         ReflectionTestUtils.setField(service, "otpLength", 6);
         ReflectionTestUtils.setField(service, "ttlSeconds", 900L);
         ReflectionTestUtils.setField(service, "cooldownSeconds", 30L);
-        ReflectionTestUtils.setField(service, "subject", "Recuperacion");
+        ReflectionTestUtils.setField(service, "subject", "Recuperacion de contrasena - HaroGestion");
 
         Administrador admin = new Administrador();
         admin.setId(10L);
@@ -53,6 +53,41 @@ class AdminPasswordRecoveryServiceTest {
 
         verify(otpTokenRepository).save(any(OtpToken.class));
         verify(mailService).sendHtml(any(String.class), any(String.class), any(String.class), any(String.class));
+    }
+
+    @Test
+    void requestRecoveryDebeUsarAsuntoYContenidoDeHaroGestion() {
+        AdministradorRepository adminRepository = mock(AdministradorRepository.class);
+        OtpTokenRepository otpTokenRepository = mock(OtpTokenRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        MailService mailService = mock(MailService.class);
+
+        AdminPasswordRecoveryService service = new AdminPasswordRecoveryService(
+                adminRepository,
+                otpTokenRepository,
+                passwordEncoder,
+                mailService
+        );
+        ReflectionTestUtils.setField(service, "subject", "Recuperacion de contrasena - HaroGestion");
+
+        Administrador admin = new Administrador();
+        admin.setCorreo("admin@correo.com");
+        admin.setNombre("Admin Uno");
+        admin.setActivo(true);
+
+        when(adminRepository.findByCorreoNormalizado("admin@correo.com")).thenReturn(Optional.of(admin));
+        when(otpTokenRepository.save(any(OtpToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.requestRecovery("admin@correo.com");
+
+        org.mockito.ArgumentCaptor<String> subjectCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.ArgumentCaptor<String> htmlCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.ArgumentCaptor<String> plainCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(mailService).sendHtml(org.mockito.ArgumentMatchers.eq("admin@correo.com"), subjectCaptor.capture(), htmlCaptor.capture(), plainCaptor.capture());
+        assertEquals("Recuperacion de contrasena - HaroGestion", subjectCaptor.getValue());
+        org.junit.jupiter.api.Assertions.assertTrue(htmlCaptor.getValue().contains("HaroGestion"));
+        org.junit.jupiter.api.Assertions.assertTrue(plainCaptor.getValue().contains("HaroGestion"));
+        org.junit.jupiter.api.Assertions.assertFalse(plainCaptor.getValue().contains("modulo de gestion de aprendizaje"));
     }
 
     @Test

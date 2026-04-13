@@ -305,6 +305,26 @@ public class EstudianteService {
     return repo.save(estudiante);
   }
 
+  @Transactional(readOnly = true)
+  public boolean validarContrasenaActual(Long id, String actual) {
+    if (actual == null || actual.isBlank()) return false;
+    Estudiante estudiante = repo.findById(id)
+        .orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado: " + id));
+    String hash = estudiante.getContrasena();
+    return hash != null && encoder.matches(actual, hash);
+  }
+
+  public void cambiarContrasenaAutenticado(Long id, String nueva) {
+    if (nueva == null) nueva = "";
+    nueva = nueva.trim();
+    if (nueva.isBlank()) throw new IllegalArgumentException("La nueva contrasena no puede estar vacia");
+
+    Estudiante estudiante = repo.findById(id)
+        .orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado: " + id));
+    estudiante.setContrasena(esBcrypt(nueva) ? nueva : encoder.encode(nueva));
+    repo.save(estudiante);
+  }
+
   /* ==========================
      Eliminación
      ========================== */

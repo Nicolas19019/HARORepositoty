@@ -4,7 +4,9 @@ import com.Aplication.HARO.Security.DetallesUsuarioAplicacion;
 import com.Aplication.HARO.Security.ServicioJwt;
 import com.Aplication.HARO.Security.ServicioUsuariosCombinado;
 import com.Aplication.HARO.Service.AdminPasswordRecoveryService;
+import com.Aplication.HARO.Service.AdministradorService;
 import com.Aplication.HARO.Service.EstudianteModuloAccesoService;
+import com.Aplication.HARO.Service.EstudianteService;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import io.jsonwebtoken.Claims;
 import java.util.Map;
@@ -19,6 +21,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -47,6 +50,11 @@ record PeticionResetPassword(
     @JsonAlias({"codigo", "code"}) String code,
     @JsonAlias({"nuevaContrasena", "newPassword"}) String nuevaContrasena
 ) {}
+record PeticionCambioPassword(
+    @JsonAlias({"currentPassword", "contrasenaActual"}) String currentPassword,
+    @JsonAlias({"newPassword", "nuevaContrasena"}) String newPassword,
+    @JsonAlias({"confirmPassword", "confirmarContrasena"}) String confirmPassword
+) {}
 
 @RestController
 @RequestMapping("/api/auth")
@@ -61,17 +69,23 @@ public class AutenticacionController {
   private final ServicioJwt jwt;
   private final EstudianteModuloAccesoService estudianteModuloAccesoService;
   private final AdminPasswordRecoveryService adminPasswordRecoveryService;
+  private final AdministradorService administradorService;
+  private final EstudianteService estudianteService;
 
   public AutenticacionController(AuthenticationManager authManager,
                                  ServicioUsuariosCombinado usuarios,
                                  ServicioJwt jwt,
                                  EstudianteModuloAccesoService estudianteModuloAccesoService,
-                                 AdminPasswordRecoveryService adminPasswordRecoveryService) {
+                                 AdminPasswordRecoveryService adminPasswordRecoveryService,
+                                 AdministradorService administradorService,
+                                 EstudianteService estudianteService) {
     this.authManager = authManager;
     this.usuarios = usuarios;
     this.jwt = jwt;
     this.estudianteModuloAccesoService = estudianteModuloAccesoService;
     this.adminPasswordRecoveryService = adminPasswordRecoveryService;
+    this.administradorService = administradorService;
+    this.estudianteService = estudianteService;
   }
 
   private boolean rolPermitido(String rol) {
@@ -80,6 +94,29 @@ public class AutenticacionController {
 
   private String normalizarCorreo(String correo) {
     return correo == null ? "" : correo.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private String normalizePassword(String raw, String fieldName) {
+    String password = raw == null ? "" : raw.trim();
+    if (password.isBlank()) {
+      throw new IllegalArgumentException(fieldName + " es requerida");
+    }
+    return password;
+  }
+
+  private void validatePasswordPolicy(String password) {
+    if (password.length() < 8) {
+      throw new IllegalArgumentException("La nueva contrasena debe tener al menos 8 caracteres");
+    }
+    if (!password.matches(".*[A-Z].*")) {
+      throw new IllegalArgumentException("La nueva contrasena debe incluir al menos una mayuscula");
+    }
+    if (!password.matches(".*\\d.*")) {
+      throw new IllegalArgumentException("La nueva contrasena debe incluir al menos un numero");
+    }
+    if (!password.matches(".*[^A-Za-z0-9].*")) {
+      throw new IllegalArgumentException("La nueva contrasena debe incluir al menos un simbolo");
+    }
   }
 
   @PostMapping("/login")
@@ -264,6 +301,56 @@ public class AutenticacionController {
           "ok", false,
           "message", ex.getMessage()
       ));
+    }
+  }
+
+  @PostMapping("/password/change")
+  public ResponseEntity<?> changePassword(@RequestBody(required = false) PeticionCambioPassword req,
+                                          Authentication authentication) {
+    try {
+      if (authentication == null || !authentication.isAuthenticated()) {
+        return ResponseEntity.status(401).body(Map.of("ok", false, "message", "No autenticado"));
+      }
+      Object principal = authentication.getPrincipal();
+      if (!(principal instanceof DetallesUsuarioAplicacion ud)) {
+        return ResponseEntity.status(401).body(Map.of("ok", false, "message", "Token invalido"));
+      }
+      if (ud.getId() == null) {
+        return ResponseEntity.status(401).body(Map.of("ok", false, "message", "Usuario no identificado"));
+      }
+
+      String currentPassword = normalizePassword(req == null ? null : req.currentPassword(), "currentPassword");
+      String newPassword = normalizePassword(req == null ? null : req.newPassword(), "newPassword");
+      String confirmPassword = normalizePassword(req == null ? null : req.confirmPassword(), "confirmPassword");
+
+      if (!newPassword.equals(confirmPassword)) {
+        return ResponseEntity.badRequest().body(Map.of("ok", false, "message", "La confirmacion no coincide con la nueva contrasena"));
+      }
+      if (currentPassword.equals(newPassword)) {
+        return ResponseEntity.badRequest().body(Map.of("ok", false, "message", "La nueva contrasena debe ser diferente a la actual"));
+      }
+      validatePasswordPolicy(newPassword);
+
+      boolean currentValid;
+      if ("ADMIN".equalsIgnoreCase(ud.getRol())) {
+        currentValid = administradorService.validarContrasenaActual(ud.getId(), currentPassword);
+        if (!currentValid) {
+          return ResponseEntity.badRequest().body(Map.of("ok", false, "message", "La contrasena actual es incorrecta"));
+        }
+        administradorService.cambiarContrasenaAutenticado(ud.getId(), newPassword);
+      } else if ("ESTUDIANTE".equalsIgnoreCase(ud.getRol())) {
+        currentValid = estudianteService.validarContrasenaActual(ud.getId(), currentPassword);
+        if (!currentValid) {
+          return ResponseEntity.badRequest().body(Map.of("ok", false, "message", "La contrasena actual es incorrecta"));
+        }
+        estudianteService.cambiarContrasenaAutenticado(ud.getId(), newPassword);
+      } else {
+        return ResponseEntity.status(403).body(Map.of("ok", false, "message", "Rol no habilitado para cambio de contrasena"));
+      }
+
+      return ResponseEntity.ok(Map.of("ok", true, "message", "Contrasena actualizada correctamente"));
+    } catch (IllegalArgumentException ex) {
+      return ResponseEntity.badRequest().body(Map.of("ok", false, "message", ex.getMessage()));
     }
   }
 }

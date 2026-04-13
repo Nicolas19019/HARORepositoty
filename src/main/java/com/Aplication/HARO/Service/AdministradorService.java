@@ -82,6 +82,24 @@ this.encoder = encoder;
     repo.save(a);
   }
 
+  @Transactional(readOnly = true)
+  public boolean validarContrasenaActual(Long id, String actual) {
+    if (actual == null || actual.isBlank()) return false;
+    Administrador admin = obtenerPorId(id);
+    String hash = admin.getContrasenaHash();
+    return hash != null && encoder.matches(actual, hash);
+  }
+
+  public void cambiarContrasenaAutenticado(Long id, String nueva) {
+    if (nueva == null) nueva = "";
+    nueva = nueva.trim();
+    if (nueva.isBlank()) throw new IllegalArgumentException("La nueva contrasena no puede estar vacia");
+
+    Administrador admin = obtenerPorId(id);
+    admin.setContrasenaHash(encoder.encode(nueva));
+    repo.save(admin);
+  }
+
   public void activar(Long id) { var a = obtenerPorId(id); a.setActivo(true); repo.save(a); }
   public void desactivar(Long id) { var a = obtenerPorId(id); a.setActivo(false); repo.save(a); }
   public void eliminar(Long id) {

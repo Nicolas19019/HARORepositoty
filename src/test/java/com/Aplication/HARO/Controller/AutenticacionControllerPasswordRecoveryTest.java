@@ -3,7 +3,9 @@ package com.Aplication.HARO.Controller;
 import com.Aplication.HARO.Security.ServicioJwt;
 import com.Aplication.HARO.Security.ServicioUsuariosCombinado;
 import com.Aplication.HARO.Service.AdminPasswordRecoveryService;
+import com.Aplication.HARO.Service.AdministradorService;
 import com.Aplication.HARO.Service.EstudianteModuloAccesoService;
+import com.Aplication.HARO.Service.EstudianteService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -24,8 +26,11 @@ class AutenticacionControllerPasswordRecoveryTest {
         ServicioJwt jwt = mock(ServicioJwt.class);
         EstudianteModuloAccesoService accesoService = mock(EstudianteModuloAccesoService.class);
         AdminPasswordRecoveryService recoveryService = mock(AdminPasswordRecoveryService.class);
+        AdministradorService administradorService = mock(AdministradorService.class);
+        EstudianteService estudianteService = mock(EstudianteService.class);
 
-        AutenticacionController controller = new AutenticacionController(authManager, usuarios, jwt, accesoService, recoveryService);
+        AutenticacionController controller = new AutenticacionController(
+                authManager, usuarios, jwt, accesoService, recoveryService, administradorService, estudianteService);
 
         ResponseEntity<?> response = controller.forgotPassword(new PeticionForgotPassword("admin@correo.com"));
 
@@ -41,8 +46,11 @@ class AutenticacionControllerPasswordRecoveryTest {
         ServicioJwt jwt = mock(ServicioJwt.class);
         EstudianteModuloAccesoService accesoService = mock(EstudianteModuloAccesoService.class);
         AdminPasswordRecoveryService recoveryService = mock(AdminPasswordRecoveryService.class);
+        AdministradorService administradorService = mock(AdministradorService.class);
+        EstudianteService estudianteService = mock(EstudianteService.class);
 
-        AutenticacionController controller = new AutenticacionController(authManager, usuarios, jwt, accesoService, recoveryService);
+        AutenticacionController controller = new AutenticacionController(
+                authManager, usuarios, jwt, accesoService, recoveryService, administradorService, estudianteService);
 
         ResponseEntity<?> response = controller.forgotPasswordHaroGestion(new PeticionForgotPassword("admin@correo.com"));
 
@@ -58,11 +66,14 @@ class AutenticacionControllerPasswordRecoveryTest {
         ServicioJwt jwt = mock(ServicioJwt.class);
         EstudianteModuloAccesoService accesoService = mock(EstudianteModuloAccesoService.class);
         AdminPasswordRecoveryService recoveryService = mock(AdminPasswordRecoveryService.class);
+        AdministradorService administradorService = mock(AdministradorService.class);
+        EstudianteService estudianteService = mock(EstudianteService.class);
 
         when(recoveryService.verifyCode("admin@correo.com", "123456"))
                 .thenReturn(new AdminPasswordRecoveryService.VerificationResult(false, "Codigo invalido o expirado"));
 
-        AutenticacionController controller = new AutenticacionController(authManager, usuarios, jwt, accesoService, recoveryService);
+        AutenticacionController controller = new AutenticacionController(
+                authManager, usuarios, jwt, accesoService, recoveryService, administradorService, estudianteService);
 
         ResponseEntity<?> response = controller.verifyForgotPassword(new PeticionForgotPasswordVerify("admin@correo.com", "123456"));
 
@@ -76,11 +87,14 @@ class AutenticacionControllerPasswordRecoveryTest {
         ServicioJwt jwt = mock(ServicioJwt.class);
         EstudianteModuloAccesoService accesoService = mock(EstudianteModuloAccesoService.class);
         AdminPasswordRecoveryService recoveryService = mock(AdminPasswordRecoveryService.class);
+        AdministradorService administradorService = mock(AdministradorService.class);
+        EstudianteService estudianteService = mock(EstudianteService.class);
 
         when(recoveryService.verifyCode("admin@correo.com", "123456"))
                 .thenReturn(new AdminPasswordRecoveryService.VerificationResult(true, "Codigo valido"));
 
-        AutenticacionController controller = new AutenticacionController(authManager, usuarios, jwt, accesoService, recoveryService);
+        AutenticacionController controller = new AutenticacionController(
+                authManager, usuarios, jwt, accesoService, recoveryService, administradorService, estudianteService);
 
         ResponseEntity<?> response = controller.verifyForgotPasswordHaroGestion(new PeticionForgotPasswordVerify("admin@correo.com", "123456"));
 
@@ -94,11 +108,14 @@ class AutenticacionControllerPasswordRecoveryTest {
         ServicioJwt jwt = mock(ServicioJwt.class);
         EstudianteModuloAccesoService accesoService = mock(EstudianteModuloAccesoService.class);
         AdminPasswordRecoveryService recoveryService = mock(AdminPasswordRecoveryService.class);
+        AdministradorService administradorService = mock(AdministradorService.class);
+        EstudianteService estudianteService = mock(EstudianteService.class);
 
         when(recoveryService.resetPassword("admin@correo.com", "123456", "NuevaClave123"))
                 .thenReturn(new AdminPasswordRecoveryService.VerificationResult(true, "Contrasena actualizada correctamente"));
 
-        AutenticacionController controller = new AutenticacionController(authManager, usuarios, jwt, accesoService, recoveryService);
+        AutenticacionController controller = new AutenticacionController(
+                authManager, usuarios, jwt, accesoService, recoveryService, administradorService, estudianteService);
 
         ResponseEntity<?> response = controller.resetPassword(
                 new PeticionResetPassword("admin@correo.com", "123456", "NuevaClave123")
@@ -114,11 +131,14 @@ class AutenticacionControllerPasswordRecoveryTest {
         ServicioJwt jwt = mock(ServicioJwt.class);
         EstudianteModuloAccesoService accesoService = mock(EstudianteModuloAccesoService.class);
         AdminPasswordRecoveryService recoveryService = mock(AdminPasswordRecoveryService.class);
+        AdministradorService administradorService = mock(AdministradorService.class);
+        EstudianteService estudianteService = mock(EstudianteService.class);
 
         when(recoveryService.resetPassword("admin@correo.com", "123456", "NuevaClave123"))
                 .thenReturn(new AdminPasswordRecoveryService.VerificationResult(true, "Contrasena actualizada correctamente"));
 
-        AutenticacionController controller = new AutenticacionController(authManager, usuarios, jwt, accesoService, recoveryService);
+        AutenticacionController controller = new AutenticacionController(
+                authManager, usuarios, jwt, accesoService, recoveryService, administradorService, estudianteService);
 
         ResponseEntity<?> response = controller.resetPasswordHaroGestion(
                 new PeticionResetPassword("admin@correo.com", "123456", "NuevaClave123")

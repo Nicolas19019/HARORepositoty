@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+
 /* === Usa records exactamente como en tu clase original, sin anadir mas archivos === */
 record PeticionInicioSesion(
     @JsonAlias({"correo", "email", "usuario"}) String login,

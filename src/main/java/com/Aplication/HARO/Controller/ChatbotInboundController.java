@@ -834,7 +834,7 @@ public class ChatbotInboundController {
         actions.add(textMsg(
                 "Paso 5 de 8: envia tu direccion de residencia.\n\n" +
                         "Escríbela completa con barrio, nomenclatura o apartamento si aplica.\n\n" +
-                        "Ejemplo: Cra 80 #12-45 Apto 302, Kennedy, Bogota"
+                        "Ejemplo: Cra 80 #12-45 Apto 302, Av. 1 de Mayo, Bogota"
         ));
         actions.add(textMsg("Opciones: " + CMD_MENU));
     }
@@ -845,7 +845,7 @@ public class ChatbotInboundController {
             actions.add(textMsg(
                     "⚠️ Direccion invalida.\n\n" +
                             "Enviala con mas detalle para poder registrarla correctamente.\n" +
-                            "Ejemplo: Cra 80 #12-45 Apto 302, Kennedy, Bogota"
+                            "Ejemplo: Cra 80 #12-45 Apto 302, Av. 1 de Mayo, Bogota"
             ));
             actions.add(textMsg("Opciones: " + CMD_MENU));
             return;
@@ -855,7 +855,7 @@ public class ChatbotInboundController {
         session.state = ChatState.ENROLLMENT_SEDE_CAPTURE;
         actions.add(textMsg(
                 "Paso 6 de 8: selecciona tu sede.\n\n" +
-                        "1) Kennedy - Av. 1 de Mayo #68D-23 Piso 2\n" +
+                        "1) Av. 1 de Mayo #68D-23 Piso 2\n" +
                         "2) CC El Eden - Local L2-094A\n\n" +
                         "Responde con 1 o 2."
         ));
@@ -867,7 +867,7 @@ public class ChatbotInboundController {
         if (sede.isBlank()) {
             actions.add(textMsg(
                     "Debes seleccionar una sede valida.\n\n" +
-                            "1) Kennedy\n" +
+                            "1) Av. 1 de Mayo\n" +
                             "2) CC El Eden\n\n" +
                             "Responde con 1 o 2."
             ));
@@ -1303,7 +1303,7 @@ public class ChatbotInboundController {
             actions.add(textMsg(
                     "Contrato validado.\n\n" +
                             "Antes de finalizar, selecciona tu sede:\n\n" +
-                            "1) Kennedy - Av. 1 de Mayo #68D-23 Piso 2\n" +
+                            "1) Av. 1 de Mayo - Av. 1 de Mayo #68D-23 Piso 2\n" +
                             "2) CC El Eden - Local L2-094A\n\n" +
                             "Responde con 1 o 2."
             ));
@@ -1400,7 +1400,7 @@ public class ChatbotInboundController {
                     actions.add(textMsg(
                             "✅ Contrato validado correctamente.\n\n" +
                                     "Ahora selecciona tu sede:\n\n" +
-                                    "1) Kennedy\n" +
+                                    "1) 1 de mayo\n" +
                                     "2) CC El Edén"
                     ));
                     actions.add(textMsg("Opciones: " + CMD_MENU));
@@ -1461,7 +1461,7 @@ public class ChatbotInboundController {
     private String resolveSedeSelection(String text) {
         String t = normalizeCommandText(text);
         if ("1".equals(t)) {
-            return "Kennedy";
+            return "Av. 1 de Mayo";
         }
         if ("2".equals(t)) {
             return "CC El Eden";
@@ -1477,7 +1477,7 @@ public class ChatbotInboundController {
 
             actions.add(textMsg(
                     "⚠️ Debes seleccionar una sede válida.\n\n" +
-                    "1) Kennedy\n" +
+                    "1) Av. 1 de Mayo\n" +
                     "2) CC El Edén"
             ));
 
@@ -2142,14 +2142,14 @@ public class ChatbotInboundController {
                 actions.add(textMsg(
                         "Paso 5 de 8: envia tu direccion de residencia.\n\n" +
                                 "Escribela completa con barrio, nomenclatura o apartamento si aplica.\n\n" +
-                                "Ejemplo: Cra 80 #12-45 Apto 302, Kennedy, Bogota"
+                                "Ejemplo: Cra 80 #12-45 Apto 302, Av. 1 de Mayo, Bogota"
                 ));
                 actions.add(textMsg("Opciones: " + CMD_MENU));
             }
             case ENROLLMENT_SEDE_CAPTURE -> {
                 actions.add(textMsg(
                         "Paso 6 de 8: selecciona tu sede.\n\n" +
-                                "1) Kennedy - Av. 1 de Mayo #68D-23 Piso 2\n" +
+                                "1) Av. 1 de Mayo - Av. 1 de Mayo #68D-23 Piso 2\n" +
                                 "2) CC El Eden - Local L2-094A\n\n" +
                                 "Responde con 1 o 2."
                 ));
@@ -2219,7 +2219,7 @@ public class ChatbotInboundController {
             case SEDE_SELECTION -> {
                 actions.add(textMsg(
                         "📍 Selecciona tu sede:\n\n" +
-                                "1) Kennedy\n" +
+                                "1) Av. 1 de Mayo\n" +
                                 "2) CC El Edén"
                 ));
                 actions.add(textMsg("Opciones: " + CMD_MENU));
@@ -3223,7 +3223,7 @@ public class ChatbotInboundController {
                 "✨ ¡Nos adaptamos a tu tiempo!\n\n" +
 
                 "*📍 Sedes disponibles:*\n" +
-                "1) Kennedy – Av. 1 de Mayo #68D-23 Piso 2\n" +
+                "1) Av. 1 de Mayo – Av. 1 de Mayo #68D-23 Piso 2\n" +
                 "2) CC El Edén – Local L2-094A";
     }
 

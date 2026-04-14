@@ -3,6 +3,9 @@ package com.Aplication.HARO.Config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+/**
+ * Propiedades de configuraci?n para ePayco.
+ */
 @Component
 @ConfigurationProperties(prefix = "epayco")
 public class EpaycoProperties {

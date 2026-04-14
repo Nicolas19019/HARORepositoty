@@ -12,6 +12,12 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
+/**
+ * Servicio de limpieza de solicitudes de pago en efectivo.
+ *
+ * Elimina flujos pendientes vencidos y sus avances contractuales asociados para
+ * evitar solicitudes obsoletas en el panel.
+ */
 @Service
 public class ServicioLimpiezaSolicitudesEfectivo {
 

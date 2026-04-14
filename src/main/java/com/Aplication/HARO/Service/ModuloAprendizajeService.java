@@ -20,10 +20,19 @@ import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 
+/**
+ * Servicio de progreso del modulo de aprendizaje.
+ *
+ * Administra avances, favoritos, resultados de examenes, resumenes por
+ * estudiante y reportes administrativos de uso.
+ */
 @Service
 @Transactional
 public class ModuloAprendizajeService {
 
+    /**
+     * Resumen consolidado del avance de aprendizaje del estudiante.
+     */
     public record ResumenAprendizaje(
             int porcentajeGeneral,
             int modulosCompletados,
@@ -33,6 +42,9 @@ public class ModuloAprendizajeService {
             int favoritos
     ) {}
 
+    /**
+     * Resumen administrativo del uso del módulo por estudiante.
+     */
     public record EstudianteUsoModulo(
             Long id,
             String nombre,
@@ -49,6 +61,9 @@ public class ModuloAprendizajeService {
             LocalDate ultimaActividad
     ) {}
 
+    /**
+     * Resultado resumido de resultado examen admin.
+     */
     public record ResultadoExamenAdmin(
             Long idRegistro,
             Long idEstudiante,
@@ -74,16 +89,25 @@ public class ModuloAprendizajeService {
         this.estudianteRepository = estudianteRepository;
     }
 
+    /**
+     * Obtiene el listado usado por las vistas administrativas.
+     */
     @Transactional(readOnly = true)
     public List<ModuloAprendizaje> getAll() {
         return repository.findAll();
     }
 
+    /**
+     * Obtiene el registro solicitado por identificador o criterio de busqueda.
+     */
     @Transactional(readOnly = true)
     public Optional<ModuloAprendizaje> getById(Long id) {
         return repository.findById(id);
     }
 
+    /**
+     * Obtiene el registro solicitado por identificador o criterio de busqueda.
+     */
     @Transactional(readOnly = true)
     public List<ModuloAprendizaje> getByEstudiante(Long idEstudiante) {
         if (idEstudiante == null || idEstudiante <= 0) {
@@ -92,6 +116,9 @@ public class ModuloAprendizajeService {
         return repository.findByIdEstudianteOrderByFechaEvaluacionDesc(idEstudiante);
     }
 
+    /**
+     * Obtiene el registro solicitado por identificador o criterio de busqueda.
+     */
     @Transactional(readOnly = true)
     public List<ModuloAprendizaje> getByEstudianteAndCurso(Long idEstudiante, String curso) {
         if (idEstudiante == null || idEstudiante <= 0) {
@@ -104,6 +131,9 @@ public class ModuloAprendizajeService {
         return repository.findByIdEstudianteAndCursoIgnoreCaseOrderByFechaEvaluacionDesc(idEstudiante, cursoNorm);
     }
 
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     public ModuloAprendizaje create(ModuloAprendizaje input) {
         if (input == null) {
             throw new IllegalArgumentException("El registro de aprendizaje es requerido");
@@ -113,6 +143,9 @@ public class ModuloAprendizajeService {
         return repository.save(input);
     }
 
+    /**
+     * Crea o actualiza el registro segun exista informacion previa.
+     */
     public ModuloAprendizaje upsert(ModuloAprendizaje input) {
         if (input == null) {
             throw new IllegalArgumentException("El registro de aprendizaje es requerido");
@@ -170,6 +203,9 @@ public class ModuloAprendizajeService {
         return repository.save(row);
     }
 
+    /**
+     * Actualiza el registro existente con los datos permitidos.
+     */
     public ModuloAprendizaje update(Long id, ModuloAprendizaje input) {
         if (input == null) {
             throw new IllegalArgumentException("El registro de aprendizaje es requerido");
@@ -202,6 +238,9 @@ public class ModuloAprendizajeService {
         return repository.save(db);
     }
 
+    /**
+     * Devuelve la informacion solicitada para el flujo actual.
+     */
     @Transactional(readOnly = true)
     public List<String> getFavoritos(Long idEstudiante, String curso) {
         if (idEstudiante == null || idEstudiante <= 0) {
@@ -222,6 +261,9 @@ public class ModuloAprendizajeService {
         return new ArrayList<>(out);
     }
 
+    /**
+     * Guarda la configuracion recibida para el estudiante o proceso.
+     */
     public void saveFavoritos(Long idEstudiante, String curso, List<String> modulosFavoritos) {
         if (idEstudiante == null || idEstudiante <= 0) {
             throw new IllegalArgumentException("idEstudiante invalido");
@@ -286,6 +328,9 @@ public class ModuloAprendizajeService {
         }
     }
 
+    /**
+     * Devuelve un resumen de estado para consumo administrativo o diagnostico.
+     */
     @Transactional(readOnly = true)
     public ResumenAprendizaje getResumen(Long idEstudiante) {
         if (idEstudiante == null || idEstudiante <= 0) {
@@ -356,6 +401,9 @@ public class ModuloAprendizajeService {
         );
     }
 
+    /**
+     * Obtiene el listado usado por las vistas administrativas.
+     */
     @Transactional(readOnly = true)
     public List<EstudianteUsoModulo> getEstudiantesConUsoModulo() {
         List<Long> ids = repository.findDistinctIdEstudianteOrderByIdEstudianteAsc();
@@ -411,6 +459,9 @@ public class ModuloAprendizajeService {
         return out;
     }
 
+    /**
+     * Ejecuta la operacion publica del servicio.
+     */
     @Transactional(readOnly = true)
     public List<ResultadoExamenAdmin> getResultadosExamenPresentados() {
         List<ModuloAprendizaje> all = repository.findAll();
@@ -481,6 +532,9 @@ public class ModuloAprendizajeService {
         return out;
     }
 
+    /**
+     * Elimina o desactiva el registro segun la regla del servicio.
+     */
     public void delete(Long id) {
         try {
             repository.deleteById(id);
@@ -489,6 +543,9 @@ public class ModuloAprendizajeService {
         }
     }
 
+    /**
+     * Convierte la informacion del dominio al formato de salida requerido.
+     */
     private LocalDate toLocalDateActividad(ModuloAprendizaje row) {
         if (row == null) return null;
         if (row.getFechaEvaluacion() != null) {
@@ -503,6 +560,9 @@ public class ModuloAprendizajeService {
         return null;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String nombreCompleto(Estudiante e) {
         String nombre = trim(e == null ? null : e.getNombre());
         String apellido = trim(e == null ? null : e.getApellido());
@@ -513,11 +573,17 @@ public class ModuloAprendizajeService {
         return "Estudiante " + (e == null || e.getId() == null ? "" : e.getId());
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String estadoEstudiante(Estudiante e) {
         String estado = trim(e == null ? null : e.getEstado());
         return estado.isBlank() ? "Activo" : estado;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private boolean esRegistroExamenPresentado(ModuloAprendizaje row) {
         if (row == null) return false;
         String modulo = trim(row.getModulo()).toLowerCase();
@@ -533,6 +599,9 @@ public class ModuloAprendizajeService {
         return Boolean.TRUE.equals(row.getAprobado());
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private boolean esMasReciente(ModuloAprendizaje candidate, ModuloAprendizaje current) {
         if (candidate == null) return false;
         if (current == null) return true;
@@ -547,6 +616,9 @@ public class ModuloAprendizajeService {
         return safeId(candidate) > safeId(current);
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private int resolveExamScore(ModuloAprendizaje row) {
         if (row == null) return 0;
         Integer score = firstNonNull(
@@ -562,6 +634,9 @@ public class ModuloAprendizajeService {
         return score == null ? 0 : score;
     }
 
+    /**
+     * Valida la informacion recibida antes de continuar el proceso.
+     */
     private void validarYNormalizar(ModuloAprendizaje row) {
         if (row.getIdEstudiante() == null || row.getIdEstudiante() <= 0) {
             throw new IllegalArgumentException("idEstudiante es obligatorio y debe ser mayor a 0");
@@ -669,6 +744,9 @@ public class ModuloAprendizajeService {
         }
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private Integer normalizarPuntaje(String campo, Integer valor) {
         if (valor == null) return null;
         if (valor < 0 || valor > 100) {
@@ -677,6 +755,9 @@ public class ModuloAprendizajeService {
         return valor;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private Integer normalizarNoNegativo(String campo, Integer valor) {
         if (valor == null) return null;
         if (valor < 0) {
@@ -685,6 +766,9 @@ public class ModuloAprendizajeService {
         return valor;
     }
 
+    /**
+     * Valida la informacion recibida antes de continuar el proceso.
+     */
     private void validarRelacionTiempo(String ambito, Integer total, Integer completado) {
         if (total == null || completado == null) return;
         if (total == 0 && completado > 0) {
@@ -695,12 +779,18 @@ public class ModuloAprendizajeService {
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private Integer calcularPorcentajeDesdeTiempos(Integer completado, Integer total) {
         if (completado == null || total == null) return null;
         if (total == 0) return 0;
         return Math.round((completado * 100.0f) / total);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private Integer promedioPuntajes(Integer... valores) {
         List<Integer> lista = new ArrayList<>();
         for (Integer v : valores) {
@@ -713,20 +803,32 @@ public class ModuloAprendizajeService {
         return Math.round((float) suma / lista.size());
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private Integer firstNonNull(Integer a, Integer b) {
         return a != null ? a : b;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private int clampPct(int pct) {
         if (pct < 0) return 0;
         if (pct > 100) return 100;
         return pct;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private long safeId(ModuloAprendizaje row) {
         return row == null || row.getId() == null ? 0L : row.getId();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trim(String value) {
         return value == null ? "" : value.trim();
     }

@@ -29,21 +29,33 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Arrays;
 
+/**
+ * Manejador centralizado de excepciones para respuestas REST.
+ */
 @RestControllerAdvice
 public class RestExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(RestExceptionHandler.class);
 
+/**
+ * Maneja errores de validacion por restricciones.
+ */
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<?> handleConstraint(ConstraintViolationException ex) {
         return ResponseEntity.badRequest().body(ex.getMessage());
     }
 
+/**
+ * Maneja errores de validacion del cuerpo de la peticion.
+ */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<?> handleInvalid(MethodArgumentNotValidException ex) {
         return ResponseEntity.badRequest().body(ex.getBindingResult().toString());
     }
 
+/**
+ * Maneja errores de estado invalido.
+ */
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<?> handleState(IllegalStateException ex) {
         String message = ex.getMessage() == null ? "" : ex.getMessage();
@@ -54,16 +66,25 @@ public class RestExceptionHandler {
         return ResponseEntity.badRequest().body(ex.getMessage());
     }
 
+/**
+ * Maneja errores por argumentos invalidos.
+ */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<?> handleArgument(IllegalArgumentException ex) {
         return ResponseEntity.badRequest().body(ex.getMessage());
     }
 
+/**
+ * Maneja errores de recurso no encontrado.
+ */
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<?> handleNotFound(NoSuchElementException ex) {
         return ResponseEntity.status(404).body(ex.getMessage());
     }
 
+/**
+ * Maneja rutas inexistentes.
+ */
     @ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})
     public ResponseEntity<?> handleNotFoundEndpoint(Exception ex, HttpServletRequest request) {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -74,16 +95,25 @@ public class RestExceptionHandler {
         return ResponseEntity.status(404).body(body);
     }
 
+/**
+ * Maneja peticiones sin credenciales.
+ */
     @ExceptionHandler(AuthenticationCredentialsNotFoundException.class)
     public ResponseEntity<?> handleAuthMissing(AuthenticationCredentialsNotFoundException ex) {
         return ResponseEntity.status(401).body("UNAUTHORIZED");
     }
 
+/**
+ * Maneja errores de autenticacion.
+ */
     @ExceptionHandler({AuthenticationException.class, InsufficientAuthenticationException.class})
     public ResponseEntity<?> handleAuth(AuthenticationException ex) {
         return ResponseEntity.status(401).body("UNAUTHORIZED");
     }
 
+/**
+ * Maneja accesos denegados.
+ */
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<?> handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
         Object jwtError = request.getAttribute("jwt_error");
@@ -102,6 +132,9 @@ public class RestExceptionHandler {
         return ResponseEntity.status(403).body("FORBIDDEN");
     }
 
+/**
+ * Maneja denegaciones de autorizacion.
+ */
     @ExceptionHandler(AuthorizationDeniedException.class)
     public ResponseEntity<?> handleAuthorizationDenied(AuthorizationDeniedException ex, HttpServletRequest request) {
         Object jwtError = request.getAttribute("jwt_error");
@@ -120,6 +153,9 @@ public class RestExceptionHandler {
         return ResponseEntity.status(403).body("FORBIDDEN");
     }
 
+    /**
+     * Maneja excepciones del controlador.
+     */
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<?> handleMethodNotAllowed(HttpRequestMethodNotSupportedException ex,
                                                     HttpServletRequest request) {
@@ -133,16 +169,25 @@ public class RestExceptionHandler {
         return ResponseEntity.status(405).body(body);
     }
 
+/**
+ * Maneja errores de integridad de datos.
+ */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<?> handleDataIntegrity(DataIntegrityViolationException ex) {
         return ResponseEntity.status(409).body("Conflicto de datos: " + ex.getMostSpecificCause().getMessage());
     }
 
+/**
+ * Maneja cargas que superan el tamano permitido.
+ */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<?> handleMaxUpload(MaxUploadSizeExceededException ex) {
-        return ResponseEntity.status(413).body("El archivo excede el tamaño máximo permitido (50MB).");
+        return ResponseEntity.status(413).body("El archivo excede el tamaÃ±o mÃ¡ximo permitido (50MB).");
     }
 
+/**
+ * Maneja tipos de contenido no soportados.
+ */
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<?> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex) {
         return ResponseEntity.status(415).body("Tipo de contenido no soportado.");
@@ -154,10 +199,16 @@ public class RestExceptionHandler {
             HttpMessageNotReadableException.class,
             MethodArgumentTypeMismatchException.class
     })
+/**
+ * Maneja una condicion especifica del controlador.
+ */
     public ResponseEntity<?> handleBadRequest(Exception ex) {
         return ResponseEntity.badRequest().body(ex.getMessage());
     }
 
+/**
+ * Maneja errores no controlados.
+ */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<?> handleUnexpected(Exception ex, HttpServletRequest request) {
         log.error("Error no controlado [{} {}]: {}", request.getMethod(), request.getRequestURI(), ex.getMessage(), ex);

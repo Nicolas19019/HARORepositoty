@@ -16,6 +16,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
+/**
+ * Filtro de seguridad que valida tokens JWT por peticion.
+ *
+ * Lee el header Authorization Bearer, carga el usuario y registra la
+ * autenticacion en el contexto de Spring Security cuando el token es valido.
+ */
 public class FiltroJwt extends OncePerRequestFilter {
 
   private final ServicioJwt servicioJwt;
@@ -33,7 +39,7 @@ public class FiltroJwt extends OncePerRequestFilter {
 
     String auth = request.getHeader("Authorization");
 
-    // Si no hay Bearer, deja pasar (para que funcione Basic y permitAll)
+    // Si no hay Bearer, deja pasar para permitir Basic y rutas publicas.
     if (!StringUtils.hasText(auth) || !auth.startsWith("Bearer ")) {
       filterChain.doFilter(request, response);
       return;

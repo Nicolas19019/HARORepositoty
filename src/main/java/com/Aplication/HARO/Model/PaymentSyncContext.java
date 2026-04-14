@@ -11,6 +11,12 @@ import jakarta.persistence.Table;
 
 import java.time.Instant;
 
+/**
+ * Contexto temporal de sincronizacion de pagos.
+ *
+ * Relaciona referencias de pasarela, factura o documento con el flujo de
+ * matricula mientras llega la confirmacion definitiva del pago.
+ */
 @Entity
 @Table(name = "payment_sync_context")
 public class PaymentSyncContext {
@@ -58,6 +64,9 @@ public class PaymentSyncContext {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /**
+     * Inicializa fechas y vencimiento por defecto del contexto temporal.
+     */
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();
@@ -66,6 +75,9 @@ public class PaymentSyncContext {
         if (expiresAt == null) expiresAt = now.plusSeconds(86_400);
     }
 
+    /**
+     * Actualiza la marca de modificacion del contexto temporal.
+     */
     @PreUpdate
     void onUpdate() {
         updatedAt = Instant.now();

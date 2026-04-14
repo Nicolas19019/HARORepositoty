@@ -13,9 +13,18 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Acceso a procesos de matricula del chatbot y HaroGestion.
+ *
+ * Reune consultas para localizar procesos por documento, correo, telefono,
+ * estado de pago, visibilidad y limpieza de flujos pendientes.
+ */
 public interface ChatbotMatriculaProcesoRepository extends JpaRepository<ChatbotMatriculaProceso, Long> {
     Optional<ChatbotMatriculaProceso> findByNumeroDocumento(String numeroDocumento);
 
+    /**
+     * Bloquea el proceso por documento para evitar escrituras concurrentes del flujo.
+     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from ChatbotMatriculaProceso p where p.numeroDocumento = :numeroDocumento")
     Optional<ChatbotMatriculaProceso> findByNumeroDocumentoForUpdate(@Param("numeroDocumento") String numeroDocumento);
@@ -34,6 +43,9 @@ public interface ChatbotMatriculaProcesoRepository extends JpaRepository<Chatbot
     List<ChatbotMatriculaProceso> findByMetodoPagoIgnoreCaseOrFlowStatusIgnoreCaseOrFlowStatusIgnoreCase(String metodoPago, String flowStatus1, String flowStatus2, Pageable pageable);
     List<ChatbotMatriculaProceso> findByVisibleTrueAndMetodoPagoIgnoreCaseOrVisibleTrueAndFlowStatusIgnoreCaseOrVisibleTrueAndFlowStatusIgnoreCase(String metodoPago, String flowStatus1, String flowStatus2, Pageable pageable);
 
+    /**
+     * Ubica candidatos usando partes visibles de documento y correo en busquedas enmascaradas.
+     */
     @Query("""
             select p
             from ChatbotMatriculaProceso p
@@ -49,6 +61,9 @@ public interface ChatbotMatriculaProcesoRepository extends JpaRepository<Chatbot
                                                                 @Param("emailSuffix") String emailSuffix,
                                                                 Pageable pageable);
 
+    /**
+     * Obtiene IDs de procesos en efectivo que siguen pendientes despues del umbral definido.
+     */
     @Query("""
             select p.id
             from ChatbotMatriculaProceso p

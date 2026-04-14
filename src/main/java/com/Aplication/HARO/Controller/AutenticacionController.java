@@ -32,31 +32,55 @@ import org.springframework.web.bind.annotation.RestController;
 
 
 /* === Usa records exactamente como en tu clase original, sin anadir mas archivos === */
+/**
+ * DTO de entrada con las credenciales de inicio de sesion.
+ */
 record PeticionInicioSesion(
     @JsonAlias({"correo", "email", "usuario"}) String login,
     @JsonAlias({"contrasena", "password"}) String password
 ) {}
+/**
+ * DTO de entrada con el token de refresco.
+ */
 record PeticionRefresco(String tokenRefresco) {}
+/**
+ * DTO de salida con los tokens emitidos y sus expiraciones.
+ */
 record RespuestaTokens(String tokenAcceso, String tokenRefresco, String rol, Long uid,
                        long accesoExpiraEnSeg, long refrescoExpiraEnSeg) {}
+/**
+ * DTO de entrada para solicitar la recuperacion de contrasena.
+ */
 record PeticionForgotPassword(
     @JsonAlias({"correo", "email"}) String correo
 ) {}
+/**
+ * DTO de entrada para validar el codigo de recuperacion.
+ */
 record PeticionForgotPasswordVerify(
     @JsonAlias({"correo", "email"}) String correo,
     @JsonAlias({"codigo", "code"}) String code
 ) {}
+/**
+ * DTO de entrada para restablecer la contrasena.
+ */
 record PeticionResetPassword(
     @JsonAlias({"correo", "email"}) String correo,
     @JsonAlias({"codigo", "code"}) String code,
     @JsonAlias({"nuevaContrasena", "newPassword"}) String nuevaContrasena
 ) {}
+/**
+ * DTO de entrada para cambiar la contrasena del usuario autenticado.
+ */
 record PeticionCambioPassword(
     @JsonAlias({"currentPassword", "contrasenaActual"}) String currentPassword,
     @JsonAlias({"newPassword", "nuevaContrasena"}) String newPassword,
     @JsonAlias({"confirmPassword", "confirmarContrasena"}) String confirmPassword
 ) {}
 
+/**
+ * Controlador REST para autenticacion.
+ */
 @RestController
 @RequestMapping("/api/auth")
 @CrossOrigin(origins = "*")
@@ -73,6 +97,9 @@ public class AutenticacionController {
   private final AdministradorService administradorService;
   private final EstudianteService estudianteService;
 
+  /**
+   * Inyecta las dependencias necesarias del controlador.
+   */
   public AutenticacionController(AuthenticationManager authManager,
                                  ServicioUsuariosCombinado usuarios,
                                  ServicioJwt jwt,
@@ -89,14 +116,23 @@ public class AutenticacionController {
     this.estudianteService = estudianteService;
   }
 
+/**
+ * Valida si el rol recibido puede usar este flujo.
+ */
   private boolean rolPermitido(String rol) {
     return "ESTUDIANTE".equalsIgnoreCase(rol) || "ADMIN".equalsIgnoreCase(rol);
   }
 
+/**
+ * Normaliza el correo antes de validarlo o compararlo.
+ */
   private String normalizarCorreo(String correo) {
     return correo == null ? "" : correo.trim().toLowerCase(Locale.ROOT);
   }
 
+/**
+ * Normaliza y valida un campo de contrasena.
+ */
   private String normalizePassword(String raw, String fieldName) {
     String password = raw == null ? "" : raw.trim();
     if (password.isBlank()) {
@@ -105,6 +141,9 @@ public class AutenticacionController {
     return password;
   }
 
+/**
+ * Valida que la contrasena cumpla la politica definida.
+ */
   private void validatePasswordPolicy(String password) {
     if (password.length() < 8) {
       throw new IllegalArgumentException("La nueva contrasena debe tener al menos 8 caracteres");
@@ -120,6 +159,9 @@ public class AutenticacionController {
     }
   }
 
+/**
+ * Autentica al usuario y devuelve los tokens de acceso.
+ */
   @PostMapping("/login")
   public ResponseEntity<?> login(@RequestBody(required = false) PeticionInicioSesion req) {
     try {
@@ -165,6 +207,9 @@ public class AutenticacionController {
     }
   }
 
+/**
+ * Renueva los tokens usando un token de refresco valido.
+ */
   @PostMapping("/refresh")
   public ResponseEntity<?> refresh(@RequestBody(required = false) PeticionRefresco req) {
     try {
@@ -195,6 +240,9 @@ public class AutenticacionController {
     }
   }
 
+  /**
+   * Cierra la sesion actual y limpia la cookie de acceso cuando aplica.
+   */
   @PostMapping("/logout")
   public ResponseEntity<?> logout(
       @RequestHeader(name = "Authorization", required = false) String authz) {
@@ -222,16 +270,25 @@ public class AutenticacionController {
     }
   }
 
+/**
+ * Inicia la recuperacion de contrasena.
+ */
   @PostMapping("/forgot-password")
   public ResponseEntity<?> forgotPassword(@RequestBody(required = false) PeticionForgotPassword req) {
     return forgotPasswordInternal(req);
   }
 
+/**
+ * Inicia la recuperacion de contrasena desde HaroGestion.
+ */
   @PostMapping("/harogestion/forgot-password")
   public ResponseEntity<?> forgotPasswordHaroGestion(@RequestBody(required = false) PeticionForgotPassword req) {
     return forgotPasswordInternal(req);
   }
 
+/**
+ * Centraliza la logica interna de recuperacion de contrasena.
+ */
   private ResponseEntity<?> forgotPasswordInternal(PeticionForgotPassword req) {
     try {
       String correo = req == null ? null : req.correo();
@@ -248,16 +305,25 @@ public class AutenticacionController {
     }
   }
 
+/**
+ * Verifica el codigo de recuperacion de contrasena.
+ */
   @PostMapping("/forgot-password/verify")
   public ResponseEntity<?> verifyForgotPassword(@RequestBody(required = false) PeticionForgotPasswordVerify req) {
     return verifyForgotPasswordInternal(req);
   }
 
+/**
+ * Verifica el codigo de recuperacion desde HaroGestion.
+ */
   @PostMapping("/harogestion/forgot-password/verify")
   public ResponseEntity<?> verifyForgotPasswordHaroGestion(@RequestBody(required = false) PeticionForgotPasswordVerify req) {
     return verifyForgotPasswordInternal(req);
   }
 
+/**
+ * Centraliza la verificacion interna del codigo de recuperacion.
+ */
   private ResponseEntity<?> verifyForgotPasswordInternal(PeticionForgotPasswordVerify req) {
     try {
       var out = adminPasswordRecoveryService.verifyCode(
@@ -276,16 +342,25 @@ public class AutenticacionController {
     }
   }
 
+/**
+ * Restablece la contrasena usando un codigo valido.
+ */
   @PostMapping("/reset-password")
   public ResponseEntity<?> resetPassword(@RequestBody(required = false) PeticionResetPassword req) {
     return resetPasswordInternal(req);
   }
 
+/**
+ * Restablece la contrasena desde HaroGestion.
+ */
   @PostMapping("/harogestion/reset-password")
   public ResponseEntity<?> resetPasswordHaroGestion(@RequestBody(required = false) PeticionResetPassword req) {
     return resetPasswordInternal(req);
   }
 
+/**
+ * Centraliza el restablecimiento interno de contrasena.
+ */
   private ResponseEntity<?> resetPasswordInternal(PeticionResetPassword req) {
     try {
       var out = adminPasswordRecoveryService.resetPassword(
@@ -305,6 +380,9 @@ public class AutenticacionController {
     }
   }
 
+  /**
+   * Permite al usuario autenticado cambiar su contrasena.
+   */
   @PostMapping("/password/change")
   public ResponseEntity<?> changePassword(@RequestBody(required = false) PeticionCambioPassword req,
                                           Authentication authentication) {

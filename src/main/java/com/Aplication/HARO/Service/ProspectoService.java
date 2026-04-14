@@ -9,6 +9,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Locale;
 
+/**
+ * Servicio de prospectos comerciales.
+ *
+ * Registra consultas por telefono, normaliza variantes del numero y permite
+ * detectar prospectos activos.
+ */
 @Service
 @Transactional
 public class ProspectoService {
@@ -21,6 +27,9 @@ public class ProspectoService {
         this.repo = repo;
     }
 
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     public void registrarConsulta(String telefono, String servicio) {
         String tel = normalizePhone(telefono);
         String srv = normalizeService(servicio);
@@ -75,6 +84,9 @@ public class ProspectoService {
         repo.save(p);
     }
 
+    /**
+     * Indica si se cumple la condicion consultada.
+     */
     @Transactional(readOnly = true)
     public boolean existeProspectoActivoPorTelefono(String telefono) {
         String tel = normalizePhone(telefono);
@@ -87,6 +99,9 @@ public class ProspectoService {
                 .isPresent();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizePhone(String raw) {
         String out = raw == null ? "" : raw.trim();
         if (out.isBlank()) return "";
@@ -115,6 +130,9 @@ public class ProspectoService {
         return out;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeService(String raw) {
         String out = raw == null ? "" : raw.trim();
         out = out.replaceAll("\\s+", " ");
@@ -123,17 +141,26 @@ public class ProspectoService {
         return out.toUpperCase(Locale.ROOT);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String maskPhone(String raw) {
         String v = raw == null ? "" : raw.trim();
         if (v.length() <= 4) return "****";
         return "*".repeat(Math.max(4, v.length() - 4)) + v.substring(v.length() - 4);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private int safeInt(Integer v) {
         if (v == null) return 0;
         return Math.max(0, v);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private java.util.List<String> phoneCandidates(String canonicalDigitsOnly) {
         java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
         String tel = canonicalDigitsOnly == null ? "" : canonicalDigitsOnly.trim();
@@ -156,6 +183,9 @@ public class ProspectoService {
         return new java.util.ArrayList<>(out);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private Prospecto pickMaster(java.util.List<Prospecto> existing, String canonicalDigitsOnly) {
         if (existing == null || existing.isEmpty()) {
             return null;

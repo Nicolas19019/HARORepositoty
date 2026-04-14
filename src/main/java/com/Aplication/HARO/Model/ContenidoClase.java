@@ -6,6 +6,12 @@ import jakarta.persistence.*;
 
 import java.time.Instant;
 
+/**
+ * Contenido asociado a una clase de aprendizaje.
+ *
+ * Mantiene la url del recurso, su tipo, orden de visualizacion y metadatos de
+ * vista previa usados por el frontend.
+ */
 @Entity
 @Table(name = "contenido_clase")
 public class ContenidoClase {
@@ -53,6 +59,9 @@ public class ContenidoClase {
     @Column(name = "actualizado_en", nullable = false)
     private Instant actualizadoEn;
 
+    /**
+     * Inicializa marcas de tiempo y valores por defecto al crear el contenido.
+     */
     @PrePersist
     public void prePersist() {
         Instant now = Instant.now();
@@ -62,6 +71,9 @@ public class ContenidoClase {
         if (orden == null || orden <= 0) orden = 1;
     }
 
+    /**
+     * Actualiza la fecha de modificacion del contenido.
+     */
     @PreUpdate
     public void preUpdate() {
         actualizadoEn = Instant.now();
@@ -83,6 +95,9 @@ public class ContenidoClase {
         this.clase = clase;
     }
 
+    /**
+     * Expone el identificador de la clase padre sin serializar toda la relacion.
+     */
     @JsonProperty("claseId")
     public Long getClaseId() {
         return claseIdRef;
@@ -168,36 +183,57 @@ public class ContenidoClase {
         this.actualizadoEn = actualizadoEn;
     }
 
+    /**
+     * Expone el titulo con el alias esperado por el frontend.
+     */
     @JsonProperty("title")
     public String getTitle() {
         return titulo;
     }
 
+    /**
+     * Expone el tipo de contenido con el alias esperado por el frontend.
+     */
     @JsonProperty("type")
     public String getType() {
         return tipo;
     }
 
+    /**
+     * Expone la descripcion con el alias esperado por el frontend.
+     */
     @JsonProperty("description")
     public String getDescription() {
         return descripcion;
     }
 
+    /**
+     * Indica si el contenido puede mostrarse con vista previa embebida.
+     */
     @JsonProperty("previewEmbebidaDisponible")
     public boolean isPreviewEmbebidaDisponible() {
         return previewUrl != null && !previewUrl.isBlank();
     }
 
+    /**
+     * Expone el tipo de vista previa usando el nombre de campo esperado por JSON.
+     */
     @JsonProperty("previewTipo")
     public String getPreviewTipoJson() {
         return previewTipo;
     }
 
+    /**
+     * Expone la URL de vista previa usando el nombre de campo esperado por JSON.
+     */
     @JsonProperty("previewUrl")
     public String getPreviewUrlJson() {
         return previewUrl;
     }
 
+    /**
+     * Reserva la salida de diapositivas de preview para futuras estrategias.
+     */
     @JsonProperty("previewSlides")
     public java.util.List<String> getPreviewSlides() {
         // Por ahora la estrategia implementada es conversion a PDF.

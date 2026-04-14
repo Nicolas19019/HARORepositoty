@@ -18,6 +18,12 @@ import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import java.util.Optional;
 
+/**
+ * Servicio de recuperacion de contrasena para administradores.
+ *
+ * Genera, verifica y consume codigos temporales enviados por correo para
+ * restablecer contrasenas administrativas.
+ */
 @Service
 @Transactional
 public class AdminPasswordRecoveryService {
@@ -45,6 +51,9 @@ public class AdminPasswordRecoveryService {
     @Value("${app.admin-recovery.subject:Recuperacion de contrasena - HaroGestion}")
     private String subject;
 
+    /**
+     * Resultado resumido de verification.
+     */
     public record VerificationResult(boolean ok, String message) {}
 
     public AdminPasswordRecoveryService(AdministradorRepository adminRepository,
@@ -57,6 +66,9 @@ public class AdminPasswordRecoveryService {
         this.mailService = mailService;
     }
 
+    /**
+     * Inicia la solicitud del flujo correspondiente.
+     */
     public void requestRecovery(String rawCorreo) {
         String correo = normalizeEmail(rawCorreo);
         Instant now = Instant.now();
@@ -101,6 +113,9 @@ public class AdminPasswordRecoveryService {
         );
     }
 
+    /**
+     * Verifica el codigo o token recibido y devuelve el resultado de validacion.
+     */
     public VerificationResult verifyCode(String rawCorreo, String rawCode) {
         String correo = normalizeEmail(rawCorreo);
         String code = normalizeCode(rawCode);
@@ -143,6 +158,9 @@ public class AdminPasswordRecoveryService {
         return new VerificationResult(true, "Codigo valido");
     }
 
+    /**
+     * Restablece la contrasena despues de validar el codigo temporal.
+     */
     public VerificationResult resetPassword(String rawCorreo, String rawCode, String nuevaContrasena) {
         String correo = normalizeEmail(rawCorreo);
         String code = normalizeCode(rawCode);
@@ -194,6 +212,9 @@ public class AdminPasswordRecoveryService {
         return new VerificationResult(true, "Contrasena actualizada correctamente");
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeEmail(String rawCorreo) {
         String correo = rawCorreo == null ? "" : rawCorreo.trim().toLowerCase(Locale.ROOT);
         if (correo.isBlank()) {
@@ -208,10 +229,16 @@ public class AdminPasswordRecoveryService {
         return correo;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeCode(String rawCode) {
         return rawCode == null ? "" : rawCode.trim();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizePassword(String rawPassword) {
         String password = rawPassword == null ? "" : rawPassword.trim();
         if (password.length() < 8) {
@@ -229,6 +256,9 @@ public class AdminPasswordRecoveryService {
         return password;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String generateNumericOtp(int length) {
         StringBuilder out = new StringBuilder(length);
         for (int i = 0; i < length; i++) {
@@ -237,11 +267,17 @@ public class AdminPasswordRecoveryService {
         return out.toString();
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String safeName(Administrador admin) {
         String nombre = admin == null || admin.getNombre() == null ? "" : admin.getNombre().trim();
         return nombre.isBlank() ? "administrador" : nombre;
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildHtml(Administrador admin, String code) {
         return """
 <div style="background:#f4f4f4;padding:24px;font-family:Segoe UI,Arial,sans-serif;color:#1a1a1a;">
@@ -262,6 +298,9 @@ public class AdminPasswordRecoveryService {
 """.formatted(safeName(admin), code);
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildPlain(Administrador admin, String code) {
         return "HaroGestion - Recuperacion de contrasena\n\n"
                 + "Hola " + safeName(admin) + ",\n"

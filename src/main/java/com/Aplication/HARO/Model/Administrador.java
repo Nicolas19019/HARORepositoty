@@ -8,6 +8,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+/**
+ * Entidad de administradores internos.
+ *
+ * Guarda las credenciales de acceso en hash, la informacion basica de usuario
+ * y la sede que limita su alcance operativo dentro del sistema.
+ */
 @Entity
 @Table(name = "administrador",
        uniqueConstraints = {
@@ -21,7 +27,7 @@ public class Administrador {
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
-  // Puedes usar uno u otro para iniciar sesión (correo o usuario)
+  // Se puede iniciar sesion con correo o usuario.
   @Column(length = 120)
   private String correo;
   @Column(name = "cedula")
@@ -29,7 +35,7 @@ public class Administrador {
   @Column(length = 60)
   private String usuario;
   @JsonProperty(access = JsonProperty.Access.WRITE_ONLY) 
-  // Guardar SIEMPRE hash (BCrypt ≈ 60 chars)
+  // Guardar siempre el hash, no la contrasena en texto plano.
   @Column(name = "contrasena_hash", nullable = false, length = 100)
   private String contrasenaHash;
 
@@ -48,6 +54,9 @@ public class Administrador {
   @Column(nullable = false)
   private Instant actualizadoEn = Instant.now();
 
+  /**
+   * Actualiza la marca de modificacion antes de guardar cambios del administrador.
+   */
   @PreUpdate
   public void touch() { this.actualizadoEn = Instant.now(); }
 

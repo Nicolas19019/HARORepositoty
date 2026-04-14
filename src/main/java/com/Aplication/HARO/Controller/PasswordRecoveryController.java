@@ -9,6 +9,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
+/**
+ * Controlador REST para password recovery.
+ */
 @Validated
 @RestController
 @RequestMapping("/api/auth/password")
@@ -17,14 +20,23 @@ public class PasswordRecoveryController {
 
     private final PasswordRecoveryService service;
 
+/**
+ * Inyecta las dependencias necesarias del controlador.
+ */
     public PasswordRecoveryController(PasswordRecoveryService service) {
         this.service = service;
     }
 
+    /**
+     * DTO de entrada con el correo para iniciar la recuperacion.
+     */
     public record RecoveryRequest(
             @JsonAlias({"email", "correo"}) @NotBlank String email
     ) {}
 
+/**
+ * Solicita el inicio del proceso de recuperacion.
+ */
     @PostMapping("/recovery/request")
     public ResponseEntity<Map<String, Object>> requestRecovery(@RequestBody RecoveryRequest req) {
         service.requestLearningModuleRecovery(req.email());

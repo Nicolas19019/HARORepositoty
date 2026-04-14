@@ -6,6 +6,12 @@ import jakarta.persistence.*;
 import java.time.Instant;
 import java.time.LocalDate;
 
+/**
+ * Clase principal del modulo de aprendizaje.
+ *
+ * Define el curso, area, titulo y estado de publicacion que agrupan contenidos
+ * visibles para el estudiante en la plataforma academica.
+ */
 @Entity
 @Table(name = "clase_aprendizaje")
 public class ClaseAprendizaje {
@@ -42,6 +48,9 @@ public class ClaseAprendizaje {
     @Column(name = "actualizado_en", nullable = false)
     private Instant actualizadoEn;
 
+    /**
+     * Inicializa marcas de tiempo y valores por defecto al crear la clase de aprendizaje.
+     */
     @PrePersist
     public void prePersist() {
         Instant now = Instant.now();
@@ -51,6 +60,9 @@ public class ClaseAprendizaje {
         if (visible == null) visible = true;
     }
 
+    /**
+     * Actualiza la fecha de modificacion de la clase de aprendizaje.
+     */
     @PreUpdate
     public void preUpdate() {
         actualizadoEn = Instant.now();
@@ -136,16 +148,25 @@ public class ClaseAprendizaje {
         this.actualizadoEn = actualizadoEn;
     }
 
+    /**
+     * Expone el titulo con el alias esperado por el frontend.
+     */
     @JsonProperty("title")
     public String getTitle() {
         return titulo;
     }
 
+    /**
+     * Expone la descripcion con el alias esperado por el frontend.
+     */
     @JsonProperty("description")
     public String getDescription() {
         return descripcion;
     }
 
+    /**
+     * Expone la fecha de publicacion con el alias esperado por el frontend.
+     */
     @JsonProperty("publishedAt")
     public LocalDate getPublishedAt() {
         return fechaPublicacion;

@@ -10,10 +10,19 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Servicio de metricas de codigos QR.
+ *
+ * Registra escaneos, cuenta eventos por rango de fechas y genera reportes para
+ * seguimiento de campanas.
+ */
 @Service
 @Transactional
 public class QrScanService {
 
+    /**
+     * DTO de entrada para register.
+     */
     public record RegisterRequest(
             String source,
             String channel,
@@ -29,16 +38,25 @@ public class QrScanService {
             String userAgent
     ) {}
 
+    /**
+     * DTO de salida para register.
+     */
     public record RegisterResponse(
             boolean ok,
             Long id,
             Instant createdAt
     ) {}
 
+    /**
+     * DTO de salida para count.
+     */
     public record CountResponse(
             long total
     ) {}
 
+    /**
+     * DTO de salida para report.
+     */
     public record ReportResponse(
             String timezone,
             String from,
@@ -62,6 +80,9 @@ public class QrScanService {
         this.repository = repository;
     }
 
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     public RegisterResponse register(RegisterRequest request) {
         QrScan scan = new QrScan();
         scan.setSource(normalizeSmall(request == null ? null : request.source(), "qr"));
@@ -81,11 +102,17 @@ public class QrScanService {
         return new RegisterResponse(true, saved.getId(), saved.getCreatedAt());
     }
 
+    /**
+     * Cuenta registros para el indicador solicitado.
+     */
     @Transactional(readOnly = true)
     public CountResponse countAll() {
         return new CountResponse(repository.count());
     }
 
+    /**
+     * Cuenta registros para el indicador solicitado.
+     */
     @Transactional(readOnly = true)
     public CountResponse countToday() {
         Instant from = LocalDate.now(REPORT_ZONE).atStartOfDay(REPORT_ZONE).toInstant();
@@ -93,6 +120,9 @@ public class QrScanService {
         return new CountResponse(repository.countByCreatedAtBetween(from, to));
     }
 
+    /**
+     * Genera el reporte solicitado para el rango de consulta.
+     */
     @Transactional(readOnly = true)
     public ReportResponse report(LocalDate from, LocalDate to) {
         LocalDate start = from == null ? LocalDate.now(REPORT_ZONE).minusDays(29) : from;
@@ -141,10 +171,16 @@ public class QrScanService {
         );
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private void increment(Map<String, Long> map, String key) {
         map.merge(key, 1L, Long::sum);
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeSmall(String value, String fallback) {
         String out = trim(value);
         if (out.isBlank()) return fallback;
@@ -152,22 +188,34 @@ public class QrScanService {
         return out.length() > 120 ? out.substring(0, 120) : out;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeLarge(String value) {
         String out = trim(value);
         if (out.isBlank()) return null;
         return out.length() > 4000 ? out.substring(0, 4000) : out;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String fallback(String value, String fallback) {
         String out = trim(value);
         return out.isBlank() ? fallback : out;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String formatDay(Instant instant) {
         if (instant == null) return "Sin fecha";
         return instant.atZone(REPORT_ZONE).toLocalDate().toString();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trim(String value) {
         return value == null ? "" : value.trim();
     }

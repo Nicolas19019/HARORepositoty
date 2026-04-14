@@ -5,6 +5,12 @@ import jakarta.persistence.*;
 
 import java.time.Instant;
 
+/**
+ * Ticket de soporte academico o administrativo.
+ *
+ * Conserva solicitud, estado, responsable, adjuntos y datos del estudiante para
+ * seguimiento interno.
+ */
 @Entity
 @Table(name = "soporte_ticket", indexes = {
         @Index(name = "idx_soporte_ticket_created_at", columnList = "created_at"),
@@ -55,6 +61,9 @@ public class SoporteTicket {
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Instant updatedAt;
 
+    /**
+     * Inicializa las marcas de tiempo al crear el ticket de soporte.
+     */
     @PrePersist
     public void onCreate() {
         Instant now = Instant.now();
@@ -66,6 +75,9 @@ public class SoporteTicket {
         }
     }
 
+    /**
+     * Actualiza la fecha de modificacion del ticket de soporte.
+     */
     @PreUpdate
     public void onUpdate() {
         updatedAt = Instant.now();

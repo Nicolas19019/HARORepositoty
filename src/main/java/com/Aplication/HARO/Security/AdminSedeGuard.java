@@ -9,9 +9,19 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
+/**
+ * Validador de alcance por sede para administradores.
+ *
+ * Resuelve el administrador autenticado y permite validar si puede consultar o
+ * modificar datos de una sede especifica. Una sede vacia se interpreta como
+ * administrador global.
+ */
 @Component
 public class AdminSedeGuard {
 
+  /**
+   * Contexto resumido del administrador autenticado y su sede.
+   */
   public record AdminCtx(Long adminId, String sede, String sedeKey, boolean superAdmin) {}
 
   private final AdministradorRepository adminRepo;
@@ -20,6 +30,9 @@ public class AdminSedeGuard {
     this.adminRepo = adminRepo;
   }
 
+  /**
+   * Convierte la autenticacion actual en un contexto de administrador.
+   */
   public AdminCtx resolve(Authentication authentication) {
     if (authentication == null || !authentication.isAuthenticated()) {
       throw new AccessDeniedException("UNAUTHORIZED");
@@ -46,12 +59,18 @@ public class AdminSedeGuard {
     return new AdminCtx(admin.getId(), sede, sedeKey, superAdmin);
   }
 
+  /**
+   * Indica si el contexto de administrador puede operar sobre la sede destino.
+   */
   public boolean canAccess(AdminCtx ctx, String targetSede) {
     if (ctx == null || ctx.superAdmin) return true;
     String targetKey = sedeKey(targetSede);
     return !targetKey.isBlank() && ctx.sedeKey.equals(targetKey);
   }
 
+  /**
+   * Lanza AccessDeniedException cuando la sede solicitada no pertenece al admin.
+   */
   public void assertCanAccess(AdminCtx ctx, String targetSede) {
     if (!canAccess(ctx, targetSede)) {
       throw new AccessDeniedException("FORBIDDEN");
@@ -59,8 +78,8 @@ public class AdminSedeGuard {
   }
 
   /**
-   * Si el admin tiene sede asignada, forza esa sede.
-   * Si el admin no tiene sede (super admin), deja pasar lo que venga.
+   * Si el administrador tiene sede asignada, fuerza esa sede en la solicitud.
+   * Si es administrador global, conserva la sede solicitada.
    */
   public String enforceRequestSede(AdminCtx ctx, String requestedSede) {
     String req = trim(requestedSede);
@@ -80,6 +99,9 @@ public class AdminSedeGuard {
     return ctx.sede;
   }
 
+  /**
+   * Normaliza nombres de sede y aplica alias conocidos para comparaciones seguras.
+   */
   public static String sedeKey(String rawSede) {
     String v = trim(rawSede).toLowerCase(Locale.ROOT);
     if (v.isBlank()) return "";
@@ -87,7 +109,7 @@ public class AdminSedeGuard {
     v = Normalizer.normalize(v, Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
     v = v.replaceAll("[^a-z0-9]+", " ").trim().replaceAll("\\s+", " ");
 
-    // Alias simples para sedes actuales (tolerante a "CC El Eden", "El Eden", "Eden", etc).
+    // Alias simples para sedes actuales, tolerantes a variaciones de nombre.
     if (v.contains("eden")) return "eden";
     if (v.contains("kennedy")) return "kennedy";
 
@@ -98,4 +120,3 @@ public class AdminSedeGuard {
     return value == null ? "" : value.trim();
   }
 }
-

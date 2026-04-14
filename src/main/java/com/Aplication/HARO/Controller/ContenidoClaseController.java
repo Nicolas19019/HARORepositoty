@@ -18,14 +18,23 @@ import org.springframework.web.multipart.MultipartFile;
         "https://www.ceaharo.com",
         "https://*.ceaharo.com"
 })
+/**
+ * Controlador REST para contenido clase.
+ */
 public class ContenidoClaseController {
 
     private final ContenidoClaseService service;
 
+/**
+ * Inyecta las dependencias necesarias del controlador.
+ */
     public ContenidoClaseController(ContenidoClaseService service) {
         this.service = service;
     }
 
+    /**
+     * Crea un nuevo registro de contenido clase.
+     */
     @PostMapping(value = "/api/clases/{id}/contenidos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ContenidoClase> create(@PathVariable("id") Long claseId,
@@ -46,6 +55,9 @@ public class ContenidoClaseController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
+    /**
+     * Actualiza un registro existente de contenido clase.
+     */
     @PutMapping(value = "/api/contenidos/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('ADMIN')")
     public ContenidoClase update(@PathVariable String id,
@@ -66,6 +78,9 @@ public class ContenidoClaseController {
         return out;
     }
 
+/**
+ * Elimina un registro de contenido clase.
+ */
     @DeleteMapping("/api/contenidos/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable String id) {
@@ -73,6 +88,9 @@ public class ContenidoClaseController {
         return ResponseEntity.noContent().build();
     }
 
+/**
+ * Convierte una URL relativa en una URL absoluta.
+ */
     private String toAbsoluteUrl(String rawUrl, HttpServletRequest request) {
         String v = rawUrl == null ? "" : rawUrl.trim();
         if (v.isBlank()) return v;
@@ -84,6 +102,9 @@ public class ContenidoClaseController {
         return request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort() + v;
     }
 
+/**
+ * Resuelve el identificador numerico del contenido.
+ */
     private Long resolveContenidoId(String raw) {
         String in = raw == null ? "" : raw.trim();
         if (in.matches("\\d+")) {

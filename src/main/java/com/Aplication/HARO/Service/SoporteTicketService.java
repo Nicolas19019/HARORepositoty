@@ -16,10 +16,19 @@ import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
+/**
+ * Servicio de tickets de soporte.
+ *
+ * Crea solicitudes, lista tickets para administracion, actualiza estado y genera
+ * resumenes de seguimiento.
+ */
 @Service
 @Transactional
 public class SoporteTicketService {
 
+    /**
+     * DTO de entrada para create.
+     */
     public record CreateRequest(
             String tipo,
             String mensaje,
@@ -29,12 +38,18 @@ public class SoporteTicketService {
             String nombreEstudiante
     ) {}
 
+    /**
+     * DTO de entrada para admin update.
+     */
     public record AdminUpdateRequest(
             String estado,
             String notaInterna,
             String responsable
     ) {}
 
+    /**
+     * Resumen de apoyo para ticket.
+     */
     public record TicketResumen(
             long total,
             long abiertos,
@@ -58,6 +73,9 @@ public class SoporteTicketService {
         this.schemaInitializer = schemaInitializer;
     }
 
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     public SoporteTicket crear(CreateRequest request) {
         ensureSchema();
         if (request == null) {
@@ -77,6 +95,9 @@ public class SoporteTicketService {
         return repository.save(ticket);
     }
 
+    /**
+     * Lista los registros solicitados segun los filtros recibidos.
+     */
     @Transactional(readOnly = true)
     public List<SoporteTicket> listarAdmin(String estado,
                                            String tipo,
@@ -104,6 +125,9 @@ public class SoporteTicketService {
                 .toList();
     }
 
+    /**
+     * Actualiza el registro existente con los datos permitidos.
+     */
     public SoporteTicket actualizarAdmin(Long id, AdminUpdateRequest request) {
         ensureSchema();
         if (id == null || id <= 0) {
@@ -128,6 +152,9 @@ public class SoporteTicketService {
         return repository.save(ticket);
     }
 
+    /**
+     * Obtiene el listado usado por las vistas administrativas.
+     */
     @Transactional(readOnly = true)
     public TicketResumen getResumenAdmin() {
         ensureSchema();
@@ -140,18 +167,27 @@ public class SoporteTicketService {
         return new TicketResumen(total, abiertos, pendientes, enProgreso, resueltos, archivados);
     }
 
+    /**
+     * Cuenta registros para el indicador solicitado.
+     */
     @Transactional(readOnly = true)
     public long countAbiertos() {
         ensureSchema();
         return repository.countByEstadoIn(List.of("pendiente", "en_progreso"));
     }
 
+    /**
+     * Garantiza que exista la informacion necesaria antes de continuar.
+     */
     private void ensureSchema() {
         if (schemaInitializer != null) {
             schemaInitializer.ensureSchema();
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private boolean matchesQuery(SoporteTicket ticket, String normalizedQuery) {
         if (normalizedQuery.isBlank()) {
             return true;
@@ -165,20 +201,32 @@ public class SoporteTicketService {
                 || contains(ticket.getResponsable(), normalizedQuery);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private boolean contains(String value, String q) {
         return trim(value).toLowerCase(Locale.ROOT).contains(q);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private Instant safeCreatedAt(SoporteTicket ticket) {
         return ticket.getCreatedAt() == null ? Instant.EPOCH : ticket.getCreatedAt();
     }
 
+    /**
+     * Valida la informacion recibida antes de continuar el proceso.
+     */
     private void validateDateRange(LocalDate from, LocalDate to) {
         if (from != null && to != null && to.isBefore(from)) {
             throw new IllegalArgumentException("to no puede ser menor que from");
         }
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeEmail(String value) {
         String out = trim(value).toLowerCase(Locale.ROOT);
         if (out.isBlank()) {
@@ -190,6 +238,9 @@ public class SoporteTicketService {
         return out.length() > 180 ? out.substring(0, 180) : out;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeTipo(String value) {
         String out = trim(value).toLowerCase(Locale.ROOT);
         if (out.isBlank()) {
@@ -201,6 +252,9 @@ public class SoporteTicketService {
         return out;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeEstado(String value) {
         String out = trim(value).toLowerCase(Locale.ROOT);
         if (out.isBlank()) {
@@ -212,18 +266,27 @@ public class SoporteTicketService {
         return out;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeFilterState(String value) {
         String out = trim(value).toLowerCase(Locale.ROOT);
         if (out.isBlank()) return "";
         return normalizeEstado(out);
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeFilterTipo(String value) {
         String out = trim(value).toLowerCase(Locale.ROOT);
         if (out.isBlank()) return "";
         return normalizeTipo(out);
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeRequiredText(String value, String field, int maxLength) {
         String out = trim(value).replaceAll("\\s+", " ");
         if (out.isBlank()) {
@@ -232,6 +295,9 @@ public class SoporteTicketService {
         return out.length() > maxLength ? out.substring(0, maxLength) : out;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeOptionalText(String value, int maxLength) {
         String out = trim(value).replaceAll("\\s+", " ");
         if (out.isBlank()) {
@@ -240,6 +306,9 @@ public class SoporteTicketService {
         return out.length() > maxLength ? out.substring(0, maxLength) : out;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trim(String value) {
         return value == null ? "" : value.trim();
     }

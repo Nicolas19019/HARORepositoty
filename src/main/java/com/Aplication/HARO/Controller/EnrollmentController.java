@@ -16,6 +16,9 @@ import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * Controlador REST para enrollment.
+ */
 @RestController
 @RequestMapping("/api/enrollment")
 public class EnrollmentController {
@@ -24,6 +27,9 @@ public class EnrollmentController {
     private final PaymentApprovalService paymentApprovalService;
     private final AdminSedeGuard adminSedeGuard;
 
+    /**
+     * Inyecta las dependencias necesarias del controlador.
+     */
     public EnrollmentController(ChatbotProcesoService procesoService,
                                 PaymentApprovalService paymentApprovalService,
                                 AdminSedeGuard adminSedeGuard) {
@@ -32,6 +38,9 @@ public class EnrollmentController {
         this.adminSedeGuard = adminSedeGuard;
     }
 
+    /**
+     * DTO de entrada para upsert proceso.
+     */
     public record UpsertProcesoReq(
             String phone,
             String nombreCompleto,
@@ -45,6 +54,9 @@ public class EnrollmentController {
             String metodoPago
     ) {}
 
+/**
+ * Crea o actualiza un proceso de matricula.
+ */
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/process/upsert")
     public ResponseEntity<?> upsertProceso(@RequestBody UpsertProcesoReq req, Authentication authentication) {
@@ -91,6 +103,9 @@ public class EnrollmentController {
         return ResponseEntity.ok(body);
     }
 
+    /**
+     * DTO de entrada para manual cash confirm.
+     */
     public record ManualCashConfirmReq(
             @NotBlank String documento,
             BigDecimal valorPagado,
@@ -101,6 +116,9 @@ public class EnrollmentController {
             Boolean requireProspect
     ) {}
 
+/**
+ * Confirma manualmente un pago en efectivo.
+ */
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/payment/cash/confirm")
     public ResponseEntity<?> confirmCash(@RequestBody ManualCashConfirmReq req, Authentication authentication) {
@@ -161,12 +179,18 @@ public class EnrollmentController {
         return ResponseEntity.status(status).body(out);
     }
 
+    /**
+     * DTO de entrada para send contract.
+     */
     public record SendContractReq(
             @NotBlank String documento,
             Boolean force,
             Boolean requireProspect
     ) {}
 
+/**
+ * Reenvia el enlace contractual por correo.
+ */
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/contracts/email/send")
     public ResponseEntity<?> sendContractEmail(@RequestBody SendContractReq req, Authentication authentication) {
@@ -181,6 +205,9 @@ public class EnrollmentController {
         return ResponseEntity.status(status).body(out);
     }
 
+/**
+ * Reenvia el enlace contractual por chatbot.
+ */
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/contracts/chatbot/send")
     public ResponseEntity<?> sendContractChatbot(@RequestBody SendContractReq req, Authentication authentication) {

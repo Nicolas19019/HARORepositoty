@@ -34,10 +34,10 @@ import java.util.Set;
 /**
  * Endpoints de compatibilidad para HaroGestion (desktop).
  *
- * La vista de "Matrículas" del escritorio intenta diferentes recursos y sufijos.
+ * La vista de "MatrÃ­culas" del escritorio intenta diferentes recursos y sufijos.
  * Este controller expone:
- * - Listado de solicitudes de matrícula
- * - Creación (registro manual desde HaroGestion)
+ * - Listado de solicitudes de matrÃ­cula
+ * - CreaciÃ³n (registro manual desde HaroGestion)
  * - Acciones: confirmar pago en efectivo + habilitar contratos, enviar contrato por correo o chatbot
  */
 @RestController
@@ -60,6 +60,9 @@ public class MatriculasController {
     private final JdbcTemplate jdbcTemplate;
     private final AdminSedeGuard adminSedeGuard;
 
+    /**
+     * Inyecta las dependencias necesarias del controlador.
+     */
     public MatriculasController(ChatbotMatriculaProcesoRepository procesoRepository,
                                 ChatbotProcesoService procesoService,
                                 PaymentApprovalService paymentApprovalService,
@@ -76,6 +79,9 @@ public class MatriculasController {
         this.adminSedeGuard = adminSedeGuard;
     }
 
+    /**
+     * DTO de entrada para crear una solicitud de matricula manual.
+     */
     public record CrearReq(
             String origenRegistro,
             String metodoPago,
@@ -88,6 +94,9 @@ public class MatriculasController {
     ) {
     }
 
+    /**
+     * DTO de entrada con los datos basicos del estudiante.
+     */
     public record EstudianteReq(
             @NotBlank String numeroDocumento,
             String nombre,
@@ -97,6 +106,9 @@ public class MatriculasController {
     ) {
     }
 
+    /**
+     * DTO de entrada para acciones administrativas sobre la matricula.
+     */
     public record ActionReq(
             BigDecimal valorPagado,
             String observacionPago,
@@ -108,9 +120,15 @@ public class MatriculasController {
     ) {
     }
 
+    /**
+     * DTO de entrada para actualizar la visibilidad de la solicitud.
+     */
     public record VisibilityReq(Boolean visible) {
     }
 
+    /**
+     * Registro de salida para matricula.
+     */
     public record MatriculaRow(
             Long id,
             String nombreEstudiante,
@@ -130,6 +148,9 @@ public class MatriculasController {
     ) {
     }
 
+    /**
+     * Lista las solicitudes de matricula visibles para administracion.
+     */
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping
     public List<MatriculaRow> list(@RequestParam(value = "limit", defaultValue = "500") int limit,
@@ -179,6 +200,9 @@ public class MatriculasController {
         }
     }
 
+/**
+ * Lista matriculas usando la consulta JDBC de compatibilidad.
+ */
     private List<MatriculaRow> listViaJdbc(int limit, boolean all, boolean includeHidden) {
         if (jdbcTemplate == null) {
             return List.of();
@@ -289,6 +313,9 @@ public class MatriculasController {
         return rows.stream().map(this::toRowJdbc).toList();
     }
 
+/**
+ * Selecciona la primera columna disponible dentro del conjunto dado.
+ */
     private String pickCol(Set<String> cols, String... candidates) {
         if (cols == null || candidates == null) return null;
         for (String c : candidates) {
@@ -298,6 +325,9 @@ public class MatriculasController {
         return null;
     }
 
+/**
+ * Construye una expresion SQL con alias cuando la columna existe.
+ */
     private String expr(Set<String> cols, String col, String alias) {
         String a = alias == null ? "" : alias.trim();
         if (a.isBlank()) {
@@ -309,9 +339,12 @@ public class MatriculasController {
         return col + " as " + a;
     }
 
+/**
+ * Convierte una fila JDBC en una respuesta de matricula.
+ */
     private MatriculaRow toRowJdbc(Map<String, Object> row) {
         if (row == null) {
-            return new MatriculaRow(null, "—", "", "", "", "—", "", "", "", "", "", null, null, false, true);
+            return new MatriculaRow(null, "â€”", "", "", "", "â€”", "", "", "", "", "", null, null, false, true);
         }
 
         Long id = toLong(row.get("id"));
@@ -340,11 +373,11 @@ public class MatriculasController {
 
         return new MatriculaRow(
                 id,
-                firstNotBlank(nombre, "—"),
+                firstNotBlank(nombre, "â€”"),
                 doc,
                 email,
                 telefono,
-                firstNotBlank(categoria, "—"),
+                firstNotBlank(categoria, "â€”"),
                 sede,
                 origen,
                 metodo,
@@ -357,6 +390,9 @@ public class MatriculasController {
         );
     }
 
+/**
+ * Convierte un valor generico a Instant.
+ */
     private Instant toInstant(Object v) {
         if (v == null) return null;
         if (v instanceof Instant i) return i;
@@ -365,6 +401,9 @@ public class MatriculasController {
         return null;
     }
 
+/**
+ * Convierte un valor generico a Long.
+ */
     private Long toLong(Object v) {
         if (v == null) return null;
         if (v instanceof Number n) return n.longValue();
@@ -377,6 +416,9 @@ public class MatriculasController {
         }
     }
 
+/**
+ * Convierte un valor generico a boolean usando true por defecto.
+ */
     private boolean toBooleanDefaultTrue(Object v) {
         if (v == null) return true;
         if (v instanceof Boolean b) return b;
@@ -385,16 +427,25 @@ public class MatriculasController {
         return Boolean.parseBoolean(raw);
     }
 
+/**
+ * Convierte un valor generico a texto.
+ */
     private String toString(Object v) {
         return v == null ? "" : String.valueOf(v).trim();
     }
 
+/**
+ * Devuelve el texto en mayusculas o sin cambios segun corresponda.
+ */
     private String safeUpperOrRaw(String v, boolean toUpper) {
         String s = v == null ? "" : v.trim();
         if (s.isBlank()) return "";
         return toUpper ? s.toUpperCase(Locale.ROOT) : s;
     }
 
+/**
+ * Crea un nuevo registro de matriculas.
+ */
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     @Transactional
@@ -511,6 +562,9 @@ public class MatriculasController {
             },
             method = {RequestMethod.POST, RequestMethod.PATCH}
     )
+    /**
+     * Confirma la operacion solicitada en el flujo.
+     */
     public ResponseEntity<?> confirmarPago(@PathVariable Long id,
                                           @RequestBody(required = false) ActionReq req,
                                           Authentication authentication) {
@@ -521,7 +575,7 @@ public class MatriculasController {
         adminSedeGuard.assertCanAccess(adminCtx, p.getSede());
 
         if (StringUtils.hasText(trim(p.getMetodoPago())) && !"EFECTIVO".equalsIgnoreCase(trim(p.getMetodoPago()))) {
-            return ResponseEntity.badRequest().body("Esta acción solo aplica para pagos en EFECTIVO.");
+            return ResponseEntity.badRequest().body("Esta acciÃ³n solo aplica para pagos en EFECTIVO.");
         }
 
         boolean sendEmail = req == null || req.sendEmail() == null || req.sendEmail();
@@ -553,6 +607,9 @@ public class MatriculasController {
             },
             method = {RequestMethod.POST, RequestMethod.PATCH}
     )
+    /**
+     * Envia manualmente el enlace contractual por correo.
+     */
     public ResponseEntity<?> enviarCorreo(@PathVariable Long id,
                                           @RequestBody(required = false) ActionReq req,
                                           Authentication authentication) {
@@ -579,6 +636,9 @@ public class MatriculasController {
             },
             method = {RequestMethod.POST, RequestMethod.PATCH}
     )
+    /**
+     * Envia manualmente el enlace contractual por chatbot.
+     */
     public ResponseEntity<?> enviarChatbot(@PathVariable Long id,
                                            @RequestBody(required = false) ActionReq req,
                                            Authentication authentication) {
@@ -590,7 +650,7 @@ public class MatriculasController {
 
         String origen = trim(p.getOrigenRegistro()).toUpperCase(Locale.ROOT);
         if (StringUtils.hasText(origen) && !"HAROGESTION".equals(origen)) {
-            return ResponseEntity.badRequest().body("El envío por chatbot desde HaroGestion solo aplica a solicitudes creadas desde HAROGESTION.");
+            return ResponseEntity.badRequest().body("El envÃ­o por chatbot desde HaroGestion solo aplica a solicitudes creadas desde HAROGESTION.");
         }
 
         boolean force = req != null && req.force() != null && req.force();
@@ -600,6 +660,9 @@ public class MatriculasController {
         return ResponseEntity.status(status).body(out);
     }
 
+/**
+ * Oculta una solicitud de matricula del listado administrativo.
+ */
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     @Transactional
@@ -621,6 +684,9 @@ public class MatriculasController {
         ));
     }
 
+    /**
+     * Actualiza la visibilidad de una solicitud de matricula.
+     */
     @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{id}/visible")
     @Transactional
@@ -645,6 +711,9 @@ public class MatriculasController {
         ));
     }
 
+/**
+ * Convierte un proceso en una fila de respuesta.
+ */
     private MatriculaRow toRow(ChatbotMatriculaProceso p) {
         String phone = firstNotBlank(trim(p.getPhone()), trim(p.getTelefono()));
         boolean prospectoActivo = false;
@@ -658,7 +727,7 @@ public class MatriculasController {
 
         return new MatriculaRow(
                 p.getId(),
-                firstNotBlank(trim(p.getNombreCompleto()), "—"),
+                firstNotBlank(trim(p.getNombreCompleto()), "â€”"),
                 trim(p.getNumeroDocumento()),
                 trim(p.getEmail()),
                 firstNotBlank(trim(p.getTelefono()), trim(p.getPhone())),
@@ -675,6 +744,9 @@ public class MatriculasController {
         );
     }
 
+/**
+ * Mapea el estado de pago a la vista administrativa.
+ */
     private String mapEstadoPago(String raw) {
         String status = trim(raw).toUpperCase(Locale.ROOT);
         if (status.isBlank()) return "PENDIENTE";
@@ -687,6 +759,9 @@ public class MatriculasController {
         };
     }
 
+/**
+ * Normaliza el texto del estado de pago.
+ */
     private String normalizeEstadoPago(String raw) {
         String v = trim(raw).toUpperCase(Locale.ROOT);
         if (v.isBlank()) return "PENDIENTE";
@@ -696,6 +771,9 @@ public class MatriculasController {
         return v;
     }
 
+/**
+ * Valida si el proceso pertenece al flujo operativo de matriculas.
+ */
     private boolean isOperationalEnrollmentFlow(ChatbotMatriculaProceso proceso) {
         if (proceso == null) {
             return false;
@@ -713,16 +791,25 @@ public class MatriculasController {
         return true;
     }
 
+/**
+ * Recorta texto evitando nulos.
+ */
     private String trim(String value) {
         return value == null ? "" : value.trim();
     }
 
+/**
+ * Reduce espacios repetidos en el texto.
+ */
     private String collapseSpaces(String value) {
         String v = trim(value);
         if (v.isBlank()) return "";
         return v.replaceAll("\\s+", " ");
     }
 
+/**
+ * Retorna el primer valor no vacio.
+ */
     private String firstNotBlank(String... values) {
         if (values == null) return "";
         for (String v : values) {

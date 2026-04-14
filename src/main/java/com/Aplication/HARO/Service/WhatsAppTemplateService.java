@@ -16,6 +16,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * Servicio cliente de WhatsApp Cloud API.
+ *
+ * Envia plantillas, mensajes de texto e imagenes, y reporta el estado de
+ * configuracion de credenciales.
+ */
 @Service
 public class WhatsAppTemplateService {
 
@@ -33,6 +39,9 @@ public class WhatsAppTemplateService {
         this.restTemplate = new RestTemplate(requestFactory);
     }
 
+    /**
+     * Resultado resumido de send.
+     */
     public record SendResult(
             boolean ok,
             String to,
@@ -42,6 +51,9 @@ public class WhatsAppTemplateService {
             Map<String, Object> providerResponse
     ) {}
 
+    /**
+     * Estado resumido de config.
+     */
     public record ConfigStatus(
             boolean ready,
             boolean enabled,
@@ -50,6 +62,9 @@ public class WhatsAppTemplateService {
             String message
     ) {}
 
+    /**
+     * Devuelve un resumen de estado para consumo administrativo o diagnostico.
+     */
     public ConfigStatus getConfigStatus() {
         if (!props.isEnabled()) {
             return new ConfigStatus(false, false, props.isRestrictToDefault(), maskPhone(props.getDefaultTo()),
@@ -80,6 +95,9 @@ public class WhatsAppTemplateService {
         return new ConfigStatus(true, true, props.isRestrictToDefault(), maskPhone(props.getDefaultTo()), "OK");
     }
 
+    /**
+     * Envia el mensaje, correo o enlace solicitado.
+     */
     public SendResult sendTemplate(String templateName,
                                    String toRaw,
                                    String languageCodeRaw,
@@ -117,6 +135,9 @@ public class WhatsAppTemplateService {
         }
     }
 
+    /**
+     * Envia el mensaje, correo o enlace solicitado.
+     */
     public SendResult sendTextMessage(String toRaw, String textRaw) {
         validateEnabledAndConfigured();
 
@@ -157,6 +178,9 @@ public class WhatsAppTemplateService {
         }
     }
 
+    /**
+     * Envia el mensaje, correo o enlace solicitado.
+     */
     public SendResult sendImageMessage(String toRaw, String imageUrlRaw) {
         validateEnabledAndConfigured();
 
@@ -197,6 +221,9 @@ public class WhatsAppTemplateService {
         }
     }
 
+    /**
+     * Valida la informacion recibida antes de continuar el proceso.
+     */
     private void validateEnabledAndConfigured() {
         ConfigStatus status = getConfigStatus();
         if (!status.ready()) {
@@ -204,6 +231,9 @@ public class WhatsAppTemplateService {
         }
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private HttpHeaders buildHeaders() {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -211,6 +241,9 @@ public class WhatsAppTemplateService {
         return headers;
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private Map<String, Object> buildPayload(String templateName,
                                              String to,
                                              String languageCode,
@@ -239,6 +272,9 @@ public class WhatsAppTemplateService {
         return payload;
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildMessagesUrl() {
         String base = safeTrim(props.getApiBaseUrl());
         while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
@@ -248,6 +284,9 @@ public class WhatsAppTemplateService {
         return base + "/" + version + "/" + phoneNumberId + "/messages";
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeTemplateName(String templateNameRaw) {
         String name = safeTrim(templateNameRaw).toLowerCase(Locale.ROOT);
         if (!StringUtils.hasText(name)) {
@@ -259,6 +298,9 @@ public class WhatsAppTemplateService {
         return name;
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolveLanguageCode(String languageCodeRaw) {
         String languageCode = safeTrim(languageCodeRaw);
         if (!StringUtils.hasText(languageCode)) {
@@ -273,6 +315,9 @@ public class WhatsAppTemplateService {
         return languageCode;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private List<String> sanitizeParams(List<String> paramsRaw) {
         if (paramsRaw == null || paramsRaw.isEmpty()) return List.of();
         if (paramsRaw.size() > 20) {
@@ -289,6 +334,9 @@ public class WhatsAppTemplateService {
         return out;
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolveRecipient(String toRaw) {
         String target = safeTrim(toRaw);
         if (!StringUtils.hasText(target)) {
@@ -310,6 +358,9 @@ public class WhatsAppTemplateService {
         return normalizedTarget;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizePhone(String rawPhone) {
         String cleaned = safeTrim(rawPhone).replaceAll("[\\s\\-()]", "");
         if (cleaned.startsWith("+")) cleaned = cleaned.substring(1);
@@ -319,6 +370,9 @@ public class WhatsAppTemplateService {
         return cleaned;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String extractMessageId(Map<String, Object> body) {
         Object messages = body.get("messages");
         if (!(messages instanceof List<?> list) || list.isEmpty()) return null;
@@ -328,6 +382,9 @@ public class WhatsAppTemplateService {
         return id == null ? null : id.toString();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeUrlOrThrow(String url) {
         String trimmed = safeTrim(url);
         if (!StringUtils.hasText(trimmed)) {
@@ -339,6 +396,9 @@ public class WhatsAppTemplateService {
         return trimmed;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String maskPhone(String rawPhone) {
         if (!StringUtils.hasText(rawPhone)) return null;
         try {
@@ -350,6 +410,9 @@ public class WhatsAppTemplateService {
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String safeTrim(String v) {
         return v == null ? "" : v.trim();
     }

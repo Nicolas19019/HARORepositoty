@@ -8,8 +8,17 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Acceso a datos de profesores.
+ *
+ * Agrupa busquedas para login, validacion de duplicados y seleccion de
+ * profesores visibles para agenda y administracion.
+ */
 public interface ProfesorRepository extends JpaRepository<Profesor, Long> {
 
+  /**
+   * Busca por correo, email, usuario o cedula usando un unico valor de login.
+   */
   @Query("""
     SELECT p FROM Profesor p
     WHERE (p.correo  IS NOT NULL AND lower(p.correo)  = lower(:login))

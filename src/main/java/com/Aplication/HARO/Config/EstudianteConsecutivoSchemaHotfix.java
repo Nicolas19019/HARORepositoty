@@ -6,6 +6,9 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+/**
+ * Ajuste de arranque para estudiante consecutivo schema.
+ */
 @Component
 public class EstudianteConsecutivoSchemaHotfix implements CommandLineRunner {
 

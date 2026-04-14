@@ -7,6 +7,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.*;
 import java.time.*;
 
+/**
+ * Clase practica agendada en calendario interno.
+ *
+ * Relaciona estudiante, profesor y vehiculo mediante sus identificadores, y
+ * conserva fecha, rango horario y estado para controlar disponibilidad.
+ */
 @Entity
 @Table(name = "clase")
 public class Clase {

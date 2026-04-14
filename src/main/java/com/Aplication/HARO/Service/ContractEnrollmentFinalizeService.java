@@ -4,6 +4,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Servicio fachada para finalizar matriculas desde contratos.
+ *
+ * Delega en el flujo de chatbot la creacion o actualizacion del estudiante una
+ * vez se completa la firma contractual.
+ */
 @Service
 public class ContractEnrollmentFinalizeService {
 
@@ -13,6 +19,9 @@ public class ContractEnrollmentFinalizeService {
         this.chatbotProcesoService = chatbotProcesoService;
     }
 
+    /**
+     * Finaliza el flujo principal y devuelve la referencia generada.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Long finalizeEnrollment(String documento) {
         return chatbotProcesoService
@@ -20,6 +29,9 @@ public class ContractEnrollmentFinalizeService {
                 .orElse(null);
     }
 
+    /**
+     * Fuerza la operacion indicada aun cuando el flujo no cumpla todas las precondiciones.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Long forceFinalizeEnrollment(String documento) {
         return chatbotProcesoService.forceFinalizeEnrollmentByDocumento(documento);

@@ -30,9 +30,15 @@ import java.util.stream.Collectors;
         "/api/modulos-aprendisaje/admin/reportes",
         "/api/modulos-aprendisaje/admin/informes"
 })
+/**
+ * Controlador REST para reportes admin.
+ */
 @CrossOrigin(origins = "*")
 public class ReportesAdminController {
 
+    /**
+     * Registro de salida para clase reporte.
+     */
     public record ClaseReporteItem(
             Long id,
             Long idEstudiante,
@@ -44,6 +50,9 @@ public class ReportesAdminController {
             String estadoClase
     ) {}
 
+    /**
+     * Resumen de apoyo para indicadores principales del reporte.
+     */
     public record KpisReporte(
             int totalEstudiantesModulo,
             int totalResultadosExamen,
@@ -53,6 +62,9 @@ public class ReportesAdminController {
             double promedioPuntajeExamen
     ) {}
 
+    /**
+     * DTO de salida para reportes admin.
+     */
     public record ReportesAdminResponse(
             String generadoEn,
             List<ModuloAprendizajeService.EstudianteUsoModulo> students,
@@ -71,6 +83,9 @@ public class ReportesAdminController {
     private final ModuloAprendizajeService moduloAprendizajeService;
     private final ClaseService claseService;
 
+    /**
+     * Inyecta las dependencias necesarias del controlador.
+     */
     public ReportesAdminController(ModuloAprendizajeService moduloAprendizajeService,
                                    ClaseService claseService) {
         this.moduloAprendizajeService = moduloAprendizajeService;
@@ -84,6 +99,9 @@ public class ReportesAdminController {
             "/dashboard",
             "/datos"
     })
+/**
+ * Consolida el reporte administrativo principal.
+ */
     public ReportesAdminResponse getReportesAdmin() {
         List<ModuloAprendizajeService.EstudianteUsoModulo> students = moduloAprendizajeService.getEstudiantesConUsoModulo();
         List<ModuloAprendizajeService.ResultadoExamenAdmin> results = moduloAprendizajeService.getResultadosExamenPresentados();
@@ -121,16 +139,25 @@ public class ReportesAdminController {
         );
     }
 
+/**
+ * Lista estudiantes con informacion consolidada para el modulo.
+ */
     @GetMapping({"/estudiantes", "/students"})
     public List<ModuloAprendizajeService.EstudianteUsoModulo> getEstudiantesModulo() {
         return moduloAprendizajeService.getEstudiantesConUsoModulo();
     }
 
+/**
+ * Lista resultados consolidados para la vista administrativa.
+ */
     @GetMapping({"/resultados", "/results", "/resultados-examen"})
     public List<ModuloAprendizajeService.ResultadoExamenAdmin> getResultadosExamen() {
         return moduloAprendizajeService.getResultadosExamenPresentados();
     }
 
+/**
+ * Lista las clases usadas en el reporte.
+ */
     @GetMapping({"/clases", "/classes"})
     public List<ClaseReporteItem> getClases() {
         return claseService.getAllClases()
@@ -139,6 +166,9 @@ public class ReportesAdminController {
                 .toList();
     }
 
+/**
+ * Convierte el valor recibido al formato requerido.
+ */
     private ClaseReporteItem toClaseItem(Clase c) {
         return new ClaseReporteItem(
                 c.getId(),
@@ -152,6 +182,9 @@ public class ReportesAdminController {
         );
     }
 
+/**
+ * Agrupa una lista y cuenta sus elementos por la llave indicada.
+ */
     private static <T> Map<String, Long> countBy(List<T> rows, java.util.function.Function<T, String> keyMapper) {
         return rows.stream()
                 .collect(Collectors.groupingBy(
@@ -164,15 +197,24 @@ public class ReportesAdminController {
                 ));
     }
 
+/**
+ * Devuelve una cadena segura para operaciones internas.
+ */
     private static String safe(String value) {
         return value == null ? "" : value.trim();
     }
 
+/**
+ * Devuelve un valor de respaldo cuando la cadena llega vacia.
+ */
     private static String emptyTo(String fallback, String value) {
         String v = safe(value);
         return v.isBlank() ? fallback : v;
     }
 
+/**
+ * Redondea un numero decimal a dos cifras.
+ */
     private static double round2(double value) {
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }

@@ -17,6 +17,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
+/**
+ * Servicio de carga de usuarios para Spring Security.
+ *
+ * Resuelve un mismo login contra administradores, profesores y estudiantes, y
+ * normaliza contrasenas heredadas guardandolas como BCrypt cuando corresponde.
+ */
 @Service
 public class ServicioUsuariosCombinado implements UserDetailsService {
 
@@ -36,6 +42,9 @@ public ServicioUsuariosCombinado(EstudianteRepository estRepo,
   this.encoder = encoder;
 }
 
+  /**
+   * Busca el usuario autenticable por login y lo adapta a UserDetails.
+   */
   @Override
   @Transactional
   public DetallesUsuarioAplicacion loadUserByUsername(String login) throws UsernameNotFoundException {

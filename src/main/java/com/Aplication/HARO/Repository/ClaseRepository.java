@@ -12,15 +12,28 @@ import java.time.LocalDate;
 import java.util.List;
 
 
+/**
+ * Acceso a clases practicas agendadas.
+ *
+ * Incluye consultas de agenda, rangos de fecha y deteccion de cruces para
+ * estudiante, profesor y vehiculo.
+ */
 @Repository
 public interface ClaseRepository extends JpaRepository<Clase, Long> {
 
-	 // Por fecha exacta
+    /**
+     * Consulta clases agendadas en una fecha exacta.
+     */
     List<Clase> findByFecha(LocalDate fecha);
 
-    // Por rango (opcional)
+    /**
+     * Consulta clases agendadas dentro de un rango de fechas.
+     */
     List<Clase> findByFechaBetween(LocalDate desde, LocalDate hasta);
 
+    /**
+     * Devuelve la agenda completa de un estudiante ordenada cronologicamente.
+     */
     @Query("""
             SELECT c
             FROM Clase c
@@ -29,6 +42,9 @@ public interface ClaseRepository extends JpaRepository<Clase, Long> {
             """)
     List<Clase> findAgendaByIdEstudiante(@Param("idEstudiante") Long idEstudiante);
 
+    /**
+     * Indica si el estudiante ya tiene una clase activa que cruza con el horario.
+     */
     @Query("""
             SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END
             FROM Clase c
@@ -43,6 +59,9 @@ public interface ClaseRepository extends JpaRepository<Clase, Long> {
                                  @Param("horaInicio") LocalTime horaInicio,
                                  @Param("horaFin") LocalTime horaFin);
 
+    /**
+     * Indica si el profesor ya tiene una clase activa que cruza con el horario.
+     */
     @Query("""
             SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END
             FROM Clase c
@@ -57,6 +76,9 @@ public interface ClaseRepository extends JpaRepository<Clase, Long> {
                                   @Param("horaInicio") LocalTime horaInicio,
                                   @Param("horaFin") LocalTime horaFin);
 
+    /**
+     * Indica si el vehiculo ya esta asignado a una clase activa en ese horario.
+     */
     @Query("""
             SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END
             FROM Clase c
@@ -71,6 +93,9 @@ public interface ClaseRepository extends JpaRepository<Clase, Long> {
                                   @Param("horaInicio") LocalTime horaInicio,
                                   @Param("horaFin") LocalTime horaFin);
 
+    /**
+     * Lista profesores ocupados en un horario para excluirlos de la disponibilidad.
+     */
     @Query("""
             SELECT DISTINCT c.id_profesor
             FROM Clase c
@@ -84,6 +109,9 @@ public interface ClaseRepository extends JpaRepository<Clase, Long> {
                                    @Param("horaInicio") LocalTime horaInicio,
                                    @Param("horaFin") LocalTime horaFin);
 
+    /**
+     * Lista placas de vehiculos ocupados en un horario para excluirlos de la disponibilidad.
+     */
     @Query("""
             SELECT DISTINCT c.placa_vehiculo
             FROM Clase c

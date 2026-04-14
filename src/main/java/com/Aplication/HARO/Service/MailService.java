@@ -13,6 +13,12 @@ import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
+/**
+ * Servicio de correo electronico.
+ *
+ * Envia mensajes HTML con fallback de texto plano y soporta imagenes inline para
+ * plantillas que requieren recursos embebidos.
+ */
 @Service
 public class MailService {
 
@@ -133,6 +139,9 @@ public class MailService {
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private static String maskEmail(String email) {
         if (email == null) return "";
         String e = email.trim();

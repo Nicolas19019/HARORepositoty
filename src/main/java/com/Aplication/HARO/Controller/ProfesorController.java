@@ -14,6 +14,9 @@ import java.net.URI;
 import java.util.List;
 import java.util.NoSuchElementException;
 
+/**
+ * Controlador REST para profesor.
+ */
 @RestController
 @RequestMapping("/api/profesores")
 @CrossOrigin(origins = "*")
@@ -22,11 +25,17 @@ public class ProfesorController {
     private final ProfesorService service;
     private final AdminSedeGuard adminSedeGuard;
 
+/**
+ * Inyecta las dependencias necesarias del controlador.
+ */
     public ProfesorController(ProfesorService service, AdminSedeGuard adminSedeGuard) {
         this.service = service;
         this.adminSedeGuard = adminSedeGuard;
     }
 
+/**
+ * Lista los registros de profesor.
+ */
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
     public List<Profesor> getAll(Authentication authentication) {
@@ -40,6 +49,9 @@ public class ProfesorController {
         return out;
     }
 
+/**
+ * Obtiene un registro de profesor por su identificador.
+ */
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public Profesor getById(@PathVariable int id, Authentication authentication) {
@@ -50,6 +62,9 @@ public class ProfesorController {
         return p;
     }
 
+/**
+ * Crea un nuevo registro de profesor.
+ */
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Profesor> create(@RequestBody Profesor p, Authentication authentication) {
@@ -59,6 +74,9 @@ public class ProfesorController {
         return ResponseEntity.created(URI.create("/api/profesores/" + created.getId())).body(created);
     }
 
+/**
+ * Actualiza un registro existente de profesor.
+ */
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public Profesor update(@PathVariable long id, @RequestBody Profesor p, Authentication authentication) {
@@ -73,6 +91,9 @@ public class ProfesorController {
         return service.updateProfesor(id, p);
     }
 
+/**
+ * Elimina un registro de profesor.
+ */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable int id, Authentication authentication) {

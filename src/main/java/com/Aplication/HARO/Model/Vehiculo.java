@@ -3,13 +3,19 @@ package com.Aplication.HARO.Model;
 import jakarta.persistence.*;
 
 
+/**
+ * Vehiculo disponible para clases practicas.
+ *
+ * Usa la placa como identificador y registra marca, modelo, anio, sede, estado
+ * y visibilidad para la gestion de agenda y disponibilidad.
+ */
 @Entity
 @Table(name = "vehiculo")
 public class Vehiculo {
 
     @Id
     @Column(name = "placa", length = 20)
-    private String placa; // PK y UNIQUE
+    private String placa;
 
     @Column(name = "marca")
     private String marca;
@@ -17,7 +23,7 @@ public class Vehiculo {
     private String modelo;
 
     @Column(name = "anio")
-    private Integer anio; // usar Integer en lugar de java.time.Year por compatibilidad JPA
+    private Integer anio;
     @Column(name = "sede", length = 120)
     private String sede;
     @Column(name = "estado")
@@ -82,6 +88,9 @@ public class Vehiculo {
 		this.visible = visible;
 	}
 
+    /**
+     * Asegura que la visibilidad del vehiculo nunca quede nula.
+     */
     @PrePersist
     @PreUpdate
     public void normalizarVisibilidad() {

@@ -29,14 +29,26 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Servicio de contenidos del modulo de aprendizaje.
+ *
+ * Gestiona recursos asociados a clases, archivos subidos, previews, orden,
+ * visibilidad y limpieza de almacenamiento.
+ */
 @Service
 @Transactional
 public class ContenidoClaseService {
 
     private static final Logger log = LoggerFactory.getLogger(ContenidoClaseService.class);
 
+    /**
+     * Metadatos básicos del archivo almacenado.
+     */
     private record StoredObject(String url, String ext) {}
 
+    /**
+     * DTO de entrada para crear o actualizar contenido de clase.
+     */
     public record ContentInput(
             String titulo,
             String tipo,
@@ -105,11 +117,17 @@ public class ContenidoClaseService {
         }
     }
 
+    /**
+     * Obtiene el listado usado por las vistas administrativas.
+     */
     @Transactional(readOnly = true)
     public List<ContenidoClase> getByClaseForAdmin(Long claseId) {
         return repository.findByClase_IdOrderByOrdenAscIdAsc(claseId);
     }
 
+    /**
+     * Obtiene el registro solicitado por identificador o criterio de busqueda.
+     */
     @Transactional(readOnly = true)
     public List<ContenidoClase> getByClasePublicada(Long claseId) {
         ClaseAprendizaje clase = claseService.requireById(claseId);
@@ -119,6 +137,9 @@ public class ContenidoClaseService {
         return repository.findByClase_IdAndVisibleTrueOrderByOrdenAscIdAsc(claseId);
     }
 
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     public ContenidoClase create(Long claseId, ContentInput in, MultipartFile archivo) {
         if (in == null) throw new IllegalArgumentException("Datos de contenido requeridos");
         ClaseAprendizaje clase = claseService.requireById(claseId);
@@ -129,6 +150,9 @@ public class ContenidoClaseService {
         return repository.save(row);
     }
 
+    /**
+     * Actualiza el registro existente con los datos permitidos.
+     */
     public ContenidoClase update(Long id, ContentInput in, MultipartFile archivo) {
         if (in == null) throw new IllegalArgumentException("Datos de contenido requeridos");
         ContenidoClase row = repository.findById(id)
@@ -137,6 +161,9 @@ public class ContenidoClaseService {
         return repository.save(row);
     }
 
+    /**
+     * Elimina o desactiva el registro segun la regla del servicio.
+     */
     public void deleteLogico(Long id) {
         ContenidoClase row = repository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Contenido no encontrado: " + id));
@@ -144,6 +171,9 @@ public class ContenidoClaseService {
         repository.save(row);
     }
 
+    /**
+     * Elimina o desactiva el registro segun la regla del servicio.
+     */
     public void deleteFisico(Long id) {
         ContenidoClase row = repository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Contenido no encontrado: " + id));
@@ -152,6 +182,9 @@ public class ContenidoClaseService {
         repository.delete(row);
     }
 
+    /**
+     * Elimina o desactiva el registro segun la regla del servicio.
+     */
     public void deleteByClaseFisico(Long claseId) {
         List<ContenidoClase> rows = repository.findByClase_IdOrderByOrdenAscIdAsc(claseId);
         for (ContenidoClase row : rows) {
@@ -162,6 +195,9 @@ public class ContenidoClaseService {
         repository.flush();
     }
 
+    /**
+     * Elimina o desactiva el registro segun la regla del servicio.
+     */
     public void deleteStoredFileByUrl(String rawUrl) {
         String url = trim(rawUrl);
         if (url.isBlank()) return;
@@ -174,6 +210,9 @@ public class ContenidoClaseService {
         }
     }
 
+    /**
+     * Aplica el estado o valor interno correspondiente.
+     */
     private void applyPreviewIfNeeded(ContenidoClase row, MultipartFile archivo, String ext) {
         if (!EXT_DIAPOSITIVA.contains(ext)) {
             clearPreview(row);
@@ -195,11 +234,17 @@ public class ContenidoClaseService {
         }
     }
 
+    /**
+     * Limpia informacion auxiliar segun las reglas del servicio.
+     */
     private void clearPreview(ContenidoClase row) {
         row.setPreviewTipo(null);
         row.setPreviewUrl(null);
     }
 
+    /**
+     * Convierte el valor recibido al formato requerido por el servicio.
+     */
     private String convertSlideToPdfAndStore(MultipartFile archivo, String tipo, Long claseId) throws IOException, InterruptedException {
         String original = archivo.getOriginalFilename() == null ? "archivo" : archivo.getOriginalFilename().trim();
         String ext = extension(original);
@@ -233,6 +278,9 @@ public class ContenidoClaseService {
         }
     }
 
+    /**
+     * Persiste los cambios auxiliares generados por el servicio.
+     */
     private String storePreviewPdf(Path pdfFile, String tipo, Long claseId) throws IOException {
         if ("s3".equals(storageProvider)) {
             return storePreviewPdfInS3(pdfFile, tipo, claseId);
@@ -240,6 +288,9 @@ public class ContenidoClaseService {
         return storePreviewPdfLocal(pdfFile, tipo, claseId);
     }
 
+    /**
+     * Persiste los cambios auxiliares generados por el servicio.
+     */
     private String storePreviewPdfInS3(Path pdfFile, String tipo, Long claseId) throws IOException {
         String objectKey = buildStorageSubPath(tipo, claseId) + "preview-" + UUID.randomUUID() + ".pdf";
         PutObjectRequest put = PutObjectRequest.builder()
@@ -255,6 +306,9 @@ public class ContenidoClaseService {
         return "https://" + s3Bucket + ".s3." + awsRegion + ".amazonaws.com/" + objectKey;
     }
 
+    /**
+     * Persiste los cambios auxiliares generados por el servicio.
+     */
     private String storePreviewPdfLocal(Path pdfFile, String tipo, Long claseId) throws IOException {
         String relativeDir = buildStorageSubPath(tipo, claseId);
         Path targetDir = uploadDir.resolve(relativeDir);
@@ -265,6 +319,9 @@ public class ContenidoClaseService {
         return "/uploads/clases/" + relativeDir + safeName;
     }
 
+    /**
+     * Aplica la operacion solo cuando el contexto lo permite.
+     */
     private void tryDeleteTempDirectory(Path dir) {
         try {
             if (dir == null || !Files.exists(dir)) return;
@@ -277,6 +334,9 @@ public class ContenidoClaseService {
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private void merge(ContenidoClase row, ContentInput in, MultipartFile archivo, boolean creating) {
         if (in.titulo() != null) row.setTitulo(trim(in.titulo()));
         if (in.tipo() != null) row.setTipo(trim(in.tipo()).toLowerCase());
@@ -300,6 +360,9 @@ public class ContenidoClaseService {
         validate(row);
     }
 
+    /**
+     * Valida la informacion recibida antes de continuar el proceso.
+     */
     private void validate(ContenidoClase row) {
         String titulo = trim(row.getTitulo());
         String tipo = trim(row.getTipo()).toLowerCase();
@@ -320,6 +383,9 @@ public class ContenidoClaseService {
         if (row.getVisible() == null) row.setVisible(true);
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeUrl(String url) {
         if (url.isBlank()) return url;
         String lower = url.toLowerCase();
@@ -332,6 +398,9 @@ public class ContenidoClaseService {
         throw new IllegalArgumentException("url invalida: usa http(s) o ruta /uploads/...");
     }
 
+    /**
+     * Persiste los cambios auxiliares generados por el servicio.
+     */
     private StoredObject storeFile(MultipartFile file, String tipo, Long claseId) {
         if ("s3".equals(storageProvider)) {
             return storeFileInS3(file, tipo, claseId);
@@ -339,6 +408,9 @@ public class ContenidoClaseService {
         return storeFileLocal(file, tipo, claseId);
     }
 
+    /**
+     * Persiste los cambios auxiliares generados por el servicio.
+     */
     private StoredObject storeFileInS3(MultipartFile file, String tipo, Long claseId) {
         try {
             if (file.getSize() <= 0) {
@@ -381,6 +453,9 @@ public class ContenidoClaseService {
         }
     }
 
+    /**
+     * Persiste los cambios auxiliares generados por el servicio.
+     */
     private StoredObject storeFileLocal(MultipartFile file, String tipo, Long claseId) {
         try {
             if (file.getSize() <= 0) {
@@ -408,6 +483,9 @@ public class ContenidoClaseService {
         }
     }
 
+    /**
+     * Limpia informacion auxiliar segun las reglas del servicio.
+     */
     private void deleteLocalByUrl(String url) {
         try {
             String marker = "/uploads/";
@@ -424,6 +502,9 @@ public class ContenidoClaseService {
         }
     }
 
+    /**
+     * Limpia informacion auxiliar segun las reglas del servicio.
+     */
     private void deleteS3ByUrl(String url) {
         if (s3Client == null || s3Bucket.isBlank()) return;
         try {
@@ -444,6 +525,9 @@ public class ContenidoClaseService {
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String extractKeyFromS3Url(String host, String path) {
         String p = path.startsWith("/") ? path.substring(1) : path;
         if (p.isBlank()) return "";
@@ -463,21 +547,33 @@ public class ContenidoClaseService {
         return "";
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String extension(String filename) {
         int idx = filename.lastIndexOf('.');
         if (idx < 0 || idx == filename.length() - 1) return "";
         return filename.substring(idx + 1).toLowerCase();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trim(String s) {
         return s == null ? "" : s.trim();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trimToNull(String s) {
         String out = trim(s);
         return out.isBlank() ? null : out;
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean isS3Enabled(String provider, String bucket, String access, String secret) {
         if (!"s3".equals(provider)) return false;
         return bucket != null && !bucket.isBlank()
@@ -485,6 +581,9 @@ public class ContenidoClaseService {
                 && secret != null && !secret.isBlank();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeBasePath(String raw) {
         String p = raw == null ? "clases/" : raw.trim();
         if (p.isBlank()) p = "clases/";
@@ -493,6 +592,9 @@ public class ContenidoClaseService {
         return p;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String inferContentType(String ext) {
         return switch (ext) {
             case "pdf" -> "application/pdf";
@@ -508,6 +610,9 @@ public class ContenidoClaseService {
         };
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildStorageSubPath(String tipo, Long claseId) {
         String tipoSafe = sanitizeSegment(tipo);
         String claseSafe = claseId == null ? "sin-clase" : "clase-" + claseId;
@@ -517,6 +622,9 @@ public class ContenidoClaseService {
         return s3BasePath + claseSafe + "/" + tipoSafe + "/" + year + "/" + month + "/";
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String sanitizeSegment(String raw) {
         String out = raw == null ? "otros" : raw.trim().toLowerCase();
         if (out.isBlank()) out = "otros";

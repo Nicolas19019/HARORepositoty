@@ -51,14 +51,23 @@ import com.fasterxml.jackson.databind.ObjectMapper;
         "https://www.ceaharo.com",
         "https://*.ceaharo.com"
 })
+/**
+ * Controlador REST para ePayco.
+ */
 public class EpaycoController {
 
     private static final Logger log = LoggerFactory.getLogger(EpaycoController.class);
+    /**
+     * Resultado resumido de una decision de sincronizacion de pago.
+     */
     private record SyncDecision(boolean synced, String reason, String resolvedBy) {}
+    /**
+     * Parametros minimos extraidos de un enlace contractual.
+     */
     private record ContractAccessParams(String email, String code) {}
 
     private static final String ADVISOR_PROMPT =
-            "\n\n🤖 Si necesitas ayuda, responde 9 en WhatsApp para ver el menú y elige contactar un asesor.";
+            "\n\nÃ°Å¸Â¤â€“ Si necesitas ayuda, responde 9 en WhatsApp para ver el menÃƒÂº y elige contactar un asesor.";
 
     private final EpaycoService epaycoService;
     private final EpaycoCheckoutContextService checkoutContextService;
@@ -72,12 +81,21 @@ public class EpaycoController {
     @Value("${chatbot.contract.base-url:}")
     private String contractBaseUrl;
 
+    /**
+     * URL publica del HTML de contratos usada en respuestas y mensajes de pago.
+     */
     @Value("${chatbot.contract.ui-url:}")
     private String contractUiUrl;
 
+    /**
+     * Controla si el contrato se envia automaticamente al aprobarse un pago.
+     */
     @Value("${chatbot.auto-send-contract-on-payment:true}")
     private boolean autoSendContractOnPayment;
 
+    /**
+     * Inyecta las dependencias necesarias del controlador.
+     */
     public EpaycoController(EpaycoService epaycoService,
                             EpaycoCheckoutContextService checkoutContextService,
                             ChatbotProcesoService chatbotProcesoService,
@@ -97,12 +115,18 @@ public class EpaycoController {
     }
 
     // Health check rapido para validar conectividad API desde frontend o curl.
+/**
+ * Expone un endpoint de salud para validar conectividad con ePayco.
+ */
     @GetMapping(value = {"/ping", "/epayco/ping"}, produces = MediaType.TEXT_PLAIN_VALUE)
     public ResponseEntity<String> ping() {
         return ResponseEntity.ok("OK");
     }
 
     // Endpoint de respuesta (visible al usuario)
+    /**
+     * Procesa la respuesta visible del checkout de ePayco para el usuario final.
+     */
     @GetMapping({"/response", "/epayco/response"})
     public ResponseEntity<?> response(@RequestParam(name = "ref_payco", required = false) String refPayco,
                                       @RequestParam(name = "document", required = false) String documentHint,
@@ -126,6 +150,9 @@ public class EpaycoController {
     }
 
     // Compatibilidad: si por configuracion el retorno llega a /confirmation por GET
+    /**
+     * Atiende la confirmacion por GET cuando ePayco redirige el retorno a esta ruta.
+     */
     @GetMapping({"/confirmation", "/epayco/confirmation"})
     public ResponseEntity<?> confirmationView(@RequestParam(name = "ref_payco", required = false) String refPayco,
                                               @RequestParam(name = "document", required = false) String documentHint,
@@ -585,6 +612,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     return ResponseEntity.ok(out);
 }
 
+    /**
+     * Sincroniza en el flujo los pagos no aprobados reportados por ePayco.
+     */
     private SyncDecision syncNonApprovedPaymentToFlow(Map<String, Object> summary,
                                                       PaymentUserStatus status,
                                                       String payloadReason,
@@ -645,6 +675,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return new SyncDecision(true, "processed_non_approved_payment", "response_sync");
     }
 
+    /**
+     * Intenta sincronizar con el flujo un pago aprobado usando los datos disponibles.
+     */
     private SyncDecision syncApprovedPaymentToFlow(Map<String, Object> summary,
                                                   Map<String, Object> payload,
                                                   String documentHint,
@@ -720,7 +753,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 boolean synced = approval.whatsappSent() || approval.duplicate();
                 return new SyncDecision(synced, synced ? "processed_by_document" : "processed_by_document_without_whatsapp_confirmation", "document");
             } catch (NoSuchElementException ex) {
-                // Si el documento enviado no corresponde a un proceso vigente, intentamos fallback automático.
+                // Si el documento enviado no corresponde a un proceso vigente, intentamos fallback automÃƒÂ¡tico.
                 log.warn("No se encontro proceso por documento doc={}. Se intentara fallback por email/phone/contexto.", documento);
             } catch (Exception ex) {
                 log.error("Error procesando por documento doc={}. Se intentara fallback: {}", documento, ex.getMessage(), ex);
@@ -799,6 +832,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
     }
 
+    /**
+     * Intenta sincronizar un pago aprobado a partir de la factura.
+     */
     private Optional<SyncDecision> trySyncByInvoice(Map<String, Object> summary,
                                                     Map<String, Object> safePayload,
                                                     BigDecimal amount) {
@@ -869,6 +905,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
     }
 
+    /**
+     * Intenta sincronizar un pago aprobado usando pistas parciales del usuario.
+     */
     private Optional<SyncDecision> trySyncByMaskedHints(Map<String, Object> summary,
                                                         Map<String, Object> safePayload,
                                                         BigDecimal amount) {
@@ -936,6 +975,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
     }
 
+    /**
+     * Intenta sincronizar un pago aprobado usando el telefono asociado.
+     */
     private Optional<SyncDecision> trySyncByPhone(Map<String, Object> summary,
                                                   Map<String, Object> safePayload,
                                                   BigDecimal amount,
@@ -977,6 +1019,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
     }
 
+    /**
+     * Copia al resumen los datos obtenidos al aprobar un pago.
+     */
     private void applyApprovalResultToSummary(Map<String, Object> summary,
                                               PaymentApprovalService.ApprovalResult approval,
                                               String document,
@@ -999,6 +1044,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         summary.put("duplicatePaymentProcessing", approval.duplicate());
     }
 
+    /**
+     * Construye la respuesta publica con el estado actual del pago.
+     */
     private ResponseEntity<?> userFacingPaymentStatus(String refPaycoRaw,
                                                       String formatRaw,
                                                       String acceptHeaderRaw,
@@ -1036,6 +1084,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return userFacingResponse(HttpStatus.OK, payload, wantsHtml);
     }
 
+    /**
+     * Devuelve la respuesta final en JSON o HTML segun lo solicitado.
+     */
     private ResponseEntity<?> userFacingResponse(HttpStatus status,
                                                  Map<String, Object> payload,
                                                  boolean wantsHtml) {
@@ -1047,6 +1098,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 .body(renderPaymentReceiptHtml(payload));
     }
 
+    /**
+     * Construye el resumen de pago visible para el usuario.
+     */
     private Map<String, Object> buildUserPaymentSummary(String refPayco,
                                                         String rawData,
                                                         String documentHintRaw,
@@ -1204,6 +1258,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return out;
     }
 
+    /**
+     * Construye un resumen normalizado para los procesos de sincronizacion.
+     */
     private Map<String, Object> buildSyncSummaryFromPayload(String refPaycoRaw,
                                                             Map<String, Object> payload,
                                                             String documentHintRaw,
@@ -1369,6 +1426,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return out;
     }
 
+/**
+ * Mapea el estado local del proceso al estado de pago visible para el usuario.
+ */
     private PaymentUserStatus resolveLocalProcesoStatus(ChatbotMatriculaProceso proceso) {
         if (proceso == null) return PaymentUserStatus.UNKNOWN;
         String local = safeTrim(proceso.getPaymentStatus()).toUpperCase(Locale.ROOT);
@@ -1381,6 +1441,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         };
     }
 
+/**
+ * Extrae el nodo principal de transaccion desde distintas respuestas de ePayco.
+ */
     private JsonNode resolveTransactionNode(JsonNode root) {
         if (root == null || root.isNull()) return null;
         JsonNode data = root.path("data");
@@ -1408,6 +1471,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return root;
     }
 
+/**
+ * Lee un campo simple desde un nodo JSON.
+ */
     private String readField(JsonNode node, String fieldName) {
         if (node == null || node.isMissingNode() || node.isNull()) return "";
         JsonNode value = node.path(fieldName);
@@ -1415,6 +1481,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return safeTrim(value.asText(""));
     }
 
+/**
+ * Lee el primer campo disponible entre varias llaves JSON.
+ */
     private String readFirstField(JsonNode first, JsonNode second, String... fieldNames) {
         if (fieldNames == null) return "";
         for (String fieldName : fieldNames) {
@@ -1426,6 +1495,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return "";
     }
 
+/**
+ * Obtiene la mejor referencia disponible para consultar la transaccion.
+ */
     private String resolveLookupRefPayco(String... candidates) {
         String fallback = "";
         if (candidates == null) return fallback;
@@ -1442,11 +1514,17 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return fallback;
     }
 
+/**
+ * Determina si un valor tiene forma de referencia de pasarela.
+ */
     private boolean looksLikeGatewayReference(String valueRaw) {
         String value = safeTrim(valueRaw);
         return StringUtils.hasText(value) && value.matches("^\\d{6,}$");
     }
 
+/**
+ * Normaliza un documento candidato y descarta valores parciales o invalidos.
+ */
     private String normalizeDocumentoCandidate(String raw) {
         String value = safeTrim(raw);
         if (!StringUtils.hasText(value) || value.contains("*")) {
@@ -1459,6 +1537,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return digits;
     }
 
+/**
+ * Normaliza un correo candidato antes de usarlo en resoluciones.
+ */
     private String sanitizeEmailCandidate(String raw) {
         String value = safeTrim(raw).toLowerCase(Locale.ROOT);
         if (!StringUtils.hasText(value) || value.contains("*")) {
@@ -1470,6 +1551,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return value;
     }
 
+/**
+ * Normaliza un telefono candidato antes de usarlo en resoluciones.
+ */
     private String sanitizePhoneCandidate(String raw) {
         String value = safeTrim(raw);
         if (!StringUtils.hasText(value) || value.contains("*")) {
@@ -1492,6 +1576,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return digits;
     }
 
+/**
+ * Devuelve el primer numero de documento valido entre varias fuentes.
+ */
     private String firstResolvedDocument(String... candidates) {
         if (candidates == null) return "";
         for (String candidate : candidates) {
@@ -1503,6 +1590,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return "";
     }
 
+/**
+ * Devuelve el primer correo valido entre varias fuentes.
+ */
     private String firstResolvedEmail(String... candidates) {
         if (candidates == null) return "";
         for (String candidate : candidates) {
@@ -1514,6 +1604,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return "";
     }
 
+/**
+ * Devuelve el primer telefono valido entre varias fuentes.
+ */
     private String firstResolvedPhone(String... candidates) {
         if (candidates == null) return "";
         for (String candidate : candidates) {
@@ -1525,6 +1618,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return "";
     }
 
+    /**
+     * Intenta ubicar un proceso de matricula usando flowId, documento o correo.
+     */
     private Optional<ChatbotMatriculaProceso> resolveProcesoFromHints(Long flowIdHint,
                                                                       String documentHintRaw,
                                                                       String emailHintRaw) {
@@ -1552,6 +1648,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return Optional.empty();
     }
 
+/**
+ * Extrae el documento asociado a un proceso de matricula.
+ */
     private String procesoDocumento(Optional<ChatbotMatriculaProceso> procesoOpt) {
         return procesoOpt
                 .map(ChatbotMatriculaProceso::getNumeroDocumento)
@@ -1559,6 +1658,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 .orElse("");
     }
 
+/**
+ * Extrae el correo asociado a un proceso de matricula.
+ */
     private String procesoEmail(Optional<ChatbotMatriculaProceso> procesoOpt) {
         return procesoOpt
                 .map(ChatbotMatriculaProceso::getEmail)
@@ -1566,6 +1668,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 .orElse("");
     }
 
+/**
+ * Extrae el telefono asociado a un proceso de matricula.
+ */
     private String procesoTelefono(Optional<ChatbotMatriculaProceso> procesoOpt) {
         if (procesoOpt.isEmpty()) {
             return "";
@@ -1574,6 +1679,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return firstResolvedPhone(safeTrim(proceso.getPhone()), safeTrim(proceso.getTelefono()));
     }
 
+/**
+ * Retorna el primer valor no vacio.
+ */
     private String firstNotBlank(String... values) {
         if (values == null) return "";
         for (String value : values) {
@@ -1584,6 +1692,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return "";
     }
 
+/**
+ * Devuelve el primer valor parcialmente enmascarado disponible.
+ */
     private String firstMaskedValue(String... values) {
         if (values == null) return "";
         for (String value : values) {
@@ -1595,10 +1706,16 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return "";
     }
 
+/**
+ * Resuelve el estado de pago visible para el usuario a partir de codigo, texto y razon.
+ */
     private PaymentUserStatus resolvePaymentUserStatus(String estadoRaw, String codRaw) {
         return resolvePaymentUserStatus(estadoRaw, codRaw, "");
     }
 
+/**
+ * Resuelve el estado de pago visible para el usuario a partir de codigo, texto y razon.
+ */
     private PaymentUserStatus resolvePaymentUserStatus(String estadoRaw, String codRaw, String reasonRaw) {
         if (isApproved(estadoRaw, codRaw)) {
             return PaymentUserStatus.APPROVED;
@@ -1615,6 +1732,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return PaymentUserStatus.UNKNOWN;
     }
 
+/**
+ * Determina si la respuesta al usuario debe renderizarse en HTML.
+ */
     private boolean wantsHtml(String formatRaw, String acceptHeaderRaw) {
         String format = safeTrim(formatRaw).toLowerCase(Locale.ROOT);
         if ("json".equals(format)) return false;
@@ -1623,6 +1743,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return accept.contains("text/html");
     }
 
+/**
+ * Renderiza el comprobante HTML mostrado al usuario despues de consultar el pago.
+ */
     private String renderPaymentReceiptHtml(Map<String, Object> payload) {
         String status = value(payload, "status");
         String title = value(payload, "title");
@@ -1698,12 +1821,18 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return html.toString();
     }
 
+/**
+ * Agrega una fila al resumen HTML del comprobante.
+ */
     private void addHtmlRow(StringBuilder html, String label, String value) {
         if (!StringUtils.hasText(value)) return;
         html.append("<div class=\"row\"><div class=\"k\">").append(escapeHtml(label))
                 .append("</div><div class=\"v\">").append(escapeHtml(value)).append("</div></div>");
     }
 
+/**
+ * Formatea un valor monetario para mostrarlo al usuario.
+ */
     private String formatAmount(String amountRaw, String currencyRaw) {
         String amount = safeTrim(amountRaw);
         if (amount.isBlank()) return "";
@@ -1721,6 +1850,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
     }
 
+/**
+ * Normaliza un valor de pasarela para el resumen mostrado.
+ */
     private String gatewayValue(Map<String, Object> payload, String key) {
         Object gatewayObj = payload == null ? null : payload.get("gateway");
         if (!(gatewayObj instanceof Map<?, ?> gateway)) return "";
@@ -1728,16 +1860,25 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return value == null ? "" : safeTrim(String.valueOf(value));
     }
 
+/**
+ * Obtiene un texto seguro desde un mapa de datos.
+ */
     private String value(Map<String, Object> payload, String key) {
         Object value = payload == null ? null : payload.get(key);
         return value == null ? "" : safeTrim(String.valueOf(value));
     }
 
+/**
+ * Devuelve un respaldo cuando el valor recibido llega vacio.
+ */
     private String emptyTo(String value, String fallback) {
         String out = safeTrim(value);
         return out.isBlank() ? fallback : out;
     }
 
+/**
+ * Escapa texto HTML antes de insertarlo en la vista del recibo.
+ */
     private String escapeHtml(String input) {
         String value = input == null ? "" : input;
         return value
@@ -1748,12 +1889,15 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 .replace("'", "&#39;");
     }
 
+    /**
+     * Estado resumido de payment user.
+     */
     private enum PaymentUserStatus {
         APPROVED(
                 "APPROVED",
                 "Pago aprobado",
                 "Recibimos tu pago correctamente.",
-                "Te enviaremos el enlace de contratos. Si no lo recibes en pocos minutos, responde 9 en WhatsApp para ver el menú."
+                "Te enviaremos el enlace de contratos. Si no lo recibes en pocos minutos, responde 9 en WhatsApp para ver el menÃƒÂº."
         ),
         PENDING(
                 "PENDING",
@@ -1802,6 +1946,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     }
 
     // Endpoint temporal para checkout session (si aplica)
+/**
+ * Crea una sesion de checkout para ePayco.
+ */
     @CrossOrigin(origins = {"http://127.0.0.1:8081", "http://localhost:8081"})
     @PostMapping(value = {"/session", "/epayco/session"}, consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> createSession(@RequestBody java.util.Map<String, Object> payload) {
@@ -1846,6 +1993,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
     }
 
+/**
+ * Construye la respuesta del checkout para el frontend.
+ */
     private Map<String, Object> buildSessionResponse(EpaycoCheckoutContextService.CheckoutContext ctx) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
@@ -1867,6 +2017,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     }
 
     // URL de confirmacion (Webhook ePayco)
+/**
+ * Procesa la confirmacion server to server enviada por ePayco.
+ */
    @PostMapping(value = {"/confirmation", "/epayco/confirmation"}, consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public ResponseEntity<?> confirmation(@RequestParam MultiValueMap<String, String> form) {
 
@@ -1944,7 +2097,7 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             epaycoService.isValidSignature(xRefPayco, xTransactionId, xAmount, xCurrencyCode, xSignature);
 
             if (!signatureOk) {
-                log.warn("Firma inválida en confirmación ePayco ref={} trx={} doc={} cod={} estado={} amount={}",
+                log.warn("Firma invÃƒÂ¡lida en confirmaciÃƒÂ³n ePayco ref={} trx={} doc={} cod={} estado={} amount={}",
                         xRefPayco, xTransactionId, xDocumento, xCodResponse, estado, xAmount);
                 return ResponseEntity.badRequest().body(Map.of("error", "Firma invalida"));
             }
@@ -1992,33 +2145,33 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             capturePaymentMetadataIfPossible(xDocumento, paymentMethodHint, paymentNoteHint);
 
             if (isApproved(estado, xCodResponse)) {
-            log.info("💰 Pago aprobado doc={} ref={} amount={}", xDocumento, xRefPayco, xAmount);
+            log.info("Ã°Å¸â€™Â° Pago aprobado doc={} ref={} amount={}", xDocumento, xRefPayco, xAmount);
             try {
                 PaymentApprovalService.ApprovalResult approval =
                          paymentApprovalService.handleApprovedPayment(xDocumento, parseAmountOrNull(xAmount), true);
-                log.info("✅ Pago aprobado procesado doc={} paymentStatus={} flowStatus={} contractLinkPresent={}",
+                log.info("Ã¢Å“â€¦ Pago aprobado procesado doc={} paymentStatus={} flowStatus={} contractLinkPresent={}",
                         xDocumento,
                         approval.paymentStatus(),
                         approval.flowStatus(),
                         StringUtils.hasText(approval.contractLink()));
             } catch (Exception ex) {
-                log.error("❌ Error procesando pago aprobado doc={} ref={}: {}", xDocumento, xRefPayco, ex.getMessage(), ex);
+                log.error("Ã¢ÂÅ’ Error procesando pago aprobado doc={} ref={}: {}", xDocumento, xRefPayco, ex.getMessage(), ex);
             }
 
         } else if (isCancelled(estado, xCodResponse)) {
-            log.info("❌ Pago cancelado doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
+            log.info("Ã¢ÂÅ’ Pago cancelado doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
             processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.CANCELLED);
 
         } else if (isRejected(estado, xCodResponse)) {
-            log.info("🚫 Pago rechazado doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
+            log.info("Ã°Å¸Å¡Â« Pago rechazado doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
             processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.REJECTED);
 
         } else if (isPending(estado, xCodResponse, xReason)) {
-            log.info("⏳ Pago pendiente doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
+            log.info("Ã¢ÂÂ³ Pago pendiente doc={} ref={} cod={} estado={}", xDocumento, xRefPayco, xCodResponse, estado);
             processNonApprovedPayment(xDocumento, xRefPayco, xCodResponse, estado, xReason, PaymentUserStatus.PENDING);
 
         } else {
-            log.info("ℹ️ Estado no reconocido en confirmación doc={} ref={} cod={} estado={}",
+            log.info("Ã¢â€žÂ¹Ã¯Â¸Â Estado no reconocido en confirmaciÃƒÂ³n doc={} ref={} cod={} estado={}",
                     xDocumento, xRefPayco, xCodResponse, estado);
         }
 
@@ -2030,10 +2183,16 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return ResponseEntity.ok(Map.of("status", "ok"));
     }
 
+/**
+ * Procesa un pago aprobado y actualiza el flujo asociado.
+ */
     private void processApprovedPayment(String documentoRaw, String amountRaw) {
         processApprovedPayment(documentoRaw, parseAmountOrNull(amountRaw), true, false, "", "");
     }
 
+/**
+ * Guarda metadatos de pago cuando hay informacion suficiente para asociarlos.
+ */
     private void capturePaymentMetadataIfPossible(String documentoRaw, String paymentMethodRaw, String paymentNoteRaw) {
         String documento = normalizeDocumentoCandidate(documentoRaw);
         String paymentMethod = normalizePaymentMethodHint(paymentMethodRaw);
@@ -2048,28 +2207,35 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
     }
 
-    private String normalizePaymentMethodHint(String raw) {
-        String normalized = safeTrim(raw).toUpperCase(Locale.ROOT)
-                .replace('Á', 'A')
-                .replace('É', 'E')
-                .replace('Í', 'I')
-                .replace('Ó', 'O')
-                .replace('Ú', 'U')
-                .replaceAll("[^A-Z0-9]+", "_")
-                .replaceAll("^_+|_+$", "");
-        if (!StringUtils.hasText(normalized)) {
-            return "";
-        }
-        if (normalized.contains("PSE") || normalized.contains("BANK") || normalized.contains("BANCO")) return "PSE";
-        if (normalized.contains("CREDITO")) return "TARJETA_CREDITO";
-        if (normalized.contains("DEBITO")) return "TARJETA_DEBITO";
-        if (normalized.contains("TARJETA") || normalized.contains("VISA") || normalized.contains("MASTERCARD") || normalized.contains("AMEX")) return "TARJETA";
-        if (normalized.contains("TRANSFER")) return "TRANSFERENCIA";
-        if (normalized.contains("NEQUI") || normalized.contains("DAVIPLATA") || normalized.contains("BILLETERA")) return "BILLETERA_DIGITAL";
-        if (normalized.contains("EFECTIVO")) return "EFECTIVO";
-        return normalized;
-    }
+/**
+ * Normaliza la pista del metodo de pago a una categoria interna.
+ */
+   private String normalizePaymentMethodHint(String raw) {
+    String normalized = safeTrim(raw).toUpperCase(Locale.ROOT)
+            .replace("ÃƒÂ", "A")
+            .replace("Ãƒâ€°", "E")
+            .replace("ÃƒÂ", "I")
+            .replace("Ãƒâ€œ", "O")
+            .replace("ÃƒÅ¡", "U")
+            .replaceAll("[^A-Z0-9]+", "_")
+            .replaceAll("^_+|_+$", "");
 
+    if (!StringUtils.hasText(normalized)) {
+        return "";
+    }
+    if (normalized.contains("PSE") || normalized.contains("BANK") || normalized.contains("BANCO")) return "PSE";
+    if (normalized.contains("CREDITO")) return "TARJETA_CREDITO";
+    if (normalized.contains("DEBITO")) return "TARJETA_DEBITO";
+    if (normalized.contains("TARJETA") || normalized.contains("VISA") || normalized.contains("MASTERCARD") || normalized.contains("AMEX")) return "TARJETA";
+    if (normalized.contains("TRANSFER")) return "TRANSFERENCIA";
+    if (normalized.contains("NEQUI") || normalized.contains("DAVIPLATA") || normalized.contains("BILLETERA")) return "BILLETERA_DIGITAL";
+    if (normalized.contains("EFECTIVO")) return "EFECTIVO";
+    return normalized;
+}
+
+/**
+ * Construye una nota breve de pago a partir de varias pistas disponibles.
+ */
     private String buildPaymentNoteHint(String... values) {
         LinkedHashMap<String, Boolean> unique = new LinkedHashMap<>();
         if (values == null) {
@@ -2088,6 +2254,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
     }
 
 
+    /**
+     * Procesa un pago aprobado y actualiza el flujo asociado.
+     */
     private void processApprovedPayment(String documentoRaw,
                                         BigDecimal amount,
                                         boolean notifyContractLinkByChatbot,
@@ -2106,6 +2275,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
     }
 
+    /**
+     * Procesa pagos pendientes, rechazados o cancelados dentro del flujo.
+     */
     private void processNonApprovedPayment(String documentoRaw,
                                            String xRefPayco,
                                            String xCodResponse,
@@ -2186,6 +2358,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
     }
 
+    /**
+     * Construye el mensaje de WhatsApp para notificar el estado del pago.
+     */
     private String buildPaymentStatusNotificationMessage(ChatbotMatriculaProceso proceso,
                                                          PaymentUserStatus status,
                                                          String detailRaw,
@@ -2200,27 +2375,27 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
 
         if (status == PaymentUserStatus.PENDING) {
-            msg.append("⏳ Tu pago aparece como *PENDIENTE*.");
+            msg.append("Ã¢ÂÂ³ Tu pago aparece como *PENDIENTE*.");
             if (StringUtils.hasText(detail)) {
-                msg.append("\n🧾 Detalle: ").append(detail);
+                msg.append("\nÃ°Å¸Â§Â¾ Detalle: ").append(detail);
             }
             msg.append("\n\nEsto puede tardar unos minutos dependiendo del banco.");
-            msg.append("\nCuando sea aprobado, te enviaremos automáticamente el enlace para firmar los contratos.");
+            msg.append("\nCuando sea aprobado, te enviaremos automÃƒÂ¡ticamente el enlace para firmar los contratos.");
             if (StringUtils.hasText(paymentLink)) {
-                msg.append("\n\n🔁 Si necesitas el enlace nuevamente, aquí lo tienes:\n").append(paymentLink);
+                msg.append("\n\nÃ°Å¸â€Â Si necesitas el enlace nuevamente, aquÃƒÂ­ lo tienes:\n").append(paymentLink);
             }
-            msg.append("\n\nℹ️ No necesitas hacer nada por ahora. Si el estado no cambia luego de unos minutos, contáctanos por WhatsApp.");
+            msg.append("\n\nÃ¢â€žÂ¹Ã¯Â¸Â No necesitas hacer nada por ahora. Si el estado no cambia luego de unos minutos, contÃƒÂ¡ctanos por WhatsApp.");
         } else {
             String headline = status == PaymentUserStatus.CANCELLED
-                    ? "❌ Tu pago fue cancelado o no finalizado."
-                    : "🚫 Tu pago no fue aprobado.";
+                    ? "Ã¢ÂÅ’ Tu pago fue cancelado o no finalizado."
+                    : "Ã°Å¸Å¡Â« Tu pago no fue aprobado.";
 
             msg.append(headline);
             if (StringUtils.hasText(detail)) {
-                msg.append("\n🧾 Detalle: ").append(detail);
+                msg.append("\nÃ°Å¸Â§Â¾ Detalle: ").append(detail);
             }
             if (StringUtils.hasText(paymentLink)) {
-                msg.append("\n\n🔁 Puedes reintentar aquí:\n").append(paymentLink);
+                msg.append("\n\nÃ°Å¸â€Â Puedes reintentar aquÃƒÂ­:\n").append(paymentLink);
             }
         }
 
@@ -2228,6 +2403,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return msg.toString();
     }
 
+/**
+ * Obtiene un nombre legible del estudiante para mensajes y comprobantes.
+ */
     private String resolveStudentDisplayName(ChatbotMatriculaProceso proceso) {
         if (proceso == null) {
             return "";
@@ -2239,6 +2417,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return nombre.replaceAll("\\s+", " ");
     }
 
+/**
+ * Define si debe omitirse la notificacion del estado de pago.
+ */
     private boolean shouldSkipPaymentStatusNotification(ChatbotMatriculaProceso proceso, PaymentUserStatus status) {
         if (proceso == null || status == null) {
             return false;
@@ -2255,6 +2436,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return Instant.now().isBefore(at.plus(cooldownMinutes, ChronoUnit.MINUTES));
     }
 
+/**
+ * Determina si el estado reportado por ePayco corresponde a un pago aprobado.
+ */
     private boolean isApproved(String estadoRaw, String codRaw) {
         String estado = safeTrim(estadoRaw).toLowerCase(Locale.ROOT);
         String cod = safeTrim(codRaw);
@@ -2265,6 +2449,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 || estado.contains("exito");
     }
 
+/**
+ * Determina si el estado reportado por ePayco corresponde a un pago cancelado.
+ */
     private boolean isCancelled(String estadoRaw, String codRaw) {
         String estado = safeTrim(estadoRaw).toLowerCase(Locale.ROOT);
         String cod = safeTrim(codRaw);
@@ -2275,16 +2462,25 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 || estado.contains("anulad");
     }
 
+/**
+ * Determina si el estado reportado por ePayco corresponde a un pago rechazado.
+ */
     private boolean isRejected(String estadoRaw, String codRaw) {
         String estado = safeTrim(estadoRaw).toLowerCase(Locale.ROOT);
         String cod = safeTrim(codRaw);
         return "2".equals(cod) || estado.contains("rech") || estado.contains("declin");
     }
 
+/**
+ * Determina si el estado reportado por ePayco corresponde a un pago pendiente.
+ */
     private boolean isPending(String estadoRaw, String codRaw) {
         return isPending(estadoRaw, codRaw, "");
     }
 
+/**
+ * Determina si el estado reportado por ePayco corresponde a un pago pendiente.
+ */
     private boolean isPending(String estadoRaw, String codRaw, String reasonRaw) {
         String estado = safeTrim(estadoRaw).toLowerCase(Locale.ROOT);
         String cod = safeTrim(codRaw);
@@ -2296,6 +2492,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 || reason.contains("en validacion");
     }
 
+/**
+ * Convierte un monto textual a BigDecimal cuando es posible.
+ */
     private BigDecimal parseAmountOrNull(String raw) {
         if (raw == null || raw.isBlank()) return null;
         try {
@@ -2305,12 +2504,15 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
     }
 
+    /**
+     * Construye el mensaje enviado cuando el pago queda aprobado.
+     */
     private String buildApprovedPaymentMessage(String contractLinkRaw,
                                                String customMessageTextRaw,
                                                String customMessageTemplateRaw) {
         String contractLink = normalizeStoredContractLink(contractLinkRaw);
         if (!StringUtils.hasText(contractLink)) {
-            return "✅ Pago recibido.";
+            return "Ã¢Å“â€¦ Pago recibido.";
         }
 
         String template = safeTrim(customMessageTemplateRaw);
@@ -2327,11 +2529,14 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
             return text + ": " + contractLink;
         }
 
-        return "✅ Pago aprobado.\n\n📄 Continúa con la contratación en este enlace:\n"
+        return "Ã¢Å“â€¦ Pago aprobado.\n\nÃ°Å¸â€œâ€ž ContinÃƒÂºa con la contrataciÃƒÂ³n en este enlace:\n"
                 + contractLink
                 + ADVISOR_PROMPT;
     }
 
+/**
+ * Inserta el enlace contractual dentro del mensaje de pago aprobado.
+ */
     private String injectContractUrl(String templateRaw, String contractLink) {
         String template = safeTrim(templateRaw);
         if (!StringUtils.hasText(template)) {
@@ -2343,6 +2548,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 .replace("${contract_url}", contractLink);
     }
 
+/**
+ * Construye el enlace final de contratos para el usuario.
+ */
     private String buildContractUserLink(VerificationService.ContractLinkResult out) {
         if (out == null) return "";
 
@@ -2355,6 +2563,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return link;
     }
 
+/**
+ * Resuelve la URL publica del HTML de contratos que debe usar el usuario final.
+ */
     private String resolveContractUiUrl(VerificationService.ContractLinkResult out) {
         String ui = normalizeContractUiUrl(contractUiUrl);
         if (StringUtils.hasText(ui)) return ui;
@@ -2375,6 +2586,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
     }
 
+/**
+ * Valida si una URL luce como base del backend.
+ */
     private boolean looksLikeBackendBaseUrl(String raw) {
         String v = safeTrim(raw).toLowerCase(java.util.Locale.ROOT);
         if (!StringUtils.hasText(v)) return false;
@@ -2383,6 +2597,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 || v.matches(".*:\\d{2,5}$");
     }
 
+/**
+ * Consulta el estado actual de un enlace contractual sin completar el flujo.
+ */
     private VerificationService.ContractAccessResult peekContractLinkAccess(String contractLinkRaw) {
         ContractAccessParams params = parseContractAccessParams(contractLinkRaw);
         if (!StringUtils.hasText(params.email()) || !StringUtils.hasText(params.code())) {
@@ -2391,6 +2608,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return verificationService.peekContractAccessCode(params.email(), params.code());
     }
 
+/**
+ * Extrae parametros utiles desde un enlace contractual.
+ */
     private ContractAccessParams parseContractAccessParams(String contractLinkRaw) {
         String link = safeTrim(contractLinkRaw);
         if (!StringUtils.hasText(link)) {
@@ -2402,6 +2622,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         );
     }
 
+/**
+ * Lee un parametro puntual desde una URL.
+ */
     private String readQueryParam(String urlRaw, String keyRaw) {
         String url = safeTrim(urlRaw);
         String key = safeTrim(keyRaw);
@@ -2429,6 +2652,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return "";
     }
 
+/**
+ * Define si un enlace contractual necesita regenerarse.
+ */
     private boolean shouldRefreshContractLink(String contractLinkRaw) {
         String contractLink = normalizeStoredContractLink(contractLinkRaw);
         if (!StringUtils.hasText(contractLink)) {
@@ -2452,6 +2678,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return !contractLink.startsWith(expectedUi);
     }
 
+/**
+ * Normaliza la URL configurada del frontend de contratos.
+ */
     private String normalizeContractUiUrl(String rawUiUrl) {
         String ui = safeTrim(rawUiUrl);
         if (!StringUtils.hasText(ui)) {
@@ -2460,6 +2689,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return ui.replaceFirst("(?i)(?:/Contratos)*/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
     }
 
+/**
+ * Obtiene el enlace contractual vigente del proceso o lo regenera si hace falta.
+ */
     private String resolveContractLinkForProceso(ChatbotMatriculaProceso proceso) {
         if (proceso == null) {
             return "";
@@ -2499,10 +2731,16 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return currentLink;
     }
 
+/**
+ * Normaliza el enlace contractual almacenado antes de reutilizarlo.
+ */
     private String normalizeStoredContractLink(String rawContractLink) {
         return normalizeContractUiUrl(safeTrim(rawContractLink));
     }
 
+/**
+ * Agrega un parametro codificado a una URL.
+ */
     private String appendQueryParam(String baseUrl, String key, String value) {
         String base = safeTrim(baseUrl);
         if (!StringUtils.hasText(base) || !StringUtils.hasText(key) || !StringUtils.hasText(value)) {
@@ -2515,6 +2753,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
                 + URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
+    /**
+     * Guarda contexto temporal para reintentos y sincronizacion de pagos.
+     */
     private void captureTemporaryContext(String lookupReferenceRaw,
                                          String gatewayReferenceRaw,
                                          String invoiceRaw,
@@ -2562,14 +2803,23 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
     }
 
+/**
+ * Crea un mapa mutable a partir de pares clave valor.
+ */
     private Map<String, Object> mutableMap(Map<String, Object> source) {
         return source == null ? new LinkedHashMap<>() : new LinkedHashMap<>(source);
     }
 
+/**
+ * Convierte un valor arbitrario a texto seguro para lecturas internas.
+ */
     private String asString(Object value) {
         return value == null ? "" : String.valueOf(value);
     }
 
+/**
+ * Resuelve el identificador del flujo desde distintos candidatos.
+ */
     private Long resolveFlowId(Object... candidates) {
         if (candidates == null) {
             return null;
@@ -2583,6 +2833,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return null;
     }
 
+/**
+ * Intenta convertir un candidato textual en identificador de flujo.
+ */
     private Long parseFlowIdCandidate(String raw) {
         String value = safeTrim(raw);
         if (!StringUtils.hasText(value)) {
@@ -2599,6 +2852,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         }
     }
 
+/**
+ * Intenta obtener el id del flujo a partir de la factura.
+ */
     private Long parseFlowIdFromInvoiceHint(String invoiceRaw) {
         String invoice = safeTrim(invoiceRaw).toLowerCase(Locale.ROOT);
         if (!StringUtils.hasText(invoice)) {
@@ -2617,6 +2873,9 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         return parseFlowIdCandidate(value);
     }
 
+/**
+ * Convierte distintos tipos de entrada a un booleano seguro.
+ */
     private boolean asBoolean(Object value, boolean defaultValue) {
         if (value == null) return defaultValue;
         if (value instanceof Boolean b) return b;
@@ -2629,10 +2888,16 @@ public ResponseEntity<?> responseSync(@RequestBody Map<String, Object> payload) 
         };
     }
 
+/**
+ * Recorta texto de forma segura.
+ */
     private String safeTrim(String value) {
         return value == null ? "" : value.trim();
     }
 
+/**
+ * Enmascara un telefono para mostrarlo sin exponerlo completo.
+ */
     private String maskPhone(String phoneRaw) {
         String digits = safeTrim(phoneRaw).replaceAll("\\D+", "");
         if (digits.length() <= 4) return "****";

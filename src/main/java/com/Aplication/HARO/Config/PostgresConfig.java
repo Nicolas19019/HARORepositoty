@@ -10,6 +10,9 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 import javax.sql.DataSource;
 
+/**
+ * Configuraci?n de Spring para postgres.
+ */
 @Configuration
 @EnableJpaRepositories(basePackages = "com.Aplication.HARO.Repository")
 @EntityScan(basePackages = "com.Aplication.HARO.Model")

@@ -11,6 +11,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
+/**
+ * Servicio de negocio para administradores.
+ *
+ * Centraliza listado, creacion, actualizacion, activacion y cambios de
+ * contrasena de cuentas administrativas.
+ */
 @Service
 @Transactional
 public class AdministradorService {
@@ -23,14 +29,23 @@ public class AdministradorService {
 this.repo = repo;
 this.encoder = encoder;
 }
+  /**
+   * Lista los registros solicitados segun los filtros recibidos.
+   */
   @Transactional(readOnly = true)
   public List<Administrador> listar() { return repo.findAll(); }
 
+  /**
+   * Obtiene el registro solicitado por identificador o criterio de busqueda.
+   */
   @Transactional(readOnly = true)
   public Administrador obtenerPorId(Long id) {
     return repo.findById(id).orElseThrow(() -> new IllegalArgumentException("Administrador no encontrado: " + id));
   }
 
+  /**
+   * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+   */
   public Administrador crear(Administrador in) {
     if (in.getUsuario() != null && repo.existsByUsuarioIgnoreCase(in.getUsuario()))
       throw new IllegalStateException("El usuario ya existe: " + in.getUsuario());
@@ -46,6 +61,9 @@ this.encoder = encoder;
     return repo.save(in);
   }
 
+  /**
+   * Actualiza el registro existente con los datos permitidos.
+   */
   public Administrador actualizar(Long id, Administrador in) {
     var actual = obtenerPorId(id);
     if (in.getUsuario() != null && !in.getUsuario().equalsIgnoreCase(actual.getUsuario())) {
@@ -70,6 +88,9 @@ this.encoder = encoder;
     return repo.save(actual);
   }
 
+  /**
+   * Actualiza la contrasena del usuario aplicando el encoder configurado.
+   */
   public void cambiarContrasena(Long id, String nueva) {
     if (nueva == null) nueva = "";
     nueva = nueva.trim();
@@ -82,6 +103,9 @@ this.encoder = encoder;
     repo.save(a);
   }
 
+  /**
+   * Valida que la contrasena actual coincida con el hash guardado.
+   */
   @Transactional(readOnly = true)
   public boolean validarContrasenaActual(Long id, String actual) {
     if (actual == null || actual.isBlank()) return false;
@@ -90,6 +114,9 @@ this.encoder = encoder;
     return hash != null && encoder.matches(actual, hash);
   }
 
+  /**
+   * Actualiza la contrasena del usuario aplicando el encoder configurado.
+   */
   public void cambiarContrasenaAutenticado(Long id, String nueva) {
     if (nueva == null) nueva = "";
     nueva = nueva.trim();
@@ -100,8 +127,17 @@ this.encoder = encoder;
     repo.save(admin);
   }
 
+  /**
+   * Activa el registro o la cuenta indicada.
+   */
   public void activar(Long id) { var a = obtenerPorId(id); a.setActivo(true); repo.save(a); }
+  /**
+   * Desactiva el registro o la cuenta indicada.
+   */
   public void desactivar(Long id) { var a = obtenerPorId(id); a.setActivo(false); repo.save(a); }
+  /**
+   * Elimina o desactiva el registro segun la regla del servicio.
+   */
   public void eliminar(Long id) {
     try {
       repo.deleteById(id);
@@ -110,6 +146,9 @@ this.encoder = encoder;
     }
   }
 
+  /**
+   * Normaliza el valor recibido para usarlo de forma consistente.
+   */
   private String normalizarSede(String raw) {
     if (raw == null) return null;
     String sede = raw.trim().replaceAll("\\s+", " ");

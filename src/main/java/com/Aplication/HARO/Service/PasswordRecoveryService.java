@@ -13,6 +13,12 @@ import java.security.SecureRandom;
 import java.util.Locale;
 import java.util.Optional;
 
+/**
+ * Servicio de recuperacion de cuenta de estudiantes.
+ *
+ * Inicia el flujo de verificacion por correo para recuperar el acceso al modulo
+ * de aprendizaje.
+ */
 @Service
 @Transactional
 public class PasswordRecoveryService {
@@ -38,6 +44,9 @@ public class PasswordRecoveryService {
         this.mailService = mailService;
     }
 
+    /**
+     * Inicia la solicitud del flujo correspondiente.
+     */
     public void requestLearningModuleRecovery(String rawEmail) {
         String email = normalizeEmail(rawEmail);
         Optional<Estudiante> estudianteOpt = estudianteRepository.findByEmailNormalizadoVisible(email);
@@ -56,6 +65,9 @@ public class PasswordRecoveryService {
         mailService.sendHtml(email, recoverySubject, html, plain);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String generateTempPassword() {
         int len = Math.max(8, tempPasswordLength);
         StringBuilder out = new StringBuilder(len);
@@ -65,6 +77,9 @@ public class PasswordRecoveryService {
         return out.toString();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeEmail(String raw) {
         String email = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
         if (email.isBlank()) {
@@ -79,11 +94,17 @@ public class PasswordRecoveryService {
         return email;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String safeName(Estudiante e) {
         String n = e.getNombre() == null ? "" : e.getNombre().trim();
         return n.isBlank() ? "estudiante" : n;
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildRecoveryHtml(Estudiante e, String tempPassword) {
         return """
 <div style="background:#f4f4f4;padding:24px;font-family:Segoe UI,Arial,sans-serif;color:#1a1a1a;">
@@ -107,6 +128,9 @@ public class PasswordRecoveryService {
 """.formatted(safeName(e), tempPassword);
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildRecoveryPlain(Estudiante e, String tempPassword) {
         return "CEA HARO - Recuperacion de acceso\n\n"
                 + "Solicitud aceptada para modulo de gestion de aprendizaje.\n"

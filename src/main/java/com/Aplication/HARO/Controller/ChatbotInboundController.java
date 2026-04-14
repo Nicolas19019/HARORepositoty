@@ -856,7 +856,7 @@ public class ChatbotInboundController {
         actions.add(textMsg(
                 "Paso 6 de 8: selecciona tu sede.\n\n" +
                         "1) Av. 1 de Mayo #68D-23 Piso 2\n" +
-                        "2) CC El Eden - Local L2-094A\n\n" +
+                        "2) El Eden - Local L2-094A\n\n" +
                         "Responde con 1 o 2."
         ));
         actions.add(textMsg("Opciones: " + CMD_MENU));
@@ -868,7 +868,7 @@ public class ChatbotInboundController {
             actions.add(textMsg(
                     "Debes seleccionar una sede valida.\n\n" +
                             "1) Av. 1 de Mayo\n" +
-                            "2) CC El Eden\n\n" +
+                            "2) El Eden\n\n" +
                             "Responde con 1 o 2."
             ));
             actions.add(textMsg("Opciones: " + CMD_MENU));
@@ -1304,7 +1304,7 @@ public class ChatbotInboundController {
                     "Contrato validado.\n\n" +
                             "Antes de finalizar, selecciona tu sede:\n\n" +
                             "1) Av. 1 de Mayo - Av. 1 de Mayo #68D-23 Piso 2\n" +
-                            "2) CC El Eden - Local L2-094A\n\n" +
+                            "2) El Eden - Local L2-094A\n\n" +
                             "Responde con 1 o 2."
             ));
             actions.add(textMsg("Opciones: " + CMD_MENU + ""));
@@ -1464,7 +1464,7 @@ public class ChatbotInboundController {
             return "Av. 1 de Mayo";
         }
         if ("2".equals(t)) {
-            return "CC El Eden";
+            return "El Eden";
         }
         return "";
     }
@@ -2150,7 +2150,7 @@ public class ChatbotInboundController {
                 actions.add(textMsg(
                         "Paso 6 de 8: selecciona tu sede.\n\n" +
                                 "1) Av. 1 de Mayo - Av. 1 de Mayo #68D-23 Piso 2\n" +
-                                "2) CC El Eden - Local L2-094A\n\n" +
+                                "2) El Eden - Local L2-094A\n\n" +
                                 "Responde con 1 o 2."
                 ));
                 actions.add(textMsg("Opciones: " + CMD_MENU));

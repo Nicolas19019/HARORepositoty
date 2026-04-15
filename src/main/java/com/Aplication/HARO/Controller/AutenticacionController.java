@@ -109,9 +109,6 @@ public class AutenticacionController {
     if (password.length() < 8) {
       throw new IllegalArgumentException("La nueva contrasena debe tener al menos 8 caracteres");
     }
-    if (!password.matches(".*[A-Z].*")) {
-      throw new IllegalArgumentException("La nueva contrasena debe incluir al menos una mayuscula");
-    }
     if (!password.matches(".*\\d.*")) {
       throw new IllegalArgumentException("La nueva contrasena debe incluir al menos un numero");
     }

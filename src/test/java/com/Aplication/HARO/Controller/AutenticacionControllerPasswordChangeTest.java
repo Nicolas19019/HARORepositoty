@@ -75,6 +75,33 @@ class AutenticacionControllerPasswordChangeTest {
     }
 
     @Test
+    void changePasswordDebePermitirNuevaContrasenaSinMayuscula() {
+        AuthenticationManager authManager = mock(AuthenticationManager.class);
+        ServicioUsuariosCombinado usuarios = mock(ServicioUsuariosCombinado.class);
+        ServicioJwt jwt = mock(ServicioJwt.class);
+        EstudianteModuloAccesoService accesoService = mock(EstudianteModuloAccesoService.class);
+        AdminPasswordRecoveryService recoveryService = mock(AdminPasswordRecoveryService.class);
+        AdministradorService administradorService = mock(AdministradorService.class);
+        EstudianteService estudianteService = mock(EstudianteService.class);
+        Authentication authentication = mock(Authentication.class);
+
+        when(authentication.isAuthenticated()).thenReturn(true);
+        when(authentication.getPrincipal()).thenReturn(new DetallesUsuarioAplicacion(8L, "student@correo.com", "hash", "ESTUDIANTE", true));
+        when(estudianteService.validarContrasenaActual(8L, "Temporal123!")).thenReturn(true);
+
+        AutenticacionController controller = new AutenticacionController(
+                authManager, usuarios, jwt, accesoService, recoveryService, administradorService, estudianteService);
+
+        ResponseEntity<?> response = controller.changePassword(
+                new PeticionCambioPassword("Temporal123!", "nuevaclave123!", "nuevaclave123!"),
+                authentication
+        );
+
+        assertEquals(200, response.getStatusCode().value());
+        verify(estudianteService).cambiarContrasenaAutenticado(8L, "nuevaclave123!");
+    }
+
+    @Test
     void changePasswordDebeFallarSiContrasenaActualEsIncorrecta() {
         AuthenticationManager authManager = mock(AuthenticationManager.class);
         ServicioUsuariosCombinado usuarios = mock(ServicioUsuariosCombinado.class);

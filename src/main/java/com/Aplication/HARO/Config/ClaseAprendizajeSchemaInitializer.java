@@ -6,6 +6,9 @@ import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Inicializador de arranque para clase aprendizaje schema.
+ */
 @Component
 public class ClaseAprendizajeSchemaInitializer implements CommandLineRunner {
 

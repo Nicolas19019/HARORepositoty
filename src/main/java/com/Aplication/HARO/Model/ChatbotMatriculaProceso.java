@@ -13,6 +13,13 @@ import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
 import java.time.Instant;
 
+/**
+ * Proceso de matricula originado en chatbot o HaroGestion.
+ *
+ * Consolida los datos capturados del estudiante, el estado de pago, el avance de
+ * contratos, los links generados y la referencia del estudiante creado al final
+ * del flujo.
+ */
 @Entity
 @Table(
         name = "chatbot_matricula_proceso",
@@ -147,6 +154,9 @@ public class ChatbotMatriculaProceso {
     @Column(name = "visible", columnDefinition = "boolean default true")
     private Boolean visible = true;
 
+    /**
+     * Inicializa estados y banderas por defecto al crear el proceso de matricula.
+     */
     @PrePersist
     void onCreate() {
         if (createdAt == null) createdAt = Instant.now();
@@ -159,6 +169,9 @@ public class ChatbotMatriculaProceso {
         if (visible == null) visible = true;
     }
 
+    /**
+     * Actualiza la marca de modificacion y normaliza banderas antes de guardar.
+     */
     @PreUpdate
     void onUpdate() {
         updatedAt = Instant.now();

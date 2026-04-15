@@ -5,6 +5,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 
+/**
+ * Acceso a clases publicables del modulo de aprendizaje.
+ *
+ * Ofrece listados administrativos y filtros visibles para estudiantes por
+ * curso, area y fecha de publicacion.
+ */
 public interface ClaseAprendizajeRepository extends JpaRepository<ClaseAprendizaje, Long> {
     List<ClaseAprendizaje> findAllByOrderByIdDesc();
     List<ClaseAprendizaje> findByPublicadaTrueAndVisibleTrueOrderByFechaPublicacionDescIdDesc();

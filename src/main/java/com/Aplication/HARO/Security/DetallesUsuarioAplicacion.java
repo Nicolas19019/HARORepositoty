@@ -7,6 +7,12 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.util.Collection;
 import java.util.List;
 
+/**
+ * Adaptador de usuario autenticado para Spring Security.
+ *
+ * Guarda el id interno, login, hash de contrasena, rol y estado activo del
+ * usuario encontrado en administradores, profesores o estudiantes.
+ */
 public class DetallesUsuarioAplicacion implements UserDetails {
 
   private final Long id;

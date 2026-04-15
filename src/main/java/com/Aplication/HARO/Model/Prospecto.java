@@ -12,6 +12,12 @@ import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
 
+/**
+ * Prospecto capturado antes de convertirse en estudiante.
+ *
+ * Mantiene telefono, servicio consultado y contador de interacciones para
+ * seguimiento comercial desde chatbot u otros canales.
+ */
 @Entity
 @Table(
         name = "prospecto",
@@ -43,6 +49,9 @@ public class Prospecto {
     @Column(name = "actualizado_en", nullable = false)
     private Instant actualizadoEn = Instant.now();
 
+    /**
+     * Inicializa fechas y contador minimo de consultas al crear el prospecto.
+     */
     @PrePersist
     public void prePersist() {
         if (consultas == null || consultas < 1) {
@@ -56,6 +65,9 @@ public class Prospecto {
         }
     }
 
+    /**
+     * Actualiza la fecha de modificacion y normaliza el contador de consultas.
+     */
     @PreUpdate
     public void preUpdate() {
         actualizadoEn = Instant.now();

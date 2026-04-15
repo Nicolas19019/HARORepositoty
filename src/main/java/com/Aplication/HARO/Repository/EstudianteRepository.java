@@ -8,8 +8,17 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Acceso a datos de estudiantes.
+ *
+ * Agrupa busquedas para login, validacion de duplicados, filtrado por
+ * visibilidad y generacion de consecutivo de matricula.
+ */
 public interface EstudianteRepository extends JpaRepository<Estudiante, Long> {
 
+  /**
+   * Busca por correo, usuario o documento usando un unico valor de login.
+   */
   @Query("""
     SELECT e FROM Estudiante e
     WHERE (e.email IS NOT NULL AND lower(e.email) = lower(:login))
@@ -18,6 +27,9 @@ public interface EstudianteRepository extends JpaRepository<Estudiante, Long> {
   """)
   Optional<Estudiante> findByLogin(@Param("login") String login);
 
+  /**
+   * Busca por correo ignorando mayusculas y espacios externos.
+   */
   @Query("""
     SELECT e FROM Estudiante e
     WHERE e.email IS NOT NULL
@@ -25,6 +37,9 @@ public interface EstudianteRepository extends JpaRepository<Estudiante, Long> {
   """)
   Optional<Estudiante> findByEmailNormalizado(@Param("email") String email);
 
+  /**
+   * Busca por correo normalizado solo entre estudiantes visibles.
+   */
   @Query("""
     SELECT e FROM Estudiante e
     WHERE e.visible = true
@@ -45,6 +60,9 @@ public interface EstudianteRepository extends JpaRepository<Estudiante, Long> {
   Optional<Estudiante> findByNumeroDocumento(String d);
   Optional<Estudiante> findByConsecutivo(Long consecutivo);
 
+  /**
+   * Obtiene el siguiente consecutivo desde la secuencia de base de datos.
+   */
   @Query(value = "SELECT nextval('estudiante_consecutivo_seq')", nativeQuery = true)
   Long nextConsecutivo();
 }

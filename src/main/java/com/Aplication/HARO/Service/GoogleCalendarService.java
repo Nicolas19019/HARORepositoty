@@ -38,6 +38,12 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Servicio de integracion con Google Calendar.
+ *
+ * Crea reuniones de calendario para clases y maneja la autenticacion con cuenta
+ * de servicio cuando esta configurada.
+ */
 @Service
 public class GoogleCalendarService {
     private static final Logger log = LoggerFactory.getLogger(GoogleCalendarService.class);
@@ -85,6 +91,9 @@ public class GoogleCalendarService {
         this.oauthRefreshToken = trim(oauthRefreshToken);
     }
 
+    /**
+     * DTO de salida para la reunion creada.
+     */
     public record ReunionCreada(
             String eventId,
             String calendarId,
@@ -95,6 +104,9 @@ public class GoogleCalendarService {
             Instant fin
     ) {}
 
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     public ReunionCreada crearReunion(
             String titulo,
             String descripcion,
@@ -116,6 +128,9 @@ public class GoogleCalendarService {
         );
     }
 
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     public ReunionCreada crearReunion(
             String titulo,
             String descripcion,
@@ -226,6 +241,9 @@ public class GoogleCalendarService {
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private Event executeInsert(Calendar client, String calId, Event event, boolean crearMeet) throws Exception {
         try {
             Calendar.Events.Insert insertRequest = client.events()
@@ -254,6 +272,9 @@ public class GoogleCalendarService {
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private ReunionCreada fallbackOrThrow(String calId,
                                           String summary,
                                           String desc,
@@ -282,6 +303,9 @@ public class GoogleCalendarService {
         );
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private Calendar buildCalendarClient() {
         try {
             Calendar cached = calendarClient;
@@ -313,6 +337,9 @@ public class GoogleCalendarService {
         }
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private Calendar buildServiceAccountClient(NetHttpTransport transport) {
         try {
             GoogleCredentials credentials = GoogleCredentials.getApplicationDefault()
@@ -338,6 +365,9 @@ public class GoogleCalendarService {
         }
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private Calendar buildOAuthRefreshTokenClient(NetHttpTransport transport) {
         if (!StringUtils.hasText(oauthClientId) || !StringUtils.hasText(oauthClientSecret) || !StringUtils.hasText(oauthRefreshToken)) {
             throw new IllegalStateException(
@@ -368,6 +398,9 @@ public class GoogleCalendarService {
             throw new IllegalStateException("No se pudo inicializar Google Calendar con OAuth refresh token: " + e.getMessage(), e);
         }
     }
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolveAuthMode() {
         String mode = trim(authMode).toLowerCase();
         if (mode.isBlank() || AUTH_MODE_AUTO.equals(mode)) {
@@ -384,6 +417,9 @@ public class GoogleCalendarService {
         throw new IllegalStateException("google.calendar.auth.mode invalido. Usa: service_account, oauth_refresh_token o auto.");
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildTemplateLink(String summary,
                                      String description,
                                      OffsetDateTime inicio,
@@ -421,15 +457,24 @@ public class GoogleCalendarService {
         return url.toString();
     }
 
+    /**
+     * Convierte la informacion del dominio al formato de salida requerido.
+     */
     private String toGoogleDate(OffsetDateTime dt) {
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'");
         return dt.withOffsetSameInstant(ZoneOffset.UTC).format(fmt);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String encodeQuery(String value) {
         return URLEncoder.encode(safe(value), StandardCharsets.UTF_8);
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildGoogleErrorMessage(GoogleJsonResponseException e) {
         String detailMessage = e.getDetails() != null ? e.getDetails().getMessage() : null;
         if (StringUtils.hasText(detailMessage)) {
@@ -441,6 +486,9 @@ public class GoogleCalendarService {
         return e.getMessage();
     }
 
+    /**
+     * Convierte el valor recibido al formato requerido por el servicio.
+     */
     private OffsetDateTime parseFecha(String campo, String valor) {
         if (!StringUtils.hasText(valor)) {
             throw new IllegalArgumentException("El campo '" + campo + "' es obligatorio (ISO-8601).");
@@ -452,6 +500,9 @@ public class GoogleCalendarService {
         }
     }
 
+    /**
+     * Convierte la informacion del dominio al formato de salida requerido.
+     */
     private List<EventAttendee> toAttendees(List<String> asistentes) {
         List<EventAttendee> out = new ArrayList<>();
         if (asistentes == null) return out;
@@ -465,6 +516,9 @@ public class GoogleCalendarService {
         return out;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String extractMeetLink(Event event) {
         if (event == null) return null;
         if (StringUtils.hasText(event.getHangoutLink())) {
@@ -481,10 +535,16 @@ public class GoogleCalendarService {
         return null;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trim(String value) {
         return value == null ? "" : value.trim();
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String safe(String value) {
         return value == null ? "" : value;
     }

@@ -4,6 +4,12 @@ import jakarta.persistence.*;
 
 import java.time.Instant;
 
+/**
+ * Registro de acceso del estudiante al modulo de aprendizaje.
+ *
+ * Conserva la fecha de alta, primer ingreso, ultimo ingreso y contador total
+ * para auditoria de uso de la plataforma.
+ */
 @Entity
 @Table(
         name = "estudiante_modulo_acceso",
@@ -47,6 +53,9 @@ public class EstudianteModuloAcceso {
     @Column(name = "actualizado_en", nullable = false)
     private Instant actualizadoEn;
 
+    /**
+     * Inicializa fechas y contadores por defecto al crear el acceso al modulo.
+     */
     @PrePersist
     public void prePersist() {
         Instant now = Instant.now();
@@ -56,6 +65,9 @@ public class EstudianteModuloAcceso {
         if (totalIngresos == null || totalIngresos < 0) totalIngresos = 0;
     }
 
+    /**
+     * Actualiza la marca de modificacion y normaliza contadores del acceso.
+     */
     @PreUpdate
     public void preUpdate() {
         actualizadoEn = Instant.now();

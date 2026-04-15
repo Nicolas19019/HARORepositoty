@@ -6,6 +6,12 @@ import java.math.BigDecimal;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.hibernate.annotations.DynamicInsert;
 
+/**
+ * Estado financiero consolidado de un estudiante.
+ *
+ * Guarda total, pagos, multas y estado calculado para validar deuda, pago total
+ * o inconsistencias antes de persistir el registro.
+ */
 @Entity
 @Table(name = "estado_cuenta")
 @DynamicInsert
@@ -13,7 +19,7 @@ public class EstadoCuenta {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id_estado_cuenta") // <-- PK correcta según tu tabla
+    @Column(name = "id_estado_cuenta")
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Long id;
 
@@ -103,7 +109,9 @@ public class EstadoCuenta {
 
 
 
-	// ===== Reglas de negocio previas al INSERT/UPDATE =====
+    /**
+     * Normaliza montos nulos, rechaza valores negativos y recalcula el estado financiero.
+     */
     @PrePersist @PreUpdate
     public void calcularEstadoYValidar() {
         if (montoTotal == null) montoTotal = BigDecimal.ZERO;
@@ -115,12 +123,7 @@ public class EstadoCuenta {
         }
         BigDecimal totalConMultas = montoTotal.add(multas);
         if (montoPagado.compareTo(totalConMultas) > 0) {
-            // Si NO quieres permitir sobrepago (recomendado):
             throw new IllegalArgumentException("El monto_pagado no puede superar el monto_total + multas.");
-            // Si SÍ quieres permitir sobrepago, comenta la línea de arriba
-            // y descomenta esta:
-            // estado = "Saldo a favor";
-            // return;
         }
 
         int cmp = montoPagado.compareTo(totalConMultas);

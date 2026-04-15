@@ -10,8 +10,17 @@ import org.springframework.data.repository.query.Param;
 import java.time.Instant;
 import java.util.List;
 
+/**
+ * Acceso a contextos temporales de sincronizacion de pagos.
+ *
+ * Permite reconciliar callbacks de pasarela con procesos de matricula usando
+ * cualquiera de las referencias disponibles y limpiar registros vencidos.
+ */
 public interface PaymentSyncContextRepository extends JpaRepository<PaymentSyncContext, Long> {
 
+    /**
+     * Busca contextos activos que coincidan con al menos una referencia no vacia.
+     */
     @Query("""
             select c
             from PaymentSyncContext c
@@ -31,6 +40,9 @@ public interface PaymentSyncContextRepository extends JpaRepository<PaymentSyncC
                                                   @Param("now") Instant now,
                                                   Pageable pageable);
 
+    /**
+     * Elimina contextos relacionados con cualquiera de las referencias recibidas.
+     */
     @Modifying
     @Query("""
             delete from PaymentSyncContext c
@@ -45,6 +57,9 @@ public interface PaymentSyncContextRepository extends JpaRepository<PaymentSyncC
                              @Param("invoice") String invoice,
                              @Param("transactionId") String transactionId);
 
+    /**
+     * Elimina contextos cuyo vencimiento ya paso.
+     */
     @Modifying
     @Query("delete from PaymentSyncContext c where c.expiresAt <= :now")
     int deleteExpired(@Param("now") Instant now);

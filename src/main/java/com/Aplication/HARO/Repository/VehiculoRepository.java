@@ -9,6 +9,12 @@ import com.Aplication.HARO.Model.Vehiculo;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Acceso a vehiculos por placa.
+ *
+ * Consulta vehiculos visibles y disponibles por estado para la asignacion de
+ * clases practicas.
+ */
 @Repository
 public interface VehiculoRepository extends JpaRepository<Vehiculo, String> { // PK = placa
     

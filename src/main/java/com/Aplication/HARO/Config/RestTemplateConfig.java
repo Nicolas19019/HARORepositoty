@@ -7,6 +7,9 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 
+/**
+ * Configuraci?n de Spring para REST template.
+ */
 @Configuration
 public class RestTemplateConfig {
 

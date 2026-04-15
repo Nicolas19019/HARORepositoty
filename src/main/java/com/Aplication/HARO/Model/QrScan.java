@@ -5,6 +5,12 @@ import jakarta.persistence.*;
 
 import java.time.Instant;
 
+/**
+ * Evento de escaneo QR.
+ *
+ * Guarda origen, canal, campana, sede y metadatos tecnicos para medir trafico
+ * y efectividad de enlaces QR.
+ */
 @Entity
 @Table(name = "qr_scan", indexes = {
         @Index(name = "idx_qr_scan_created_at", columnList = "created_at"),
@@ -61,6 +67,9 @@ public class QrScan {
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Instant createdAt;
 
+    /**
+     * Asigna la fecha de creacion cuando se registra un escaneo QR.
+     */
     @PrePersist
     public void onCreate() {
         if (createdAt == null) {

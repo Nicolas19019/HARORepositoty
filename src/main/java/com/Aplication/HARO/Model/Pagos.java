@@ -4,6 +4,12 @@ import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
+/**
+ * Pago individual aplicado a un estado de cuenta.
+ *
+ * Registra fecha, monto y metodo para alimentar el saldo acumulado de un
+ * estudiante.
+ */
 @Entity
 @Table(name = "pago")
 public class Pagos {
@@ -13,7 +19,7 @@ public class Pagos {
 	private Long id;
 
 	@Column(name = "id_estado", nullable = false)
-	private Long estadoCuenta; // <- Wrapper, puede ser null hasta validar
+	private Long estadoCuenta;
 
 	@Column(name = "fecha_pago")
 	private LocalDate fechaPago;

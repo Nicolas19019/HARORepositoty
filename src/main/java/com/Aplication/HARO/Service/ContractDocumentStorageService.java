@@ -22,6 +22,12 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
+/**
+ * Servicio de almacenamiento de contratos firmados.
+ *
+ * Valida metadatos, construye rutas y guarda archivos PDF firmados en el bucket
+ * configurado, con soporte de eliminacion compensatoria.
+ */
 @Service
 public class ContractDocumentStorageService {
 
@@ -39,6 +45,9 @@ public class ContractDocumentStorageService {
     private final String s3PublicBaseUrl;
     private final S3Client s3Client;
 
+    /**
+     * Registro con metadatos del documento almacenado.
+     */
     public record StoredDocument(
             String objectKey,
             String publicUrl,
@@ -78,6 +87,9 @@ public class ContractDocumentStorageService {
         }
     }
 
+    /**
+     * Almacena el archivo recibido y devuelve sus metadatos.
+     */
     public StoredDocument storeSignedContract(MultipartFile file,
                                               String signerName,
                                               String documento,
@@ -103,6 +115,9 @@ public class ContractDocumentStorageService {
     }
 
     /** Best-effort rollback when an upload must be rejected after storage. */
+    /**
+     * Elimina o desactiva el registro segun la regla del servicio.
+     */
     public void deleteStoredContract(String objectKey) {
         String key = safe(objectKey);
         if (key.isBlank()) {
@@ -135,6 +150,9 @@ public class ContractDocumentStorageService {
         }
     }
 
+    /**
+     * Persiste los cambios auxiliares generados por el servicio.
+     */
     private StoredDocument storeInS3(MultipartFile file,
                                      String relativeFolder,
                                      String fileName,
@@ -160,6 +178,9 @@ public class ContractDocumentStorageService {
         }
     }
 
+    /**
+     * Persiste los cambios auxiliares generados por el servicio.
+     */
     private StoredDocument storeLocal(MultipartFile file,
                                       String relativeFolder,
                                       String fileName,
@@ -177,6 +198,9 @@ public class ContractDocumentStorageService {
         }
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeBasePath(String raw) {
         String p = safe(raw).replace("\\", "/");
         p = p.replaceAll("^/+", "");
@@ -185,6 +209,9 @@ public class ContractDocumentStorageService {
         return p;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String slug(String raw, String fallback) {
         String v = safe(raw).toLowerCase(Locale.ROOT)
                 .replaceAll("\\p{M}+", "")
@@ -194,10 +221,16 @@ public class ContractDocumentStorageService {
         return v.length() > 80 ? v.substring(0, 80) : v;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String safe(String value) {
         return value == null ? "" : value.trim();
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String slugSede(String rawSede) {
         String normalized = safe(rawSede).toLowerCase(Locale.ROOT);
         if (normalized.contains("1 de mayo") || normalized.contains("primero de mayo")) {
@@ -209,6 +242,9 @@ public class ContractDocumentStorageService {
         return slug(rawSede, "sin-sede");
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String slugCategory(String rawCategoryCode) {
         String normalized = safe(rawCategoryCode).toUpperCase(Locale.ROOT);
         if ("A2".equals(normalized) || "B1".equals(normalized) || "C1".equals(normalized)) {

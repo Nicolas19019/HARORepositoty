@@ -6,7 +6,7 @@ import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-// ✅
+// âœ…
 import com.Aplication.HARO.Model.Clase;
 import com.Aplication.HARO.Model.Estudiante;
 import com.Aplication.HARO.Model.Profesor;
@@ -27,6 +27,9 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * Controlador REST para clase.
+ */
 @RestController
 @RequestMapping("/api/clases-practicas")
 @CrossOrigin(origins = "*")
@@ -38,6 +41,9 @@ public class ClaseController {
 	private final ProfesorRepository profesorRepository;
 	private final VehiculoRepository vehiculoRepository;
 
+	/**
+	 * Inyecta las dependencias necesarias del controlador.
+	 */
 	public ClaseController(ClaseService service,
 						   AdminSedeGuard adminSedeGuard,
 						   EstudianteRepository estudianteRepository,
@@ -50,6 +56,9 @@ public class ClaseController {
 		this.vehiculoRepository = vehiculoRepository;
 	}
 
+/**
+ * Lista los registros de clase.
+ */
 	@GetMapping
 	@PreAuthorize("hasRole('ADMIN')")
 	public List<Clase> getAll(Authentication authentication) {
@@ -64,6 +73,9 @@ public class ClaseController {
 				.toList();
 	}
 
+/**
+ * Obtiene un registro de clase por su identificador.
+ */
 	@GetMapping("/{id}")
 	@PreAuthorize("hasRole('ADMIN')")
 	public Clase getById(@PathVariable int id, Authentication authentication) {
@@ -73,7 +85,10 @@ public class ClaseController {
 		return c;
 	}
 
-	// ClaseController.java (solo el método POST)
+	// ClaseController.java (solo el mÃ©todo POST)
+/**
+ * Crea un nuevo registro de clase.
+ */
 	@PostMapping
 	@PreAuthorize("hasRole('ADMIN')")
 	public ResponseEntity<Clase> create(@RequestBody Clase c, Authentication authentication) {
@@ -86,6 +101,9 @@ public class ClaseController {
 
 
 	
+/**
+ * Actualiza un registro existente de clase.
+ */
 	@PutMapping("/{id}")
 	@PreAuthorize("hasRole('ADMIN')")
 	public Clase update(@PathVariable long id, @RequestBody Clase e, Authentication authentication) {
@@ -98,6 +116,9 @@ public class ClaseController {
 		return service.updateClase(e);
 	}
 
+/**
+ * Elimina un registro de clase.
+ */
 	@DeleteMapping("/{id}")
 	@PreAuthorize("hasRole('ADMIN')")
 	public ResponseEntity<Void> delete(@PathVariable int id, Authentication authentication) {
@@ -109,6 +130,9 @@ public class ClaseController {
 		return ResponseEntity.noContent().build();
 	}
 
+	    /**
+	     * Lista las clases programadas para una fecha especifica.
+	     */
 	   @GetMapping("/fecha/{fecha}")
 	   @PreAuthorize("hasRole('ADMIN')")
 	    public List<Clase> listarPorFecha(
@@ -126,6 +150,9 @@ public class ClaseController {
 	                .toList();
 	    }
 
+/**
+ * Construye un mapa de sede por estudiante.
+ */
 	private Map<Long, String> buildSedeByStudent(List<Clase> clases) {
 		if (clases == null || clases.isEmpty() || estudianteRepository == null) {
 			return Map.of();
@@ -145,6 +172,9 @@ public class ClaseController {
 		return out;
 	}
 
+/**
+ * Resuelve la sede asociada a una clase.
+ */
 	private String resolveSedeForClase(Clase c) {
 		if (c == null || estudianteRepository == null || c.getId_estudiante() == null) return "";
 		return estudianteRepository.findById(c.getId_estudiante())
@@ -152,6 +182,9 @@ public class ClaseController {
 				.orElse("");
 	}
 
+/**
+ * Valida que los recursos consultados correspondan a la sede del administrador.
+ */
 	private void assertResourcesMatchAdminSede(AdminSedeGuard.AdminCtx adminCtx, Clase c) {
 		if (adminCtx == null || adminCtx.superAdmin() || c == null) return;
 

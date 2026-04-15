@@ -6,6 +6,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+/**
+ * Profesor habilitado para asignacion de clases.
+ *
+ * Guarda identificacion, especialidad, categorias, sede y credenciales usadas
+ * por la gestion academica y la agenda.
+ */
 @Entity
 @Table(name = "profesor")
 public class Profesor {
@@ -26,7 +32,7 @@ public class Profesor {
     @Column(name = "correo")
     private String correo;
     @Column(name = "especialidad")
-    private String especialidad; // ENUM(Teórico, Práctico)
+    private String especialidad; // Teorico o Practico.
     @Column(name = "categoria")
     private String categoria;
     @Column(name = "telefono")
@@ -149,6 +155,9 @@ public class Profesor {
 		this.contrasena = contrasena;
 	}
 
+    /**
+     * Asegura que la visibilidad del profesor nunca quede nula.
+     */
     @PrePersist
     @PreUpdate
     public void normalizarVisibilidad() {

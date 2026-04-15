@@ -8,6 +8,12 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Acceso al progreso academico por modulo.
+ *
+ * Permite listar avances por estudiante, curso, modulo, favoritos y ultimo
+ * registro actualizado para construir reportes del modulo de aprendizaje.
+ */
 @Repository
 public interface ModuloAprendizajeRepository extends JpaRepository<ModuloAprendizaje, Long> {
     List<ModuloAprendizaje> findByIdEstudianteOrderByFechaEvaluacionDesc(Long idEstudiante);
@@ -22,6 +28,9 @@ public interface ModuloAprendizajeRepository extends JpaRepository<ModuloAprendi
             String curso
     );
 
+    /**
+     * Lista estudiantes que tienen registros de progreso en aprendizaje.
+     */
     @Query("""
             SELECT DISTINCT m.idEstudiante
             FROM ModuloAprendizaje m

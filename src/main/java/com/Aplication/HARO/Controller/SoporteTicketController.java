@@ -11,10 +11,16 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Controlador REST para soporte ticket.
+ */
 @RestController
 @CrossOrigin(origins = "*")
 public class SoporteTicketController {
 
+    /**
+     * DTO de entrada para create ticket.
+     */
     public record CreateTicketRequest(
             String tipo,
             String mensaje,
@@ -24,6 +30,9 @@ public class SoporteTicketController {
             String nombreEstudiante
     ) {}
 
+    /**
+     * DTO de entrada para update ticket.
+     */
     public record UpdateTicketRequest(
             String estado,
             String notaInterna,
@@ -32,10 +41,16 @@ public class SoporteTicketController {
 
     private final SoporteTicketService service;
 
+/**
+ * Inyecta las dependencias necesarias del controlador.
+ */
     public SoporteTicketController(SoporteTicketService service) {
         this.service = service;
     }
 
+/**
+ * Crea un nuevo registro de soporte ticket.
+ */
     @PostMapping("/api/soporte/tickets")
     public ResponseEntity<SoporteTicket> crear(@RequestBody CreateTicketRequest request) {
         SoporteTicket created = service.crear(new SoporteTicketService.CreateRequest(
@@ -49,6 +64,9 @@ public class SoporteTicketController {
         return ResponseEntity.created(URI.create("/api/admin/soporte/tickets/" + created.getId())).body(created);
     }
 
+    /**
+     * Lista los tickets de soporte para la vista administrativa.
+     */
     @GetMapping("/api/admin/soporte/tickets")
     public List<SoporteTicket> listarAdmin(@RequestParam(required = false) String estado,
                                            @RequestParam(required = false) String tipo,
@@ -59,11 +77,17 @@ public class SoporteTicketController {
         return service.listarAdmin(estado, tipo, from, to, email, query);
     }
 
+/**
+ * Devuelve el resumen administrativo de tickets.
+ */
     @GetMapping("/api/admin/soporte/tickets/resumen")
     public SoporteTicketService.TicketResumen resumenAdmin() {
         return service.getResumenAdmin();
     }
 
+/**
+ * Cuenta los tickets abiertos actualmente.
+ */
     @GetMapping("/api/admin/soporte/tickets/count/open")
     public Map<String, Object> countOpen() {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -71,6 +95,9 @@ public class SoporteTicketController {
         return body;
     }
 
+    /**
+     * Actualiza un ticket de soporte desde la vista administrativa.
+     */
     @PatchMapping("/api/admin/soporte/tickets/{id}")
     public SoporteTicket actualizarAdmin(@PathVariable Long id,
                                          @RequestBody UpdateTicketRequest request) {

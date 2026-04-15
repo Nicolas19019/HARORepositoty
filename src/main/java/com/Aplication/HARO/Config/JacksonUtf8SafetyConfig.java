@@ -5,6 +5,9 @@ import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilde
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Configuraci?n de Spring para jackson utf 8 safety.
+ */
 @Configuration
 public class JacksonUtf8SafetyConfig {
 

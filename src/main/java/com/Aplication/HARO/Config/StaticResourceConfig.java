@@ -7,6 +7,9 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.nio.file.Path;
 
+/**
+ * Configuraci?n de Spring para static resource.
+ */
 @Configuration
 public class StaticResourceConfig implements WebMvcConfigurer {
 

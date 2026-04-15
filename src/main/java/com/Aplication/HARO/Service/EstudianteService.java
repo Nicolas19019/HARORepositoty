@@ -17,6 +17,12 @@ import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 
+/**
+ * Servicio de estudiantes.
+ *
+ * Gestiona matricula, actualizacion, validaciones de unicidad, activacion de
+ * cuenta del modulo y cambios de contrasena.
+ */
 @Service
 @Transactional
 public class EstudianteService {
@@ -30,15 +36,24 @@ public class EstudianteService {
     this.encoder = encoder;
   }
 
+  /**
+   * Normaliza el valor recibido para usarlo de forma consistente.
+   */
   private String normalizeEmail(String email) {
     if (email == null) return "";
     return email.trim().toLowerCase(Locale.ROOT);
   }
 
+  /**
+   * Ejecuta una operacion auxiliar del servicio.
+   */
   private boolean esMatriculado(String tipoEstudiante) {
     return "matriculado".equalsIgnoreCase(tipoEstudiante == null ? "" : tipoEstudiante.trim());
   }
 
+  /**
+   * Normaliza el valor recibido para usarlo de forma consistente.
+   */
   private String normalizarOrigenMatricula(String origen) {
     String value = origen == null ? "" : origen.trim().toUpperCase(Locale.ROOT);
     if (value.isBlank()) return "";
@@ -49,32 +64,50 @@ public class EstudianteService {
   /* ==========================
      Lecturas
      ========================== */
+  /**
+   * Obtiene el listado usado por las vistas administrativas.
+   */
   @Transactional(readOnly = true)
   public List<Estudiante> getAllEstudiantes() {
     return repo.findByVisibleTrueOrderByIdAsc();
   }
 
+  /**
+   * Obtiene el registro solicitado por identificador o criterio de busqueda.
+   */
   @Transactional(readOnly = true)
   public Optional<Estudiante> getEstudianteById(long id) {
     return repo.findByIdAndVisibleTrue(id);
   }
 
+  /**
+   * Ejecuta la operacion publica del servicio.
+   */
   @Transactional(readOnly = true)
   public Optional<Estudiante> buscarPorNumeroDocumento(String numeroDocumento) {
     return repo.findByNumeroDocumentoAndVisibleTrue(numeroDocumento);
   }
 
+  /**
+   * Ejecuta la operacion publica del servicio.
+   */
   @Transactional(readOnly = true)
   public Optional<Estudiante> buscarPorCorreo(String email) {
     String normalizado = normalizeEmail(email);
     return repo.findByEmailNormalizadoVisible(normalizado);
   }
 
+  /**
+   * Indica si se cumple la condicion consultada.
+   */
   @Transactional(readOnly = true)
   public boolean existePorNumeroDocumento(String numeroDocumento) {
     return repo.existsByNumeroDocumento(numeroDocumento);
   }
 
+  /**
+   * Indica si se cumple la condicion consultada.
+   */
   @Transactional(readOnly = true)
   public boolean existePorCorreo(String email) {
     String normalizado = normalizeEmail(email);
@@ -86,6 +119,9 @@ public class EstudianteService {
   /* ==========================
      Creación
      ========================== */
+  /**
+   * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+   */
   public Estudiante createEstudiante(Estudiante in) {
     // por si llega con id desde el front
     in.setId(null);
@@ -169,6 +205,9 @@ public class EstudianteService {
   /* ==========================
      Actualización
      ========================== */
+  /**
+   * Actualiza el registro existente con los datos permitidos.
+   */
   public Estudiante updateEstudiante(long id, Estudiante incoming) {
     Estudiante db = repo.findById(id)
         .orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado: " + id));
@@ -277,6 +316,9 @@ public class EstudianteService {
     return repo.save(db);
   }
 
+  /**
+   * Activa el registro o la cuenta indicada.
+   */
   public Estudiante activarCuentaModulo(String email, String password, String usuario) {
     String normalizedEmail = normalizeEmail(email);
     if (normalizedEmail.isBlank()) {
@@ -305,6 +347,9 @@ public class EstudianteService {
     return repo.save(estudiante);
   }
 
+  /**
+   * Valida que la contrasena actual coincida con el hash guardado.
+   */
   @Transactional(readOnly = true)
   public boolean validarContrasenaActual(Long id, String actual) {
     if (actual == null || actual.isBlank()) return false;
@@ -314,6 +359,9 @@ public class EstudianteService {
     return hash != null && encoder.matches(actual, hash);
   }
 
+  /**
+   * Actualiza la contrasena del usuario aplicando el encoder configurado.
+   */
   public void cambiarContrasenaAutenticado(Long id, String nueva) {
     if (nueva == null) nueva = "";
     nueva = nueva.trim();
@@ -328,6 +376,9 @@ public class EstudianteService {
   /* ==========================
      Eliminación
      ========================== */
+  /**
+   * Elimina o desactiva el registro segun la regla del servicio.
+   */
   public void deleteEstudiante(long id) {
     Estudiante e = repo.findById(id)
         .orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado: " + id));
@@ -338,10 +389,16 @@ public class EstudianteService {
   /* ==========================
      Helpers
      ========================== */
+  /**
+   * Ejecuta una operacion auxiliar del servicio.
+   */
   private boolean esBcrypt(String s) {
     return s != null && (s.startsWith("$2a$") || s.startsWith("$2b$") || s.startsWith("$2y$"));
   }
 
+  /**
+   * Normaliza el valor recibido para usarlo de forma consistente.
+   */
   private String normalizarTipoPase(String raw) {
     if (raw == null) return null;
     String input = raw.trim().toLowerCase(Locale.ROOT);
@@ -363,6 +420,9 @@ public class EstudianteService {
     return carro ? "carro" : "moto";
   }
 
+  /**
+   * Normaliza el valor recibido para usarlo de forma consistente.
+   */
   private String normalizarFotoPerfil(String raw) {
     if (raw == null) return null;
     String v = raw.trim();

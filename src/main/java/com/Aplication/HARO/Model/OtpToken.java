@@ -3,6 +3,12 @@ package com.Aplication.HARO.Model;
 import jakarta.persistence.*;
 import java.time.Instant;
 
+/**
+ * Token temporal de verificacion por correo.
+ *
+ * Guarda el hash del codigo OTP, su proposito, vencimiento, consumo e intentos
+ * para controlar verificaciones sin persistir el codigo en texto plano.
+ */
 @Entity
 @Table(name = "otp_token",
        indexes = {
@@ -18,7 +24,7 @@ public class OtpToken {
   private String email;
 
   @Column(nullable = false, length = 40)
-  private String purpose; // EMAIL_VERIFY, etc.
+  private String purpose; // EMAIL_VERIFY u otro uso de verificacion.
 
   @Column(name = "otp_hash", nullable = false, length = 128)
   private String otpHash;
@@ -35,7 +41,6 @@ public class OtpToken {
   @Column(name = "sent_at")
   private Instant sentAt;
 
-  // getters/setters
   public Long getId() { return id; }
   public void setId(Long id) { this.id = id; }
   public String getEmail() { return email; }

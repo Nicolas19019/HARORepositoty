@@ -15,11 +15,20 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
+/**
+ * Servicio de sincronizacion temporal de pagos.
+ *
+ * Captura, resuelve y limpia referencias que conectan callbacks de pasarela con
+ * procesos de matricula.
+ */
 @Service
 public class PaymentSyncContextService {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentSyncContextService.class);
 
+    /**
+     * Contexto de apoyo para resolved.
+     */
     public record ResolvedContext(String document, String email, String phone, Long flowId) {}
 
     private final PaymentSyncContextRepository repository;
@@ -31,6 +40,9 @@ public class PaymentSyncContextService {
         this.repository = repository;
     }
 
+    /**
+     * Captura y persiste metadatos asociados al proceso.
+     */
     @Transactional
     public void capture(String lookupReferenceRaw,
                         String gatewayReferenceRaw,
@@ -81,6 +93,9 @@ public class PaymentSyncContextService {
         repository.save(ctx);
     }
 
+    /**
+     * Resuelve datos asociados al flujo a partir de los parametros recibidos.
+     */
     @Transactional(readOnly = true)
     public Optional<ResolvedContext> resolve(String lookupReferenceRaw,
                                              String gatewayReferenceRaw,
@@ -132,6 +147,9 @@ public class PaymentSyncContextService {
         return Optional.of(new ResolvedContext(document, email, phone, flowId));
     }
 
+    /**
+     * Limpia registros temporales o vencidos asociados al flujo.
+     */
     @Transactional
     public int clearByReferences(String lookupReferenceRaw,
                                  String gatewayReferenceRaw,
@@ -150,6 +168,9 @@ public class PaymentSyncContextService {
         return repository.deleteByAnyReference(lookupReference, gatewayReference, invoice, transactionId);
     }
 
+    /**
+     * Limpia registros temporales o vencidos asociados al flujo.
+     */
     @Transactional
     public int purgeExpired() {
         int removed = repository.deleteExpired(Instant.now());
@@ -159,6 +180,9 @@ public class PaymentSyncContextService {
         return removed;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeDocument(String raw) {
         String value = trim(raw);
         if (!StringUtils.hasText(value) || value.contains("*")) return "";
@@ -166,12 +190,18 @@ public class PaymentSyncContextService {
         return digits.length() >= 5 ? digits : "";
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeEmail(String raw) {
         String value = trim(raw).toLowerCase(Locale.ROOT);
         if (!StringUtils.hasText(value) || value.contains("*")) return "";
         return value.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$") ? value : "";
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizePhone(String raw) {
         String value = trim(raw);
         if (!StringUtils.hasText(value) || value.contains("*")) return "";
@@ -182,6 +212,9 @@ public class PaymentSyncContextService {
         return normalized.startsWith("+") ? "+" + digits : digits;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trim(String value) {
         return value == null ? "" : value.trim();
     }

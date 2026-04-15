@@ -4,6 +4,12 @@ import jakarta.persistence.*;
 
 import java.time.Instant;
 
+/**
+ * Avance de firma por categoria dentro de una matricula del chatbot.
+ *
+ * Permite que un mismo proceso firme contratos por paquetes o categorias
+ * diferentes, guardando el contrato actual, el estado y los archivos firmados.
+ */
 @Entity
 @Table(
         name = "chatbot_contract_category_progress",
@@ -54,6 +60,9 @@ public class ChatbotContractCategoryProgress {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
 
+    /**
+     * Inicializa valores por defecto al crear el avance contractual de una categoria.
+     */
     @PrePersist
     void onCreate() {
         if (createdAt == null) createdAt = Instant.now();
@@ -63,6 +72,9 @@ public class ChatbotContractCategoryProgress {
         if (orderIndex == null || orderIndex < 0) orderIndex = 0;
     }
 
+    /**
+     * Actualiza la marca de modificacion del avance contractual de categoria.
+     */
     @PreUpdate
     void onUpdate() {
         updatedAt = Instant.now();

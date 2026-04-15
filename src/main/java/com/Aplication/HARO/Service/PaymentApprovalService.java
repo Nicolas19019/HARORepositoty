@@ -28,6 +28,12 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 
+/**
+ * Servicio de aprobacion de pagos.
+ *
+ * Procesa confirmaciones de pago, aprobaciones manuales en efectivo, envio de
+ * links de contrato y notificaciones al estudiante.
+ */
 @Service
 public class PaymentApprovalService {
 
@@ -69,6 +75,9 @@ public class PaymentApprovalService {
     @Value("${app.internal-api-base-url:}")
     private String internalApiBaseUrl;
 
+    /**
+     * Resultado resumido de approval.
+     */
     public record ApprovalResult(
             String status,
             String paymentStatus,
@@ -94,6 +103,9 @@ public class PaymentApprovalService {
         this.restTemplate = restTemplate;
     }
 
+    /**
+     * Resultado resumido de contract send.
+     */
     public record ContractSendResult(
             boolean ok,
             String message,
@@ -105,11 +117,17 @@ public class PaymentApprovalService {
             Instant expiresAt
     ) {}
 
+    /**
+     * Procesa el evento recibido y actualiza el flujo relacionado.
+     */
     @Transactional
     public ApprovalResult handleApprovedPayment(String documentoRaw, BigDecimal amount) {
         return handleApprovedPayment(documentoRaw, amount, true);
     }
 
+    /**
+     * Procesa el evento recibido y actualiza el flujo relacionado.
+     */
     @Transactional
     public ApprovalResult handleApprovedPayment(String documentoRaw, BigDecimal amount, boolean notifyContractLinkByChatbot) {
         String documento = normalizeDocumento(documentoRaw);
@@ -216,6 +234,9 @@ public class PaymentApprovalService {
         return toResult("OK", proceso, whatsappSent, false);
     }
 
+    /**
+     * Confirma manualmente el estado indicado y ejecuta acciones posteriores.
+     */
     @Transactional
     public ContractSendResult confirmCashPaymentManual(String documentoRaw,
                                                        BigDecimal amount,
@@ -297,6 +318,9 @@ public class PaymentApprovalService {
                 expiresAt);
     }
 
+    /**
+     * Envia el mensaje, correo o enlace solicitado.
+     */
     @Transactional
     public ContractSendResult sendContractLinkByEmail(String documentoRaw, boolean forceResend) {
         String documento = normalizeDocumento(documentoRaw);
@@ -327,6 +351,9 @@ public class PaymentApprovalService {
                 expiresAt);
     }
 
+    /**
+     * Envia el mensaje, correo o enlace solicitado.
+     */
     @Transactional
     public ContractSendResult sendContractLinkByChatbot(String documentoRaw, boolean requireProspect, boolean forceResend) {
         String documento = normalizeDocumento(documentoRaw);
@@ -396,6 +423,9 @@ public class PaymentApprovalService {
                 contractLink, sent, expiresAt);
     }
 
+    /**
+     * Envia el mensaje, correo o enlace solicitado.
+     */
     public boolean sendPaymentApprovedMessage(String phoneRaw, String contractLinkRaw) {
         String phone = normalizePhone(phoneRaw);
         String contractLink = normalizeStoredContractLink(contractLinkRaw);
@@ -454,6 +484,9 @@ public class PaymentApprovalService {
         }
     }
 
+    /**
+     * Convierte la informacion del dominio al formato de salida requerido.
+     */
     private ApprovalResult toResult(String status, ChatbotMatriculaProceso proceso, boolean whatsappSent, boolean duplicate) {
         return new ApprovalResult(
                 status,
@@ -465,6 +498,9 @@ public class PaymentApprovalService {
         );
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean isAlreadyProcessed(ChatbotMatriculaProceso proceso) {
         String paymentStatus = trim(proceso.getPaymentStatus()).toUpperCase(Locale.ROOT);
         String contractStatus = trim(proceso.getContractStatus()).toUpperCase(Locale.ROOT);
@@ -477,6 +513,9 @@ public class PaymentApprovalService {
                 || "STUDENT_CREATED".equals(flowStatus));
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildContractUserLink(VerificationService.ContractLinkResult out) {
         if (out == null) return "";
         String ui = resolveContractUiUrl(out);
@@ -488,6 +527,9 @@ public class PaymentApprovalService {
         return link;
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolveContractUiUrl(VerificationService.ContractLinkResult out) {
         String ui = normalizeContractUiUrl(contractUiUrl);
         if (StringUtils.hasText(ui)) return ui;
@@ -510,6 +552,9 @@ public class PaymentApprovalService {
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private boolean looksLikeBackendBaseUrl(String raw) {
         String v = trim(raw).toLowerCase(Locale.ROOT);
         if (!StringUtils.hasText(v)) return false;
@@ -519,6 +564,9 @@ public class PaymentApprovalService {
                 || v.matches(".*:\\d{2,5}$");
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean shouldRefreshContractLink(String contractLinkRaw) {
         String contractLink = normalizeStoredContractLink(contractLinkRaw);
         if (!StringUtils.hasText(contractLink)) {
@@ -542,8 +590,14 @@ public class PaymentApprovalService {
         return !contractLink.startsWith(expectedUi);
     }
 
+    /**
+     * Parametros de apoyo para acceso al contrato.
+     */
     private record ContractAccessParams(String email, String code) {}
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private VerificationService.ContractAccessResult peekContractLinkAccess(String contractLinkRaw) {
         ContractAccessParams params = parseContractAccessParams(contractLinkRaw);
         if (!StringUtils.hasText(params.email()) || !StringUtils.hasText(params.code())) {
@@ -552,6 +606,9 @@ public class PaymentApprovalService {
         return verificationService.peekContractAccessCode(params.email(), params.code());
     }
 
+    /**
+     * Convierte el valor recibido al formato requerido por el servicio.
+     */
     private ContractAccessParams parseContractAccessParams(String contractLinkRaw) {
         String link = trim(contractLinkRaw);
         if (!StringUtils.hasText(link)) {
@@ -563,6 +620,9 @@ public class PaymentApprovalService {
         );
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String readQueryParam(String urlRaw, String keyRaw) {
         String url = trim(urlRaw);
         String key = trim(keyRaw);
@@ -590,6 +650,9 @@ public class PaymentApprovalService {
         return "";
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildContractExpiryHint(Instant expiresAt) {
         if (expiresAt == null) {
             return "\u23f3 Este enlace es temporal. Si se vence, escribe *LINK* para generar otro.";
@@ -598,6 +661,9 @@ public class PaymentApprovalService {
         return "\u23f3 Vigente hasta: " + until + " (hora Colombia). Si se vence, escribe *LINK* para generar otro.";
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeContractUiUrl(String rawUiUrl) {
         String ui = trim(rawUiUrl);
         if (!StringUtils.hasText(ui)) {
@@ -606,6 +672,9 @@ public class PaymentApprovalService {
         return ui.replaceFirst("(?i)(?:/Contratos)*/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolveCurrentContractLink(ChatbotMatriculaProceso proceso) {
         if (proceso == null) {
             return "";
@@ -632,6 +701,9 @@ public class PaymentApprovalService {
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private Instant contractExpiresAtFromLink(String contractLinkRaw) {
         String link = normalizeStoredContractLink(contractLinkRaw);
         if (!StringUtils.hasText(link)) return null;
@@ -643,6 +715,9 @@ public class PaymentApprovalService {
         }
     }
 
+    /**
+     * Garantiza que exista la informacion necesaria antes de continuar.
+     */
     private String ensureValidContractLink(ChatbotMatriculaProceso proceso) {
         if (proceso == null) return "";
         String current = resolveCurrentContractLink(proceso);
@@ -652,6 +727,9 @@ public class PaymentApprovalService {
         return current;
     }
 
+    /**
+     * Envia la notificacion o solicitud asociada al flujo.
+     */
     private boolean sendContractLinkByEmailInternal(ChatbotMatriculaProceso proceso,
                                                     String contractLinkRaw,
                                                     Instant expiresAt,
@@ -696,6 +774,9 @@ public class PaymentApprovalService {
         return true;
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildContractLinkEmailHtml(ChatbotMatriculaProceso proceso, String contractLink, Instant expiresAt) {
         String nombre = escapeHtml(firstNotBlank(trim(proceso.getNombreCompleto()), "Estudiante"));
         String expiry = escapeHtml(buildContractExpiryHint(expiresAt).replace("*LINK*", "LINK"));
@@ -783,6 +864,9 @@ public class PaymentApprovalService {
                 """.formatted(logoSrc, nombre, linkEscaped, linkEscaped, linkEscaped, expiry);
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildContractLinkEmailPlain(ChatbotMatriculaProceso proceso, String contractLink, Instant expiresAt) {
         String nombre = firstNotBlank(trim(proceso == null ? "" : proceso.getNombreCompleto()), "Estudiante");
         return "CEA HARO - Firma de contratos\n\n"
@@ -798,6 +882,9 @@ public class PaymentApprovalService {
                 + "🤖 Si necesitas ayuda, responde 9 en WhatsApp para ver el menú y elige contactar un asesor.";
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolveEmailLogoSrc() {
         String logoUrl = trim(verificationLogoUrl);
         if (StringUtils.hasText(logoUrl)) {
@@ -806,6 +893,9 @@ public class PaymentApprovalService {
         return "cid:" + LOGO_CID;
     }
 
+    /**
+     * Envia la notificacion o solicitud asociada al flujo.
+     */
     private boolean sendWhatsappText(String phoneRaw, String message) {
         String phone = normalizePhone(phoneRaw);
         if (!StringUtils.hasText(phone) || !StringUtils.hasText(message)) {
@@ -839,6 +929,9 @@ public class PaymentApprovalService {
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String firstNotBlank(String... values) {
         if (values == null) return "";
         for (String v : values) {
@@ -848,10 +941,16 @@ public class PaymentApprovalService {
         return "";
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String safe(String value) {
         return value == null ? "" : value;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String maskEmail(String email) {
         String e = trim(email);
         int at = e.indexOf('@');
@@ -862,6 +961,9 @@ public class PaymentApprovalService {
         return maskedLeft + domain;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String escapeHtml(String raw) {
         String v = raw == null ? "" : raw;
         return v.replace("&", "&amp;")
@@ -871,10 +973,16 @@ public class PaymentApprovalService {
                 .replace("'", "&#39;");
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeStoredContractLink(String rawContractLink) {
         return normalizeContractUiUrl(trim(rawContractLink));
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String appendQueryParam(String baseUrl, String key, String value) {
         String base = trim(baseUrl);
         if (!StringUtils.hasText(base) || !StringUtils.hasText(key) || !StringUtils.hasText(value)) {
@@ -887,10 +995,16 @@ public class PaymentApprovalService {
                 + URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeDocumento(String value) {
         return trim(value).replaceAll("\\s+", "");
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizePhone(String value) {
         String normalized = trim(value).replaceAll("[\\s\\-()]", "");
         if (normalized.startsWith("+")) {
@@ -899,6 +1013,9 @@ public class PaymentApprovalService {
         return normalized;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String maskPhone(String phone) {
         String normalized = normalizePhone(phone);
         if (!StringUtils.hasText(normalized) || normalized.length() <= 4) {
@@ -907,6 +1024,9 @@ public class PaymentApprovalService {
         return "*".repeat(normalized.length() - 4) + normalized.substring(normalized.length() - 4);
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trim(String value) {
         return value == null ? "" : value.trim();
     }

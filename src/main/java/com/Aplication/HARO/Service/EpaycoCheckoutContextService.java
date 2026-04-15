@@ -14,10 +14,19 @@ import java.util.List;
 import java.util.Locale;
 import java.util.NoSuchElementException;
 
+/**
+ * Servicio de contexto para checkout de ePayco.
+ *
+ * Recupera datos del flujo de matricula necesarios para crear enlaces de pago y
+ * reporta campos faltantes cuando el proceso aun esta incompleto.
+ */
 @Service
 @Transactional(readOnly = true)
 public class EpaycoCheckoutContextService {
 
+    /**
+     * Contexto de apoyo para el checkout de ePayco.
+     */
     public record CheckoutContext(Long flowId,
                                   String buyerName,
                                   String document,
@@ -28,6 +37,9 @@ public class EpaycoCheckoutContextService {
                                   String invoice,
                                   String paymentLink) {}
 
+    /**
+     * Excepcion de apoyo para procesos de matricula incompletos.
+     */
     public static class IncompleteProcessException extends RuntimeException {
         private final Long flowId;
         private final List<String> missingFields;
@@ -38,10 +50,16 @@ public class EpaycoCheckoutContextService {
             this.missingFields = List.copyOf(missingFields);
         }
 
+        /**
+         * Obtiene el registro solicitado por identificador o criterio de busqueda.
+         */
         public Long getFlowId() {
             return flowId;
         }
 
+        /**
+         * Ejecuta la operacion publica del servicio.
+         */
         public List<String> getMissingFields() {
             return missingFields;
         }
@@ -53,6 +71,9 @@ public class EpaycoCheckoutContextService {
         this.chatbotProcesoService = chatbotProcesoService;
     }
 
+    /**
+     * Resuelve datos asociados al flujo a partir de los parametros recibidos.
+     */
     public CheckoutContext resolveFromFlowId(Long flowId) {
         if (flowId == null || flowId <= 0) {
             throw new IllegalArgumentException("Debes enviar flowId, flow_id o x_extra2.");
@@ -98,6 +119,9 @@ public class EpaycoCheckoutContextService {
         );
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolvePaymentLink(String document) {
         try {
             ChatbotMatriculaProceso updated = chatbotProcesoService.setPaymentLinkIfMissing(document);
@@ -111,6 +135,9 @@ public class EpaycoCheckoutContextService {
         return safeTrim(chatbotProcesoService.getPaymentLink(document));
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String queryParam(String rawUrl, String key) {
         String url = safeTrim(rawUrl);
         String searchKey = safeTrim(key);
@@ -141,11 +168,17 @@ public class EpaycoCheckoutContextService {
         return "";
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeDocument(String raw) {
         String digits = safeTrim(raw).replaceAll("\\D+", "");
         return digits.length() >= 5 ? digits : "";
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeEmail(String raw) {
         String email = safeTrim(raw).toLowerCase(Locale.ROOT);
         if (!StringUtils.hasText(email)) {
@@ -154,6 +187,9 @@ public class EpaycoCheckoutContextService {
         return email.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$") ? email : "";
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizePhone(String raw) {
         String phone = safeTrim(raw).replaceAll("[^0-9+]", "");
         if (!StringUtils.hasText(phone)) {
@@ -166,6 +202,9 @@ public class EpaycoCheckoutContextService {
         return phone.startsWith("+") ? "+" + digits : digits;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String firstNotBlank(String... values) {
         if (values == null) {
             return "";
@@ -178,6 +217,9 @@ public class EpaycoCheckoutContextService {
         return "";
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String safeTrim(String value) {
         return value == null ? "" : value.trim();
     }

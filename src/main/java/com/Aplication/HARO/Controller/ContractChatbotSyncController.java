@@ -30,6 +30,9 @@ public class ContractChatbotSyncController {
 
   private final ChatbotProcesoService chatbotProcesoService;
 
+/**
+ * Inyecta las dependencias necesarias del controlador.
+ */
   public ContractChatbotSyncController(ChatbotProcesoService chatbotProcesoService) {
     this.chatbotProcesoService = chatbotProcesoService;
   }
@@ -48,6 +51,9 @@ public class ContractChatbotSyncController {
       consumes = MediaType.APPLICATION_JSON_VALUE,
       produces = MediaType.APPLICATION_JSON_VALUE
   )
+/**
+ * Sincroniza el estado contractual con el flujo del chatbot.
+ */
   public ResponseEntity<?> sync(@RequestBody Map<String, Object> payload) {
     String email = normalizeEmail(payload.get("email"));
     String doc = firstNotBlank(payload, "document", "x_extra1", "numeroDocumento", "numero_documento");
@@ -110,15 +116,24 @@ public class ContractChatbotSyncController {
     return ResponseEntity.ok(out);
   }
 
+/**
+ * Devuelve una cadena segura para operaciones internas.
+ */
   private static String safe(String s) {
     return s == null ? "" : s;
   }
 
+/**
+ * Normaliza el correo recibido en la carga.
+ */
   private static String normalizeEmail(Object raw) {
     String v = raw == null ? "" : String.valueOf(raw).trim();
     return v.toLowerCase(Locale.ROOT);
   }
 
+/**
+ * Retorna el primer valor no vacio.
+ */
   private static String firstNotBlank(Map<String, Object> payload, String... keys) {
     for (String k : keys) {
       Object v = payload.get(k);
@@ -129,6 +144,9 @@ public class ContractChatbotSyncController {
     return "";
   }
 
+/**
+ * Obtiene el primer valor numerico positivo disponible en el payload.
+ */
   private static Long firstPositiveLong(Map<String, Object> payload, String... keys) {
     for (String k : keys) {
       Object v = payload.get(k);

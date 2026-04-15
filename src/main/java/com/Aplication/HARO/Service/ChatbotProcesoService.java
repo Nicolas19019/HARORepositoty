@@ -55,6 +55,12 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Servicio principal del proceso de matricula por chatbot.
+ *
+ * Orquesta datos del estudiante, pagos, contratos, creacion de estudiante,
+ * agenda de clases practicas y estados del flujo conversacional.
+ */
 @Service
 public class ChatbotProcesoService {
     private static final Logger log = LoggerFactory.getLogger(ChatbotProcesoService.class);
@@ -180,6 +186,9 @@ private String paymentConfirmationUrl;
     @Value("${chatbot.pricing.a2b1c1:0}")
     private BigDecimal pricingA2B1C1;
 
+    /**
+     * Datos de apoyo para student access.
+     */
     public record StudentAccessData(String documento,
                                     String email,
                                     String emailMasked,
@@ -188,14 +197,29 @@ private String paymentConfirmationUrl;
                                     String categoria,
                                     String tipoPase,
                                     String sede) {}
+    /**
+     * Resultado resumido de booking.
+     */
     public record BookingResult(Clase clase, GoogleCalendarService.ReunionCreada reunionCalendario) {}
+    /**
+     * Estado resumido de disponibilidad de cupos.
+     */
     public record SlotAvailability(int opcion, String hora, boolean disponible) {}
+    /**
+     * Resultado resumido de cancellation.
+     */
     public record CancellationResult(Clase clase,
                                      boolean multaAplicada,
                                      BigDecimal valorMulta,
                                      long horasRestantes,
                                      BigDecimal multasAcumuladas) {}
+    /**
+     * Resultado resumido de student duplicate check.
+     */
     public record StudentDuplicateCheckResult(boolean exists, String reason) {}
+    /**
+     * Resumen de apoyo para contract category flow.
+     */
     public record ContractCategoryFlowSnapshot(
             boolean allCompleted,
             String currentCategoryCode,
@@ -214,6 +238,9 @@ private String paymentConfirmationUrl;
             List<String> contractCategoriesRequired,
             List<Map<String, Object>> categories
     ) {}
+    /**
+     * Excepcion de apoyo para validaciones de carga contractual.
+     */
     public static class ContractUploadValidationException extends RuntimeException {
         private final HttpStatus status;
 
@@ -222,10 +249,16 @@ private String paymentConfirmationUrl;
             this.status = status == null ? HttpStatus.UNPROCESSABLE_ENTITY : status;
         }
 
+        /**
+         * Ejecuta la operacion publica del servicio.
+         */
         public HttpStatus getStatus() {
             return status;
         }
     }
+    /**
+     * Perfil resumido del estudiante dentro del flujo contractual.
+     */
     private record ContractStudentProfile(String nombre,
                                           String apellido,
                                           String tipoDocumento,
@@ -258,6 +291,9 @@ private String paymentConfirmationUrl;
         this.googleCalendarService = googleCalendarService;
         this.passwordEncoder = passwordEncoder;
     }
+    /**
+     * Crea o actualiza el registro segun exista informacion previa.
+     */
     @Transactional
     public ChatbotMatriculaProceso upsertDraft(String phone,
                                                String nombreCompleto,
@@ -267,6 +303,9 @@ private String paymentConfirmationUrl;
                                                String telefono) {
         return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, "", "", null);
     }
+    /**
+     * Crea o actualiza el registro segun exista informacion previa.
+     */
     @Transactional
     public ChatbotMatriculaProceso upsertDraft(String phone,
                                                String nombreCompleto,
@@ -278,6 +317,9 @@ private String paymentConfirmationUrl;
         return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, direccion, "", null);
     }
 
+    /**
+     * Crea o actualiza el registro segun exista informacion previa.
+     */
     @Transactional
     public ChatbotMatriculaProceso upsertDraft(String phone,
                                                String nombreCompleto,
@@ -290,6 +332,9 @@ private String paymentConfirmationUrl;
         return upsertDraft(phone, nombreCompleto, documento, categoria, email, telefono, direccion, sede, null);
     }
 
+    /**
+     * Crea o actualiza el registro segun exista informacion previa.
+     */
     @Transactional
     public ChatbotMatriculaProceso upsertDraft(String phone,
                                                String nombreCompleto,
@@ -339,6 +384,9 @@ private String paymentConfirmationUrl;
         return saved;
     }
 
+    /**
+     * Marca el proceso con el estado o informacion indicada.
+     */
     @Transactional
     public ChatbotMatriculaProceso markCashPaymentPending(String documento) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
@@ -354,6 +402,9 @@ private String paymentConfirmationUrl;
         return procesoRepository.save(p);
     }
 
+    /**
+     * Asigna el valor indicado al proceso y persiste el cambio.
+     */
     @Transactional
     public ChatbotMatriculaProceso setMetodoPago(String documento, String metodoPago) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
@@ -369,6 +420,9 @@ private String paymentConfirmationUrl;
         return procesoRepository.save(p);
     }
 
+    /**
+     * Asigna el valor indicado al proceso y persiste el cambio.
+     */
     @Transactional
     public ChatbotMatriculaProceso setOrigenRegistro(String documento, String origenRegistro) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
@@ -384,6 +438,9 @@ private String paymentConfirmationUrl;
         return procesoRepository.save(p);
     }
 
+    /**
+     * Valida la informacion recibida y devuelve el resultado normalizado.
+     */
     @Transactional(readOnly = true)
     public StudentDuplicateCheckResult validateStudentUniquenessForEnrollment(String documento, String email) {
         String doc = normalizeDoc(documento);
@@ -400,11 +457,17 @@ private String paymentConfirmationUrl;
         }
         return new StudentDuplicateCheckResult(false, null);
     }
+    /**
+     * Marca el proceso con el estado o informacion indicada.
+     */
     @Transactional
     public ChatbotMatriculaProceso markPaymentPending(String documento) {
         return markPaymentPending(documento, "FULL");
     }
 
+    /**
+     * Marca el proceso con el estado o informacion indicada.
+     */
     @Transactional
     public ChatbotMatriculaProceso markPaymentPending(String documento, String paymentPlan) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
@@ -435,6 +498,9 @@ private String paymentConfirmationUrl;
 
         return saved;
     }
+    /**
+     * Marca el proceso con el estado o informacion indicada.
+     */
     @Transactional
     public ChatbotMatriculaProceso markPaymentRejected(String documento) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
@@ -442,6 +508,9 @@ private String paymentConfirmationUrl;
         p.setFlowStatus("PAYMENT_REJECTED");
         return procesoRepository.save(p);
     }
+    /**
+     * Marca el proceso con el estado o informacion indicada.
+     */
     @Transactional
     public ChatbotMatriculaProceso markPaymentCancelled(String documento) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
@@ -449,6 +518,9 @@ private String paymentConfirmationUrl;
         p.setFlowStatus("PAYMENT_CANCELLED");
         return procesoRepository.save(p);
     }
+    /**
+     * Marca el proceso con el estado o informacion indicada.
+     */
     @Transactional
     public ChatbotMatriculaProceso markPaymentApproved(String documento, BigDecimal amountPaid) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
@@ -466,6 +538,9 @@ private String paymentConfirmationUrl;
         return saved;
     }
 
+    /**
+     * Marca el proceso con el estado o informacion indicada.
+     */
     @Transactional
     public ChatbotMatriculaProceso markPaymentStatusNotified(String documento, String statusCodeRaw) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
@@ -479,6 +554,9 @@ private String paymentConfirmationUrl;
         }
         return procesoRepository.save(p);
     }
+    /**
+     * Marca el proceso con el estado o informacion indicada.
+     */
     @Transactional
     public ChatbotMatriculaProceso markContractLinkSent(String documento, String contractLink) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
@@ -487,6 +565,9 @@ private String paymentConfirmationUrl;
         p.setFlowStatus("CONTRACT_LINK_SENT");
         return procesoRepository.save(p);
     }
+    /**
+     * Actualiza el registro existente con los datos permitidos.
+     */
     @Transactional
     public ChatbotMatriculaProceso updateContractLink(String documento, String contractLink) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
@@ -497,6 +578,9 @@ private String paymentConfirmationUrl;
         p.setContractLink(normalized);
         return procesoRepository.save(p);
     }
+    /**
+     * Marca el proceso con el estado o informacion indicada.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public ChatbotMatriculaProceso markContractSignedByEmail(String email) {
         String mail = normalizeEmail(email);
@@ -512,6 +596,9 @@ private String paymentConfirmationUrl;
         return procesoRepository.save(proceso);
     }
 
+    /**
+     * Indica si se cumple la condicion consultada.
+     */
     @Transactional(readOnly = true)
     public boolean isContractSigned(String documento) {
         return procesoRepository.findByNumeroDocumento(normalizeDoc(documento))
@@ -519,6 +606,9 @@ private String paymentConfirmationUrl;
                 .orElse(false);
     }
 
+    /**
+     * Devuelve la informacion solicitada para el flujo actual.
+     */
     @Transactional(readOnly = true)
     public String getPaymentLink(String documento) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
@@ -529,6 +619,9 @@ private String paymentConfirmationUrl;
         return p.getPaymentLink() == null ? "" : p.getPaymentLink();
     }
 
+    /**
+     * Asigna el valor indicado al proceso y persiste el cambio.
+     */
     public ChatbotMatriculaProceso setPaymentLinkIfMissing(String documento) {
         ChatbotMatriculaProceso p = getByDocumentoOrThrow(documento);
         if (p.getPaymentLink() == null || p.getPaymentLink().isBlank()) {
@@ -538,19 +631,31 @@ private String paymentConfirmationUrl;
         return p;
     }
 
+    /**
+     * Devuelve la informacion solicitada para el flujo actual.
+     */
     public String getPaymentConfirmationUrl() {
         return paymentConfirmationUrl;
     }
 
+    /**
+     * Devuelve la informacion solicitada para el flujo actual.
+     */
     public String getPaymentReturnUrl() {
         return paymentReturnUrl;
     }
 
+    /**
+     * Busca el proceso o registro mas reciente que coincida con el criterio recibido.
+     */
     @Transactional(readOnly = true)
     public Optional<ChatbotMatriculaProceso> findProcesoByDocumento(String documento) {
         return procesoRepository.findByNumeroDocumento(normalizeDoc(documento));
     }
 
+    /**
+     * Busca el proceso o registro mas reciente que coincida con el criterio recibido.
+     */
     @Transactional(readOnly = true)
     public Optional<ChatbotMatriculaProceso> findProcesoById(Long procesoId) {
         if (procesoId == null) {
@@ -559,16 +664,25 @@ private String paymentConfirmationUrl;
         return procesoRepository.findById(procesoId);
     }
 
+    /**
+     * Busca el proceso o registro mas reciente que coincida con el criterio recibido.
+     */
     @Transactional(readOnly = true)
     public Optional<ChatbotMatriculaProceso> findLatestProcesoByEmail(String email) {
         return procesoRepository.findTopByEmailIgnoreCaseOrderByUpdatedAtDesc(normalizeEmail(email));
     }
 
+    /**
+     * Busca el proceso o registro mas reciente que coincida con el criterio recibido.
+     */
     @Transactional(readOnly = true)
     public Optional<ChatbotMatriculaProceso> findLatestProcesoByMaskedHints(String maskedDocumentRaw, String maskedEmailRaw) {
         return findLatestProcesoByMaskedHints(maskedDocumentRaw, maskedEmailRaw, "");
     }
 
+    /**
+     * Busca el proceso o registro mas reciente que coincida con el criterio recibido.
+     */
     @Transactional(readOnly = true)
     public Optional<ChatbotMatriculaProceso> findLatestProcesoByMaskedHints(String maskedDocumentRaw,
                                                                             String maskedEmailRaw,
@@ -620,6 +734,9 @@ private String paymentConfirmationUrl;
         return Optional.empty();
     }
 
+    /**
+     * Busca el proceso o registro mas reciente que coincida con el criterio recibido.
+     */
     @Transactional(readOnly = true)
     public Optional<ChatbotMatriculaProceso> findLatestProcesoByPhone(String phoneRaw) {
         String normalized = trim(phoneRaw).replaceAll("[^0-9+]", "");
@@ -639,6 +756,9 @@ private String paymentConfirmationUrl;
         return procesoRepository.findTopByPhoneOrderByUpdatedAtDesc("+" + normalized);
     }
 
+    /**
+     * Busca el proceso o registro mas reciente que coincida con el criterio recibido.
+     */
     @Transactional(readOnly = true)
     public Optional<ChatbotMatriculaProceso> findLatestProcesoByInvoiceHint(String invoiceRaw) {
         String invoice = trim(invoiceRaw);
@@ -647,6 +767,9 @@ private String paymentConfirmationUrl;
         }
         return procesoRepository.findTopByPaymentLinkContainingOrderByUpdatedAtDesc(invoice);
     }
+    /**
+     * Fusiona la informacion recibida con el proceso existente.
+     */
     @Transactional
     public Optional<ChatbotMatriculaProceso> mergeContractSubmissionByEmail(String email,
                                                                             String contractName,
@@ -659,6 +782,9 @@ private String paymentConfirmationUrl;
         return mergeContractSubmissionByEmail(email, "", contractName, pdfFile, formDataJson, fileName, fileUrl, objectKey, signerFolder);
     }
 
+    /**
+     * Fusiona la informacion recibida con el proceso existente.
+     */
     @Transactional
     public Optional<ChatbotMatriculaProceso> mergeContractSubmissionByEmail(String email,
                                                                             String requestedCategoryCode,
@@ -725,6 +851,9 @@ private String paymentConfirmationUrl;
         syncMasterContractStatus(proceso, ensureContractCategoryProgress(proceso));
         return Optional.of(procesoRepository.save(proceso));
     }
+    /**
+     * Captura y persiste metadatos asociados al proceso.
+     */
     @Transactional
     public Optional<ChatbotMatriculaProceso> capturePaymentMetadataByDocument(String documento,
                                                                               String paymentMethod,
@@ -747,6 +876,9 @@ private String paymentConfirmationUrl;
         return Optional.of(procesoRepository.save(proceso));
     }
 
+    /**
+     * Construye la respuesta o payload requerido por el flujo.
+     */
     @Transactional
     public Map<String, Object> buildContractAccessPayloadByEmail(String email) {
         String mail = normalizeEmail(email);
@@ -880,6 +1012,9 @@ private String paymentConfirmationUrl;
         return payload;
     }
 
+    /**
+     * Obtiene el registro solicitado por identificador o criterio de busqueda.
+     */
     @Transactional
     public ContractCategoryFlowSnapshot getContractCategoryFlowByEmail(String email) {
         String mail = normalizeEmail(email);
@@ -892,6 +1027,9 @@ private String paymentConfirmationUrl;
         );
     }
 
+    /**
+     * Resuelve datos asociados al flujo a partir de los parametros recibidos.
+     */
     @Transactional
     public String resolveCurrentContractCategoryLabel(String email, String requestedCategoryCode) {
         String mail = normalizeEmail(email);
@@ -907,6 +1045,9 @@ private String paymentConfirmationUrl;
         ).getCategoryLabel();
     }
 
+    /**
+     * Valida la informacion recibida y devuelve el resultado normalizado.
+     */
     @Transactional
     public String validateAndResolveUploadCategoryLabel(String email,
                                                         String requestedCategoryCode,
@@ -930,6 +1071,9 @@ private String paymentConfirmationUrl;
         return target.getCategoryLabel();
     }
 
+    /**
+     * Resuelve datos asociados al flujo a partir de los parametros recibidos.
+     */
     @Transactional(readOnly = true)
     public String resolveSedeByEmail(String email) {
         String mail = normalizeEmail(email);
@@ -939,6 +1083,9 @@ private String paymentConfirmationUrl;
                 .orElse("");
     }
 
+    /**
+     * Garantiza que exista la informacion necesaria antes de continuar.
+     */
     private List<ChatbotContractCategoryProgress> ensureContractCategoryProgress(ChatbotMatriculaProceso proceso) {
         if (proceso == null || proceso.getId() == null) {
             return List.of();
@@ -1014,6 +1161,9 @@ private String paymentConfirmationUrl;
         return ordered;
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private ChatbotContractCategoryProgress resolveWritableCategoryProgress(ChatbotMatriculaProceso proceso,
                                                                            List<ChatbotContractCategoryProgress> items,
                                                                            List<String> purchasedCategories,
@@ -1036,6 +1186,9 @@ private String paymentConfirmationUrl;
                 .orElseThrow(() -> new IllegalStateException("No hay categorias pendientes para este proceso."));
     }
 
+    /**
+     * Obtiene la informacion auxiliar requerida para la operacion.
+     */
     private Optional<ChatbotContractCategoryProgress> findCurrentCategoryProgress(List<ChatbotContractCategoryProgress> items) {
         return items.stream()
                 .filter(item -> !"COMPLETED".equalsIgnoreCase(trim(item.getStatus())))
@@ -1046,6 +1199,9 @@ private String paymentConfirmationUrl;
                         .findFirst());
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private ContractCategoryFlowSnapshot buildContractCategoryFlowSnapshot(List<ChatbotContractCategoryProgress> items,
                                                                            List<String> purchasedCategories,
                                                                            List<String> requiredContractCategories) {
@@ -1166,6 +1322,9 @@ private String paymentConfirmationUrl;
         );
     }
 
+    /**
+     * Actualiza la informacion auxiliar usada por el servicio.
+     */
     private void refreshContractCategoryProgressStatus(ChatbotContractCategoryProgress item) {
         if (item == null) {
             return;
@@ -1190,6 +1349,9 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Actualiza la informacion auxiliar usada por el servicio.
+     */
     private void syncMasterContractStatus(ChatbotMatriculaProceso proceso, List<ChatbotContractCategoryProgress> items) {
         if (proceso == null) {
             return;
@@ -1218,10 +1380,16 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private boolean areAllCategoriesCompleted(List<ChatbotContractCategoryProgress> items) {
         return !items.isEmpty() && items.stream().allMatch(item -> "COMPLETED".equalsIgnoreCase(trim(item.getStatus())));
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private int countUploadedContracts(String signedContractFilesJson) {
         // Prefer contract number (1..N) when it can be extracted, because older payloads may
         // alternate between `pdfFile` vs `contractName` and should not count as "different" uploads.
@@ -1249,6 +1417,9 @@ private String paymentConfirmationUrl;
         return Math.min(seen.size(), CONTRACTS_PER_CATEGORY);
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private ChatbotContractCategoryProgress resolveValidatedUploadCategoryProgress(List<ChatbotContractCategoryProgress> items,
                                                                                   List<String> purchasedCategories,
                                                                                   List<String> requiredContractCategories,
@@ -1305,6 +1476,9 @@ private String paymentConfirmationUrl;
         return current;
     }
 
+    /**
+     * Valida la informacion recibida antes de continuar el proceso.
+     */
     private void validateExpectedContractUpload(ChatbotContractCategoryProgress targetProgress,
                                                 String pdfFile,
                                                 String contractName,
@@ -1341,6 +1515,9 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private Set<Integer> resolveUploadedContractNumbers(String signedContractFilesJson) {
         Set<Integer> numbers = new LinkedHashSet<>();
         for (Map<String, Object> upload : readJsonList(signedContractFilesJson)) {
@@ -1355,6 +1532,9 @@ private String paymentConfirmationUrl;
         return numbers;
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private Integer resolveContractNumber(String pdfFile, String contractName, String fileName) {
         Integer fromPdfFile = extractContractNumber(pdfFile);
         if (fromPdfFile != null) return fromPdfFile;
@@ -1363,6 +1543,9 @@ private String paymentConfirmationUrl;
         return extractContractNumber(fileName);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private Integer extractContractNumber(String raw) {
         String value = trim(raw).toUpperCase(Locale.ROOT);
         if (value.isBlank()) {
@@ -1375,15 +1558,24 @@ private String paymentConfirmationUrl;
         return null;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String expectedContractFile(int contractNumber) {
         int safeNumber = Math.max(1, Math.min(contractNumber, CONTRACTS_PER_CATEGORY));
         return "Contrato" + safeNumber + ".pdf";
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private int safeOrder(ChatbotContractCategoryProgress item) {
         return item == null || item.getOrderIndex() == null ? Integer.MAX_VALUE : item.getOrderIndex();
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private List<String> splitPurchasedCategories(String categoriaRaw) {
         String normalized = normalizeCategoria(categoriaRaw);
         List<String> categories = new ArrayList<>();
@@ -1396,6 +1588,9 @@ private String paymentConfirmationUrl;
         return categories;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private List<String> splitContractRequiredCategories(String categoriaRaw) {
         List<String> purchased = splitPurchasedCategories(categoriaRaw);
         if (purchased.size() == 3
@@ -1408,6 +1603,9 @@ private String paymentConfirmationUrl;
         return purchased;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeSingleCategoryCode(String rawCategoryCode) {
         String value = trim(rawCategoryCode).toUpperCase(Locale.ROOT);
         if ("A2".equals(value) || "B1".equals(value) || "C1".equals(value)) {
@@ -1415,6 +1613,9 @@ private String paymentConfirmationUrl;
         }
         return "";
     }
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     @Transactional
     public Long createStudentFromSignedContract(String documento) {
         String doc = normalizeDoc(documento);
@@ -1591,6 +1792,9 @@ private String paymentConfirmationUrl;
         procesoRepository.save(proceso);
         return studentId;
     }
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     @Transactional
     public Long createStudentFromSignedContract(String documento, String sede) {
         Long studentId = createStudentFromSignedContract(documento);
@@ -1604,6 +1808,9 @@ private String paymentConfirmationUrl;
         return studentId;
     }
 
+    /**
+     * Aplica el estado o valor interno correspondiente.
+     */
     private void applyContractFormSnapshotToProceso(ChatbotMatriculaProceso proceso, Map<String, Object> formData) {
         if (proceso == null || formData == null || formData.isEmpty()) {
             return;
@@ -1651,6 +1858,9 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private ContractStudentProfile extractStudentProfile(ChatbotMatriculaProceso proceso) {
         Map<String, Object> formData = readJsonMap(proceso.getContractFormData());
         String fullName = firstNotBlank(
@@ -1701,6 +1911,9 @@ private String paymentConfirmationUrl;
         );
     }
 
+    /**
+     * Aplica el estado o valor interno correspondiente.
+     */
     private void applyContractProfileToStudent(Estudiante estudiante,
                                                ContractStudentProfile profile,
                                                ChatbotMatriculaProceso proceso) {
@@ -1758,6 +1971,9 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Obtiene la informacion auxiliar requerida para la operacion.
+     */
     private Optional<Estudiante> findExistingStudentForEnrollment(String documento, String email) {
         String doc = normalizeDoc(documento);
         if (!doc.isBlank()) {
@@ -1778,6 +1994,9 @@ private String paymentConfirmationUrl;
         return Optional.empty();
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private void upsertContractUpload(List<Map<String, Object>> uploads, Map<String, Object> incoming) {
         if (uploads == null || incoming == null || incoming.isEmpty()) {
             return;
@@ -1830,6 +2049,9 @@ private String paymentConfirmationUrl;
         uploads.add(incoming);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private Map<String, Object> readJsonMap(String rawJson) {
         String json = trim(rawJson);
         if (json.isBlank()) {
@@ -1843,6 +2065,9 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private List<Map<String, Object>> readJsonList(String rawJson) {
         String json = trim(rawJson);
         if (json.isBlank()) {
@@ -1857,6 +2082,9 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String writeJson(Object value) {
         if (value == null) {
             return "";
@@ -1868,6 +2096,9 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String readValue(Map<String, Object> data, String key) {
         if (data == null || data.isEmpty() || key == null || key.isBlank()) {
             return "";
@@ -1876,10 +2107,16 @@ private String paymentConfirmationUrl;
         return stringValue(value);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String stringValue(Object value) {
         return value == null ? "" : trim(String.valueOf(value));
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeStudentDocType(String raw) {
         String value = trim(raw).toUpperCase(Locale.ROOT);
         if (value.isBlank()) {
@@ -1894,6 +2131,9 @@ private String paymentConfirmationUrl;
         };
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeEmailIfPossible(String raw) {
         String value = trim(raw);
         if (value.isBlank() || !value.contains("@")) {
@@ -1906,6 +2146,9 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizePhoneIfPossible(String raw) {
         String value = trim(raw);
         if (value.isBlank()) {
@@ -1925,6 +2168,9 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolvePaymentMethod(ChatbotMatriculaProceso proceso) {
         if (proceso == null) {
             return "PAGO_EN_LINEA";
@@ -1952,6 +2198,9 @@ private String paymentConfirmationUrl;
         };
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private void putIfNotBlank(Map<String, Object> out, String key, String value) {
         String normalized = trim(value);
         if (!normalized.isBlank()) {
@@ -1959,6 +2208,9 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String firstNotBlank(String... values) {
         if (values == null) {
             return "";
@@ -1972,6 +2224,9 @@ private String paymentConfirmationUrl;
         return "";
     }
 
+    /**
+     * Obtiene la informacion requerida o lanza excepcion si no existe.
+     */
     @Transactional(readOnly = true)
     public StudentAccessData requireStudentAccessData(String documento) {
         Estudiante estudiante = estudianteRepository.findByNumeroDocumento(normalizeDoc(documento))
@@ -2011,21 +2266,33 @@ private String paymentConfirmationUrl;
         );
     }
 
+    /**
+     * Lista los registros solicitados segun los filtros recibidos.
+     */
     @Transactional(readOnly = true)
     public List<Clase> listAgendaByDocumento(String documento) {
         return listAgendaByStudentId(resolveStudentIdByDocumento(documento));
     }
 
+    /**
+     * Lista los registros solicitados segun los filtros recibidos.
+     */
     @Transactional(readOnly = true)
     public List<Clase> listAgendaByStudentId(Long studentId) {
         return claseRepository.findAgendaByIdEstudiante(requireStudentId(studentId));
     }
 
+    /**
+     * Lista los registros solicitados segun los filtros recibidos.
+     */
     @Transactional(readOnly = true)
     public List<Clase> listUpcomingClassesForCancellation(String documento) {
         return listUpcomingClassesForCancellationByStudentId(resolveStudentIdByDocumento(documento));
     }
 
+    /**
+     * Lista los registros solicitados segun los filtros recibidos.
+     */
     @Transactional(readOnly = true)
     public List<Clase> listUpcomingClassesForCancellationByStudentId(Long studentId) {
         Long id = requireStudentId(studentId);
@@ -2038,14 +2305,23 @@ private String paymentConfirmationUrl;
                 .toList();
     }
 
+    /**
+     * Agenda la clase practica solicitada si hay disponibilidad.
+     */
     public BookingResult bookPracticalClass(String documento, LocalDate fecha, LocalTime horaInicio) {
         return bookPracticalClassByStudentId(resolveStudentIdByDocumento(documento), fecha, horaInicio);
     }
 
+    /**
+     * Agenda la clase practica solicitada si hay disponibilidad.
+     */
     public BookingResult bookPracticalClassByStudentId(Long studentId, LocalDate fecha, LocalTime horaInicio) {
         return bookPracticalClassByStudentId(studentId, fecha, horaInicio, null);
     }
 
+    /**
+     * Agenda la clase practica solicitada si hay disponibilidad.
+     */
     public BookingResult bookPracticalClassByStudentId(Long studentId,
                                                        LocalDate fecha,
                                                        LocalTime horaInicio,
@@ -2108,10 +2384,16 @@ private String paymentConfirmationUrl;
         return new BookingResult(saved, reunion);
     }
 
+    /**
+     * Cancela la clase practica indicada aplicando las reglas de multa.
+     */
     public CancellationResult cancelPracticalClass(String documento, Long idClase) {
         return cancelPracticalClassByStudentId(resolveStudentIdByDocumento(documento), idClase);
     }
 
+    /**
+     * Cancela la clase practica indicada aplicando las reglas de multa.
+     */
     public CancellationResult cancelPracticalClassByStudentId(Long studentId, Long idClase) {
         if (idClase == null || idClase <= 0) {
             throw new IllegalArgumentException("ID de clase invalido");
@@ -2162,16 +2444,25 @@ private String paymentConfirmationUrl;
         return new CancellationResult(saved, aplicaMulta, valorMulta, horasRestantes, multasAcumuladas);
     }
 
+    /**
+     * Lista los registros solicitados segun los filtros recibidos.
+     */
     @Transactional(readOnly = true)
     public List<SlotAvailability> listPracticalSlotAvailability(String documento, LocalDate fecha) {
         return listPracticalSlotAvailabilityByStudentId(resolveStudentIdByDocumento(documento), fecha);
     }
 
+    /**
+     * Lista los registros solicitados segun los filtros recibidos.
+     */
     @Transactional(readOnly = true)
     public List<SlotAvailability> listPracticalSlotAvailabilityByStudentId(Long studentId, LocalDate fecha) {
         return listPracticalSlotAvailabilityByStudentId(studentId, fecha, null);
     }
 
+    /**
+     * Lista los registros solicitados segun los filtros recibidos.
+     */
     @Transactional(readOnly = true)
     public List<SlotAvailability> listPracticalSlotAvailabilityByStudentId(Long studentId,
                                                                            LocalDate fecha,
@@ -2208,11 +2499,17 @@ private String paymentConfirmationUrl;
         return out;
     }
 
+    /**
+     * Indica si se cumple la condicion consultada.
+     */
     @Transactional(readOnly = true)
     public boolean isPracticalSlotAvailable(String documento, LocalDate fecha, LocalTime horaInicio) {
         return isPracticalSlotAvailableByStudentId(resolveStudentIdByDocumento(documento), fecha, horaInicio);
     }
 
+    /**
+     * Indica si se cumple la condicion consultada.
+     */
     @Transactional(readOnly = true)
     public boolean isPracticalSlotAvailableByStudentId(Long studentId, LocalDate fecha, LocalTime horaInicio) {
         if (fecha == null || horaInicio == null) return false;
@@ -2225,6 +2522,9 @@ private String paymentConfirmationUrl;
         return isPracticalSlotAvailable(id, fecha, horaInicio, horaFin);
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean isPracticalSlotAvailable(Long studentId,
                                              LocalDate fecha,
                                              LocalTime horaInicio,
@@ -2232,6 +2532,9 @@ private String paymentConfirmationUrl;
         return isPracticalSlotAvailable(studentId, fecha, horaInicio, horaFin, "", "");
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean isPracticalSlotAvailable(Long studentId,
                                              LocalDate fecha,
                                              LocalTime horaInicio,
@@ -2247,6 +2550,9 @@ private String paymentConfirmationUrl;
         return pickAvailableVehiculo(fecha, horaInicio, horaFin, desiredSede).isPresent();
     }
 
+    /**
+     * Valida la informacion recibida antes de continuar el proceso.
+     */
     private void validatePracticalClassEligibility(Long studentId) {
         EstadoCuenta estadoCuenta = estadoCuentaRepository.findByIdEstudiante(requireStudentId(studentId))
                 .orElseThrow(() -> new IllegalStateException(
@@ -2262,6 +2568,9 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean isPazYSalvo(String estado) {
         String normalized = Normalizer.normalize(trim(estado), Normalizer.Form.NFD)
                 .replaceAll("\\p{M}+", "")
@@ -2273,6 +2582,9 @@ private String paymentConfirmationUrl;
                 || "ALDIA".equals(normalized);
     }
 
+    /**
+     * Garantiza que exista la informacion necesaria antes de continuar.
+     */
     private void ensureEstadoCuentaForStudent(ChatbotMatriculaProceso proceso, Long studentId) {
         if (proceso == null || studentId == null) return;
 
@@ -2294,6 +2606,9 @@ private String paymentConfirmationUrl;
         estadoCuentaRepository.save(estadoCuenta);
     }
 
+    /**
+     * Garantiza que exista la informacion necesaria antes de continuar.
+     */
     private void ensurePagoForStudent(ChatbotMatriculaProceso proceso, Long studentId) {
         if (proceso == null || studentId == null) return;
         if (!"APPROVED".equalsIgnoreCase(trim(proceso.getPaymentStatus()))) return;
@@ -2319,6 +2634,9 @@ private String paymentConfirmationUrl;
         pagoRepository.save(pago);
     }
 
+    /**
+     * Garantiza que exista la informacion necesaria antes de continuar.
+     */
     private void ensurePagoForStudentForce(ChatbotMatriculaProceso proceso, Long studentId) {
         if (proceso == null || studentId == null) return;
 
@@ -2343,6 +2661,9 @@ private String paymentConfirmationUrl;
         pagoRepository.save(pago);
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private BigDecimal resolveExpectedAmount(ChatbotMatriculaProceso proceso) {
         if (proceso.getExpectedAmount() != null && proceso.getExpectedAmount().signum() >= 0) {
             return proceso.getExpectedAmount();
@@ -2352,6 +2673,9 @@ private String paymentConfirmationUrl;
         return byCategory;
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private BigDecimal resolveExpectedAmountByCategory(String categoria) {
         String normalized = normalizeCategoria(categoria);
         return switch (normalized) {
@@ -2366,6 +2690,9 @@ private String paymentConfirmationUrl;
         };
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private BigDecimal resolvePaidAmountForEstadoCuenta(ChatbotMatriculaProceso proceso, BigDecimal expectedAmount) {
         if (proceso.getPaymentAmount() != null && proceso.getPaymentAmount().signum() >= 0) {
             return proceso.getPaymentAmount();
@@ -2376,6 +2703,9 @@ private String paymentConfirmationUrl;
         return BigDecimal.ZERO;
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildPaymentLink(ChatbotMatriculaProceso proceso) {
         String plan = normalizePaymentPlan(proceso == null ? "" : proceso.getPaymentPlan());
         if ("HALF".equals(plan) && proceso != null && !canGenerateHalfPaymentLink(proceso)) {
@@ -2455,6 +2785,9 @@ private String paymentConfirmationUrl;
         return link;
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildCallbackUrlWithContext(String baseUrl, ChatbotMatriculaProceso proceso) {
         String out = trim(baseUrl);
         if (out.isBlank() || proceso == null) {
@@ -2486,6 +2819,9 @@ private String paymentConfirmationUrl;
         return out;
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildCallbackUrlWithFlowId(String baseUrl, ChatbotMatriculaProceso proceso) {
         String out = trim(baseUrl);
         if (out.isBlank() || proceso == null || proceso.getId() == null) {
@@ -2498,6 +2834,9 @@ private String paymentConfirmationUrl;
         return out;
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildCallbackUrlWithCompactContext(String baseUrl, ChatbotMatriculaProceso proceso) {
         String out = buildCallbackUrlWithFlowId(baseUrl, proceso);
         if (out.isBlank() || proceso == null) {
@@ -2516,6 +2855,9 @@ private String paymentConfirmationUrl;
         return out;
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolvePhoneForPayment(ChatbotMatriculaProceso proceso) {
         if (proceso == null) {
             return "";
@@ -2527,6 +2869,9 @@ private String paymentConfirmationUrl;
         return phone;
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolvePaymentBaseLink(ChatbotMatriculaProceso proceso) {
         if (proceso == null) {
             return trim(defaultPaymentLink);
@@ -2544,6 +2889,9 @@ private String paymentConfirmationUrl;
         return resolvePaymentBaseLinkByCategory(categoria);
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolvePaymentBaseLinkByCategory(String categoria) {
         String candidate = switch (categoria) {
             case "A2" -> trim(paymentLinkA2);
@@ -2561,6 +2909,9 @@ private String paymentConfirmationUrl;
         return candidate;
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolvePaymentHalfBaseLinkByCategoryConfigured(String categoria) {
         String candidate = switch (categoria) {
             case "A2" -> trim(paymentLinkA2Half);
@@ -2578,6 +2929,9 @@ private String paymentConfirmationUrl;
         return candidate;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String appendQueryParam(String baseUrl, String key, String value) {
         String safeKey = trim(key);
         String safeValue = trim(value);
@@ -2589,15 +2943,24 @@ private String paymentConfirmationUrl;
         return baseUrl + separator + encode(safeKey) + "=" + encode(safeValue);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String encode(String raw) {
         return URLEncoder.encode(raw, StandardCharsets.UTF_8);
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean isPaycoHostedLink(String url) {
         String normalized = trim(url).toLowerCase(Locale.ROOT);
         return normalized.contains("://payco.link/") || normalized.startsWith("payco.link/");
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeCallbackParam(String configured, String fallback) {
         String key = trim(configured);
         if (key.isBlank()) {
@@ -2613,6 +2976,9 @@ private String paymentConfirmationUrl;
         return key;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizePaymentPlan(String raw) {
         String v = trim(raw).toUpperCase(Locale.ROOT);
         if (v.isBlank()) return "FULL";
@@ -2621,6 +2987,9 @@ private String paymentConfirmationUrl;
         return "FULL";
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private BigDecimal resolvePaymentLinkAmount(String plan, BigDecimal expectedAmount) {
         BigDecimal base = safeAmount(expectedAmount);
         if (base.signum() <= 0) return BigDecimal.ZERO;
@@ -2628,6 +2997,9 @@ private String paymentConfirmationUrl;
         return base.divide(BigDecimal.valueOf(2L), 2, RoundingMode.HALF_UP);
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean canGenerateHalfPaymentLink(ChatbotMatriculaProceso proceso) {
         if (proceso == null) return false;
         String categoria = normalizeCategoria(proceso.getCategoria());
@@ -2640,6 +3012,9 @@ private String paymentConfirmationUrl;
         return !resolvePaymentHalfBaseLinkByCategoryConfigured(categoria).isBlank();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeSingleTipoPase(String raw) {
         String v = trim(raw).toLowerCase(Locale.ROOT);
         if ("carro".equals(v) || "moto".equals(v)) {
@@ -2648,6 +3023,9 @@ private String paymentConfirmationUrl;
         return "";
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeSedeKey(String raw) {
         String base = trim(raw);
         if (base.isBlank()) return "";
@@ -2657,6 +3035,9 @@ private String paymentConfirmationUrl;
         return collapseSpaces(normalized);
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private Set<String> resolveAllowedTipoPases(Estudiante estudiante) {
         if (estudiante == null) {
             return Set.of();
@@ -2679,6 +3060,9 @@ private String paymentConfirmationUrl;
         return out;
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolveDesiredTipoPase(String explicitTipoPase, Estudiante estudiante) {
         Set<String> allowed = resolveAllowedTipoPases(estudiante);
 
@@ -2699,6 +3083,9 @@ private String paymentConfirmationUrl;
         return "";
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolveStudentSedeForBooking(Estudiante estudiante) {
         if (estudiante == null) {
             return "";
@@ -2719,10 +3106,16 @@ private String paymentConfirmationUrl;
                 .orElse(""));
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private Optional<Profesor> pickAvailableProfesor(LocalDate fecha, LocalTime horaInicio, LocalTime horaFin) {
         return pickAvailableProfesor(fecha, horaInicio, horaFin, "", "");
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private Optional<Profesor> pickAvailableProfesor(LocalDate fecha,
                                                      LocalTime horaInicio,
                                                      LocalTime horaFin,
@@ -2761,10 +3154,16 @@ private String paymentConfirmationUrl;
         return Optional.empty();
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private Optional<Vehiculo> pickAvailableVehiculo(LocalDate fecha, LocalTime horaInicio, LocalTime horaFin) {
         return pickAvailableVehiculo(fecha, horaInicio, horaFin, "");
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private Optional<Vehiculo> pickAvailableVehiculo(LocalDate fecha,
                                                      LocalTime horaInicio,
                                                      LocalTime horaFin,
@@ -2811,6 +3210,9 @@ private String paymentConfirmationUrl;
         return Optional.empty();
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private ZoneId resolveBookingZone() {
         String raw = trim(bookingCalendarTimezone);
         try {
@@ -2820,6 +3222,9 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean isCanceledState(String estado) {
         String normalized = Normalizer.normalize(trim(estado), Normalizer.Form.NFD)
                 .replaceAll("\\p{M}+", "")
@@ -2828,6 +3233,9 @@ private String paymentConfirmationUrl;
         return normalized.contains("CANCEL");
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private List<LocalTime> defaultPracticalSlots() {
         return List.of(
                 LocalTime.of(6, 0),
@@ -2839,10 +3247,16 @@ private String paymentConfirmationUrl;
         );
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String formatHour(LocalTime hour) {
         return hour == null ? "" : hour.format(DateTimeFormatter.ofPattern("HH:mm"));
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private GoogleCalendarService.ReunionCreada createPracticalClassCalendarEvent(Estudiante estudiante,
                                                                                    Profesor profesor,
                                                                                    Clase clase) {
@@ -2879,12 +3293,18 @@ private String paymentConfirmationUrl;
         );
     }
 
+    /**
+     * Obtiene la informacion auxiliar requerida para la operacion.
+     */
     private ChatbotMatriculaProceso getByDocumentoOrThrow(String documento) {
         String doc = normalizeDoc(documento);
         return procesoRepository.findByNumeroDocumento(doc)
                 .orElseThrow(() -> new NoSuchElementException("No existe proceso de matricula para documento " + doc));
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String[] splitName(String fullName) {
         String clean = collapseSpaces(fullName);
         if (clean.isBlank()) return new String[]{"Estudiante", ""};
@@ -2893,6 +3313,9 @@ private String paymentConfirmationUrl;
         return parts;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String generateUniqueUsername(String email, String documento) {
         String base;
         String e = trim(email);
@@ -2915,6 +3338,9 @@ private String paymentConfirmationUrl;
         return candidate;
     }
 
+    /**
+     * Convierte la informacion del dominio al formato de salida requerido.
+     */
     private String toTipoPase(String categoria) {
         String v = normalizeCategoria(categoria);
         boolean hasA2 = v.contains("A2");
@@ -2927,6 +3353,9 @@ private String paymentConfirmationUrl;
         return "carro";
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeCategoria(String categoria) {
         String c = trim(categoria);
         if (c.isBlank()) {
@@ -2967,6 +3396,9 @@ private String paymentConfirmationUrl;
         return "A2";
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeDoc(String doc) {
         String out = trim(doc).replaceAll("\\D+", "");
         if (out.length() < 5 || out.length() > 20) {
@@ -2975,6 +3407,9 @@ private String paymentConfirmationUrl;
         return out;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeEmail(String email) {
         String out = trim(email).toLowerCase(Locale.ROOT);
         if (out.isBlank() || !out.contains("@")) {
@@ -2983,6 +3418,9 @@ private String paymentConfirmationUrl;
         return out;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizePhone(String phone) {
         String out = trim(phone);
         if (out.isBlank()) {
@@ -3004,28 +3442,46 @@ private String paymentConfirmationUrl;
         return out;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String collapseSpaces(String v) {
         return trim(v).replaceAll("\\s+", " ");
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private BigDecimal safeAmount(BigDecimal value) {
         if (value == null || value.signum() < 0) return BigDecimal.ZERO;
         return value;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String safe(String v) {
         String out = trim(v);
         return out.isBlank() ? "N/A" : out;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String asString(Object value) {
         return value == null ? "" : String.valueOf(value);
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trim(String v) {
         return v == null ? "" : v.trim();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeContractLink(String raw) {
         String link = trim(raw);
         if (link.isBlank()) {
@@ -3034,6 +3490,9 @@ private String paymentConfirmationUrl;
         return link.replaceFirst("(?i)(?:/Contratos)*/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String maskMaskedValue(String raw) {
         String value = trim(raw);
         if (value.isBlank()) {
@@ -3045,6 +3504,9 @@ private String paymentConfirmationUrl;
         return value.substring(0, 2) + "***" + value.substring(value.length() - 2);
     }
 
+    /**
+     * Obtiene la informacion auxiliar requerida para la operacion.
+     */
     private List<ChatbotMatriculaProceso> findMaskedCandidates(MaskLookupParts docMask, MaskLookupParts emailMask) {
         return procesoRepository.findCandidatesForMaskedLookup(
                 docMask.prefix(),
@@ -3055,6 +3517,9 @@ private String paymentConfirmationUrl;
         );
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private Optional<ChatbotMatriculaProceso> resolveMaskedCandidates(List<ChatbotMatriculaProceso> candidates,
                                                                       MaskLookupParts docMask,
                                                                       MaskLookupParts emailMask,
@@ -3088,6 +3553,9 @@ private String paymentConfirmationUrl;
         return Optional.empty();
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private Optional<ChatbotMatriculaProceso> resolveByIntersection(List<ChatbotMatriculaProceso> docCandidates,
                                                                     List<ChatbotMatriculaProceso> emailCandidates,
                                                                     MaskLookupParts phoneMask) {
@@ -3127,7 +3595,13 @@ private String paymentConfirmationUrl;
         return Optional.empty();
     }
 
+    /**
+     * Datos de apoyo para busquedas enmascaradas.
+     */
     private record MaskLookupParts(String prefix, String suffix) {
+        /**
+         * Ejecuta una operacion auxiliar del servicio.
+         */
         private static MaskLookupParts empty() {
             return new MaskLookupParts("", "");
         }
@@ -3198,6 +3672,9 @@ private String paymentConfirmationUrl;
         }
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildStudentDisplayName(Estudiante estudiante) {
         if (estudiante == null) return "estudiante";
 
@@ -3208,6 +3685,9 @@ private String paymentConfirmationUrl;
         return user.isBlank() ? "estudiante" : user;
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private LocalDate resolveEnrollmentDate(ChatbotMatriculaProceso proceso) {
         Instant enrolledAt = proceso == null ? null : proceso.getEnrolledAt();
         if (enrolledAt != null) {
@@ -3216,6 +3696,9 @@ private String paymentConfirmationUrl;
         return LocalDate.now(ZoneId.of("America/Bogota"));
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String maskEmail(String email) {
         String e = trim(email).toLowerCase(Locale.ROOT);
         int at = e.indexOf('@');
@@ -3225,6 +3708,9 @@ private String paymentConfirmationUrl;
         return user.charAt(0) + "***" + domain;
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private Long resolveStudentIdByDocumento(String documento) {
         return estudianteRepository.findByNumeroDocumento(normalizeDoc(documento))
                 .filter(e -> !Boolean.FALSE.equals(e.getVisible()))
@@ -3232,6 +3718,9 @@ private String paymentConfirmationUrl;
                 .orElseThrow(() -> new NoSuchElementException("No existe un estudiante activo con ese documento"));
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private Long requireStudentId(Long studentId) {
         if (studentId == null || studentId <= 0) {
             throw new IllegalArgumentException("ID de estudiante invalido");

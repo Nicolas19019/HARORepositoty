@@ -39,6 +39,12 @@ import java.util.Optional;
 
 import org.springframework.util.StringUtils;
 
+/**
+ * Servicio de verificacion y contratos.
+ *
+ * Maneja OTP de correo, generacion y validacion de links de contrato, carga de
+ * PDFs firmados y finalizacion de firma contractual.
+ */
 @Service
 public class VerificationService {
 
@@ -153,6 +159,9 @@ public class VerificationService {
        ========================================================= */
 
     /** Envía/renueva OTP al correo. Respeta cooldown y persiste el token (hash). */
+    /**
+     * Envia el mensaje, correo o enlace solicitado.
+     */
     @Transactional
     public void sendEmailVerification(String rawEmail) {
         long t0 = System.nanoTime();
@@ -215,6 +224,9 @@ public class VerificationService {
     }
 
     /** Envía OTP SOLO para activación de cuenta de estudiante del módulo de aprendizaje. */
+    /**
+     * Envia el mensaje, correo o enlace solicitado.
+     */
     @Transactional
     public void sendStudentActivationEmailVerification(String rawEmail) {
         final String email = normalizeEmail(rawEmail);
@@ -270,6 +282,9 @@ public class VerificationService {
     }
 
     /** Verifica OTP: true si válido (marca consumido), false si inválido/expirado. */
+    /**
+     * Verifica el codigo o token recibido y devuelve el resultado de validacion.
+     */
     @Transactional
     public boolean verifyEmailOtp(String rawEmail, String rawCode) {
         final String email = normalizeEmail(rawEmail);
@@ -319,6 +334,9 @@ public class VerificationService {
         }
     }
 
+    /**
+     * Resultado resumido de contract link.
+     */
     public record ContractLinkResult(
             String email,
             String code,
@@ -326,12 +344,18 @@ public class VerificationService {
             Instant expiresAt
     ) {}
 
+    /**
+     * Resultado resumido de contract access.
+     */
     public record ContractAccessResult(
             boolean ok,
             String message,
             Instant expiresAt
     ) {}
 
+    /**
+     * Resultado resumido de contract completion.
+     */
     public record ContractCompletionResult(
             boolean ok,
             String message,
@@ -342,6 +366,9 @@ public class VerificationService {
             String paymentStatus
     ) {}
 
+    /**
+     * Resultado resumido de contract upload.
+     */
     public record ContractUploadResult(
             boolean ok,
             String message,
@@ -357,6 +384,9 @@ public class VerificationService {
             String paymentStatus
     ) {}
 
+    /**
+     * Construye la respuesta o payload requerido por el flujo.
+     */
     @Transactional(readOnly = true)
     public Map<String, Object> buildContractAccessPayload(String rawEmail) {
         String email = normalizeEmail(rawEmail);
@@ -370,6 +400,9 @@ public class VerificationService {
     }
 
     /** Genera código alfanumérico para firma y devuelve URL verificable. */
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     @Transactional
     public ContractLinkResult createContractVerificationLink(String rawEmail, String rawBaseUrl) {
         final String email = normalizeEmail(rawEmail);
@@ -415,6 +448,9 @@ public class VerificationService {
     }
 
     /** Valida y consume código de firma de contrato. */
+    /**
+     * Verifica el codigo o token recibido y devuelve el resultado de validacion.
+     */
     @Transactional
     public boolean verifyContractCode(String rawEmail, String rawCode) {
         final String email = normalizeEmail(rawEmail);
@@ -457,6 +493,9 @@ public class VerificationService {
     }
 
     /** Valida código de acceso a contratos sin consumirlo. */
+    /**
+     * Valida la informacion recibida y devuelve el resultado normalizado.
+     */
     @Transactional
     public ContractAccessResult validateContractAccessCode(String rawEmail, String rawCode) {
         final String email = normalizeEmail(rawEmail);
@@ -540,6 +579,9 @@ public class VerificationService {
 
     /** Consume código de contrato y activa matrícula (creación de estudiante) si aplica. */
     // Keep this method non-transactional so a caught exception cannot poison the request with rollback-only.
+    /**
+     * Ejecuta la operacion publica del servicio.
+     */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ContractCompletionResult completeContractSigning(String rawEmail, String rawCode) {
     final String email = normalizeEmail(rawEmail);
@@ -786,6 +828,9 @@ public class VerificationService {
         );
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private TransactionTemplate newTx(int propagationBehavior) {
         TransactionTemplate tt = new TransactionTemplate(txManager);
         tt.setPropagationBehavior(propagationBehavior);
@@ -900,6 +945,9 @@ public class VerificationService {
         );
     }
 
+    /**
+     * Notifica el resultado del proceso a los canales configurados.
+     */
     public boolean notifyContractCompletionAfterCommit(String email, Long studentId) {
         if (!autoSendEnrollmentWhatsapp) return false;
         if (studentId == null) return false;
@@ -914,6 +962,9 @@ public class VerificationService {
         }
     }
 
+    /**
+     * Carga el documento recibido y actualiza el estado del contrato.
+     */
     public ContractUploadResult uploadSignedContractDocument(String rawEmail,
                                                              String rawCode,
                                                              String rawCategoryCode,
@@ -1081,12 +1132,18 @@ public class VerificationService {
        Helpers
        ========================================================= */
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String generateNumericOtp(int length) {
         int mod = (int) Math.pow(10, Math.max(4, length));
         int code = rng.nextInt(mod);
         return String.format("%0" + Math.max(4, length) + "d", code);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String generateAlphaNumericCode(int length) {
         final char[] alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
         StringBuilder sb = new StringBuilder(Math.max(8, length));
@@ -1097,6 +1154,9 @@ public class VerificationService {
     }
 
     /** NORMALIZA y VALIDA el email: quita comillas externas, invisibles y valida con InternetAddress estricto. */
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeEmail(String emailRaw) {
         if (emailRaw == null) throw new IllegalArgumentException("email requerido");
 
@@ -1129,6 +1189,9 @@ public class VerificationService {
         return e;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private static String stripOuterQuotes(String s) {
         String x = (s == null ? "" : s).trim();
         if (x.length() >= 2) {
@@ -1140,6 +1203,9 @@ public class VerificationService {
         return x;
     }
 
+    /**
+     * Envia la notificacion o solicitud asociada al flujo.
+     */
     private boolean notifyContractCompletionByWhatsApp(ChatbotMatriculaProceso proceso, Long studentId) {
         if (!autoSendEnrollmentWhatsapp) return false;
         if (proceso == null || studentId == null) return false;
@@ -1183,6 +1249,9 @@ public class VerificationService {
         }
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildContractReceivedWhatsappMessage(ChatbotMatriculaProceso proceso, Long studentId) {
         StringBuilder message = new StringBuilder()
                 .append("\u2705 \u00a1Listo! Tu contrato fue recibido.\n\n")
@@ -1203,6 +1272,9 @@ public class VerificationService {
         return message.toString();
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildNewStudentWhatsappMessage() {
         return "\uD83C\uDF93 \u00a1Ya eres estudiante de HARO!\n\n"
                 + "\u23F0 En tu pr\u00f3xima clase debes llegar 30 minutos antes para la toma de biom\u00e9tricos "
@@ -1211,6 +1283,9 @@ public class VerificationService {
                 + "Para ver opciones, responde 9.";
     }
 
+    /**
+     * Envia la notificacion o solicitud asociada al flujo.
+     */
     private void sendWhatsappText(String normalizedPhone, String message) {
         if (StringUtils.hasText(internalApiBaseUrl)) {
             String base = trim(internalApiBaseUrl);
@@ -1231,11 +1306,17 @@ public class VerificationService {
         waService.sendTextMessage(normalizedPhone, message);
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean hasAllRequiredSignedContracts(String signedContractFilesJson) {
         String signedFiles = safe(signedContractFilesJson);
         return Arrays.stream(REQUIRED_SIGNED_CONTRACTS).allMatch(signedFiles::contains);
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private Optional<ChatbotMatriculaProceso> resolveLatestContractStatus(String email, String documento) {
         if (StringUtils.hasText(documento)) {
             Optional<ChatbotMatriculaProceso> byDocument = chatbotProcesoService.findProcesoByDocumento(documento);
@@ -1246,10 +1327,16 @@ public class VerificationService {
         return chatbotProcesoService.findLatestProcesoByEmail(email);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String safe(String value) {
         return value == null ? "" : value;
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildHtml(String email, String code) {
         // HTML EXACTO (no modificado), con placeholders %s (código) y %d (minutos)
         String html = """
@@ -1325,6 +1412,9 @@ public class VerificationService {
         return html;
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildPlain(String email, String code) {
         long mins = Math.max(1, ttlSeconds / 60);
         return "CEA HARO - Verificación de correo\n\n"
@@ -1333,6 +1423,9 @@ public class VerificationService {
             + "Si no solicitaste esta verificación, ignora este mensaje. Tu cuenta no se verá afectada.";
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildHtmlLearningActivation(String email, String code) {
         String html = """
 <div style="background-color:#f4f4f4;padding:24px;font-family:'Segoe UI',Arial,sans-serif;color:#1a1a1a;">
@@ -1407,6 +1500,9 @@ public class VerificationService {
         return html;
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildPlainLearningActivation(String email, String code) {
         long mins = Math.max(1, ttlSeconds / 60);
         return "CEA HARO - Activacion modulo de gestion de aprendizaje\n\n"
@@ -1416,6 +1512,9 @@ public class VerificationService {
             + "Si no solicitaste esta activacion, ignora este mensaje. Tu cuenta no se vera afectada.";
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private String resolveVerificationLogoSrc() {
         String logoUrl = trim(verificationLogoUrl);
         if (StringUtils.hasText(logoUrl)) {
@@ -1424,6 +1523,9 @@ public class VerificationService {
         return "cid:" + CID;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private static String normalizePhone(String value) {
         String normalized = trim(value).replaceAll("[\\s\\-()]", "");
         if (normalized.startsWith("+")) {
@@ -1432,6 +1534,9 @@ public class VerificationService {
         return normalized;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private static String maskPhone(String phone) {
         String normalized = normalizePhone(phone);
         if (!StringUtils.hasText(normalized) || normalized.length() <= 4) {

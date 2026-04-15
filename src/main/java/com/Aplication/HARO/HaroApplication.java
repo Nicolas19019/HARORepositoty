@@ -4,6 +4,9 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+/**
+ * Aplicaci?n principal de Spring Boot para HARO.
+ */
 @SpringBootApplication
 @EnableScheduling
 public class HaroApplication {

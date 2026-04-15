@@ -14,10 +14,19 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
+/**
+ * Servicio de acceso al modulo de aprendizaje.
+ *
+ * Registra altas e ingresos de estudiantes, calcula indicadores administrativos
+ * y construye filas de seguimiento para el panel.
+ */
 @Service
 @Transactional
 public class EstudianteModuloAccesoService {
 
+    /**
+     * DTO de entrada para registro.
+     */
     public record RegistroRequest(
             Long idEstudiante,
             String email,
@@ -26,6 +35,9 @@ public class EstudianteModuloAccesoService {
             String origen
     ) {}
 
+    /**
+     * DTO de salida para registro.
+     */
     public record RegistroResponse(
             boolean ok,
             Long idEstudiante,
@@ -37,12 +49,18 @@ public class EstudianteModuloAccesoService {
             String origenRegistro
     ) {}
 
+    /**
+     * Resumen de indicadores administrativos del módulo de acceso.
+     */
     public record ResumenAdmin(
             long estudiantesRegistrados,
             long estudiantesQueHanIngresado,
             long estudiantesPendientesPrimerIngreso
     ) {}
 
+    /**
+     * Registro de salida para estudiante modulo admin.
+     */
     public record EstudianteModuloAdminRow(
             Long idEstudiante,
             String nombre,
@@ -67,6 +85,9 @@ public class EstudianteModuloAccesoService {
         this.estudianteRepository = estudianteRepository;
     }
 
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     public RegistroResponse registrarModulo(RegistroRequest request) {
         Estudiante estudiante = resolveEstudiante(request);
         EstudianteModuloAcceso acceso = accesoRepository.findByIdEstudiante(estudiante.getId())
@@ -85,6 +106,9 @@ public class EstudianteModuloAccesoService {
         return toRegistroResponse(saved, nuevo);
     }
 
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     public RegistroResponse registrarIngresoPorEstudiante(Long idEstudiante) {
         if (idEstudiante == null || idEstudiante <= 0) {
             throw new IllegalArgumentException("idEstudiante invalido");
@@ -112,6 +136,9 @@ public class EstudianteModuloAccesoService {
         return toRegistroResponse(saved, nuevo);
     }
 
+    /**
+     * Obtiene el listado usado por las vistas administrativas.
+     */
     @Transactional(readOnly = true)
     public ResumenAdmin getResumenAdmin() {
         long registrados = accesoRepository.count();
@@ -120,6 +147,9 @@ public class EstudianteModuloAccesoService {
         return new ResumenAdmin(registrados, conIngreso, pendientes);
     }
 
+    /**
+     * Obtiene el listado usado por las vistas administrativas.
+     */
     @Transactional(readOnly = true)
     public List<EstudianteModuloAdminRow> getEstudiantesRegistradosModulo() {
         List<EstudianteModuloAdminRow> out = new ArrayList<>();
@@ -163,6 +193,9 @@ public class EstudianteModuloAccesoService {
         return out;
     }
 
+    /**
+     * Obtiene el registro solicitado por identificador o criterio de busqueda.
+     */
     @Transactional(readOnly = true)
     public Optional<EstudianteModuloAdminRow> getRegistroByEstudiante(Long idEstudiante) {
         if (idEstudiante == null || idEstudiante <= 0) {
@@ -173,6 +206,9 @@ public class EstudianteModuloAccesoService {
                 .findFirst();
     }
 
+    /**
+     * Convierte la informacion del dominio al formato de salida requerido.
+     */
     private RegistroResponse toRegistroResponse(EstudianteModuloAcceso acceso, boolean nuevo) {
         return new RegistroResponse(
                 true,
@@ -186,6 +222,9 @@ public class EstudianteModuloAccesoService {
         );
     }
 
+    /**
+     * Resuelve el valor que debe usarse segun el contexto recibido.
+     */
     private Estudiante resolveEstudiante(RegistroRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("La solicitud de registro es obligatoria");
@@ -222,6 +261,9 @@ public class EstudianteModuloAccesoService {
         throw new IllegalArgumentException("Debes enviar idEstudiante, email, usuario o documento");
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String nombreCompleto(Estudiante estudiante) {
         String nombre = trim(estudiante == null ? null : estudiante.getNombre());
         String apellido = trim(estudiante == null ? null : estudiante.getApellido());
@@ -232,16 +274,25 @@ public class EstudianteModuloAccesoService {
         return estudiante == null || estudiante.getId() == null ? "" : "Estudiante " + estudiante.getId();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeOrigen(String origen, String fallback) {
         String value = trim(origen);
         if (value.isBlank()) return fallback;
         return value.length() > 60 ? value.substring(0, 60) : value;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private int safeInt(Integer value) {
         return value == null || value < 0 ? 0 : value;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trim(String value) {
         return value == null ? "" : value.trim();
     }

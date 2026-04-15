@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * Controlador REST para WhatsApp webhook.
+ */
 @RestController
 @RequestMapping("/api/whatsapp/webhook")
 @CrossOrigin(origins = "*")
@@ -20,11 +23,17 @@ public class WhatsAppWebhookController {
     private final WhatsAppWebhookService service;
     private final WhatsAppBotService botService;
 
+/**
+ * Inyecta las dependencias necesarias del controlador.
+ */
     public WhatsAppWebhookController(WhatsAppWebhookService service, WhatsAppBotService botService) {
         this.service = service;
         this.botService = botService;
     }
 
+    /**
+     * Valida el webhook de WhatsApp durante la verificacion de Meta.
+     */
     @GetMapping
     public ResponseEntity<String> verifyWebhook(
             @RequestParam(name = "hub.mode", required = false) String mode,
@@ -39,6 +48,9 @@ public class WhatsAppWebhookController {
         }
     }
 
+    /**
+     * Recibe y procesa eventos entrantes del webhook de WhatsApp.
+     */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> receiveWebhook(
             @RequestBody String rawBody,
@@ -59,6 +71,9 @@ public class WhatsAppWebhookController {
         }
     }
 
+    /**
+     * Lista los mensajes recientes procesados por el webhook.
+     */
     @GetMapping("/messages")
     public ResponseEntity<List<WhatsAppWebhookService.InboundMessage>> recentMessages(
             @RequestParam(name = "limit", defaultValue = "20") int limit
@@ -66,17 +81,26 @@ public class WhatsAppWebhookController {
         return ResponseEntity.ok(service.lastMessages(limit));
     }
 
+/**
+ * Limpia los mensajes almacenados por el webhook.
+ */
     @DeleteMapping("/messages")
     public ResponseEntity<Void> clearMessages() {
         service.clearMessages();
         return ResponseEntity.noContent().build();
     }
 
+/**
+ * Consulta el estado del controlador o servicio asociado.
+ */
     @GetMapping("/status")
     public ResponseEntity<WhatsAppWebhookService.WebhookStatus> status() {
         return ResponseEntity.ok(service.status());
     }
 
+/**
+ * Consulta el estado del bot asociado al webhook.
+ */
     @GetMapping("/bot/status")
     public ResponseEntity<WhatsAppBotService.BotStatus> botStatus() {
         return ResponseEntity.ok(botService.status());

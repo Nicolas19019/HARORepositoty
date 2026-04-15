@@ -21,14 +21,23 @@ import java.util.NoSuchElementException;
         "https://www.ceaharo.com",
         "https://*.ceaharo.com"
 })
+/**
+ * Controlador REST para ePayco session.
+ */
 public class EpaycoSessionController {
 
     private final EpaycoCheckoutContextService checkoutContextService;
 
+/**
+ * Inyecta las dependencias necesarias del controlador.
+ */
     public EpaycoSessionController(EpaycoCheckoutContextService checkoutContextService) {
         this.checkoutContextService = checkoutContextService;
     }
 
+/**
+ * Crea una sesion de checkout para ePayco.
+ */
     @PostMapping({"/session", "/session/from-flow"})
     public ResponseEntity<?> createSession(@RequestBody Map<String, Object> payload) {
         Map<String, Object> safePayload = payload == null ? Map.of() : payload;
@@ -74,6 +83,9 @@ public class EpaycoSessionController {
         }
     }
 
+/**
+ * Construye la respuesta del checkout para el frontend.
+ */
     private Map<String, Object> buildSessionResponse(EpaycoCheckoutContextService.CheckoutContext ctx) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
@@ -94,6 +106,9 @@ public class EpaycoSessionController {
         return out;
     }
 
+/**
+ * Resuelve el identificador del flujo desde distintos candidatos.
+ */
     private Long resolveFlowId(Object... candidates) {
         if (candidates == null) {
             return null;
@@ -107,6 +122,9 @@ public class EpaycoSessionController {
         return null;
     }
 
+/**
+ * Intenta convertir un candidato textual en identificador de flujo.
+ */
     private Long parseFlowIdCandidate(String raw) {
         String value = safeTrim(raw);
         if (!StringUtils.hasText(value) || !value.matches("^\\d{1,18}$")) {
@@ -120,10 +138,16 @@ public class EpaycoSessionController {
         }
     }
 
+/**
+ * Convierte el valor recibido a texto.
+ */
     private String asString(Object value) {
         return value == null ? "" : String.valueOf(value);
     }
 
+/**
+ * Recorta texto de forma segura.
+ */
     private String safeTrim(String value) {
         return value == null ? "" : value.trim();
     }

@@ -16,6 +16,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * DTO de entrada para actualizar estado y visibilidad de una clase.
+ */
 record ClasePatchEstadoReq(Boolean publicada, Boolean visible) {}
 
 @RestController
@@ -26,6 +29,9 @@ record ClasePatchEstadoReq(Boolean publicada, Boolean visible) {}
         "/api/clases-contenido",
         "/api/clases-modulo"
 })
+/**
+ * Controlador REST para clase aprendizaje.
+ */
 public class ClaseAprendizajeController {
 
     private static final Logger log = LoggerFactory.getLogger(ClaseAprendizajeController.class);
@@ -33,12 +39,18 @@ public class ClaseAprendizajeController {
     private final ClaseAprendizajeService claseService;
     private final ContenidoClaseService contenidoService;
 
+    /**
+     * Inyecta las dependencias necesarias del controlador.
+     */
     public ClaseAprendizajeController(ClaseAprendizajeService claseService,
                                       ContenidoClaseService contenidoService) {
         this.claseService = claseService;
         this.contenidoService = contenidoService;
     }
 
+/**
+ * Lista todas las clases de aprendizaje para administracion.
+ */
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
     public List<ClaseAprendizaje> getAllAdmin() {
@@ -50,6 +62,9 @@ public class ClaseAprendizajeController {
         }
     }
 
+    /**
+     * Lista las clases publicadas disponibles para consulta.
+     */
     @GetMapping("/publicadas")
     @PreAuthorize("hasAnyRole('ADMIN','ESTUDIANTE')")
     public List<ClaseAprendizaje> getPublicadas(@RequestParam(required = false) String curso,
@@ -57,6 +72,9 @@ public class ClaseAprendizajeController {
         return claseService.getPublicadas(curso, area);
     }
 
+/**
+ * Crea un nuevo registro de clase aprendizaje.
+ */
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ClaseAprendizaje> create(@RequestBody ClaseAprendizaje in) {
@@ -64,12 +82,18 @@ public class ClaseAprendizajeController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
+/**
+ * Actualiza un registro existente de clase aprendizaje.
+ */
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ClaseAprendizaje update(@PathVariable String id, @RequestBody ClaseAprendizaje in) {
         return claseService.update(resolveClaseId(id), in);
     }
 
+/**
+ * Actualiza la publicacion y visibilidad de una clase de aprendizaje.
+ */
     @PatchMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ClaseAprendizaje patchEstado(@PathVariable String id, @RequestBody ClasePatchEstadoReq req) {
@@ -79,6 +103,9 @@ public class ClaseAprendizajeController {
         return claseService.patchEstado(resolveClaseId(id), req.publicada(), req.visible());
     }
 
+/**
+ * Elimina un registro de clase aprendizaje.
+ */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> delete(@PathVariable String id) {
@@ -88,6 +115,9 @@ public class ClaseAprendizajeController {
         return ResponseEntity.noContent().build();
     }
 
+/**
+ * Elimina de forma permanente un registro de clase aprendizaje.
+ */
     @DeleteMapping("/{id}/hard")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteHard(@PathVariable String id) {
@@ -99,6 +129,9 @@ public class ClaseAprendizajeController {
     }
 
     // Compatibilidad legacy: algunos front envian PATCH /api/clases/{id}/hidden
+    /**
+     * Actualiza el indicador de ocultamiento de una clase de aprendizaje.
+     */
     @PatchMapping("/{id}/hidden")
     @PreAuthorize("hasRole('ADMIN')")
     public ClaseAprendizaje patchHidden(@PathVariable String id,
@@ -114,6 +147,9 @@ public class ClaseAprendizajeController {
         return claseService.patchEstado(resolveClaseId(id), null, visible);
     }
 
+    /**
+     * Lista los contenidos asociados a una clase de aprendizaje.
+     */
     @GetMapping("/{id}/contenidos")
     @PreAuthorize("hasAnyRole('ADMIN','ESTUDIANTE')")
     public List<ContenidoClase> getContenidos(@PathVariable String id,
@@ -135,6 +171,9 @@ public class ClaseAprendizajeController {
         }
     }
 
+/**
+ * Resuelve el identificador numerico de la clase.
+ */
     private Long resolveClaseId(String raw) {
         String in = raw == null ? "" : raw.trim();
         if (in.matches("\\d+")) {
@@ -150,6 +189,9 @@ public class ClaseAprendizajeController {
         throw new IllegalArgumentException("id de clase invalido: " + raw);
     }
 
+/**
+ * Convierte una URL relativa en una URL absoluta.
+ */
     private String toAbsoluteUrl(String rawUrl, HttpServletRequest request) {
         String url = rawUrl == null ? "" : rawUrl.trim();
         if (url.isBlank()) return url;

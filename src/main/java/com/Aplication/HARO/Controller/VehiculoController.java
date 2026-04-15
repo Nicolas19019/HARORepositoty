@@ -14,6 +14,9 @@ import java.net.URI;
 import java.util.List;
 import java.util.NoSuchElementException;
 
+/**
+ * Controlador REST para vehiculo.
+ */
 @RestController
 @RequestMapping("/api/vehiculos")
 @CrossOrigin(origins = "*")
@@ -22,11 +25,17 @@ public class VehiculoController {
     private final VehiculoService service;
     private final AdminSedeGuard adminSedeGuard;
 
+/**
+ * Inyecta las dependencias necesarias del controlador.
+ */
     public VehiculoController(VehiculoService service, AdminSedeGuard adminSedeGuard) {
         this.service = service;
         this.adminSedeGuard = adminSedeGuard;
     }
 
+/**
+ * Lista los registros de vehiculo.
+ */
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping
     public List<Vehiculo> getAll(Authentication authentication) {
@@ -40,6 +49,9 @@ public class VehiculoController {
         return out;
     }
 
+/**
+ * Consulta un vehiculo por placa respetando las restricciones de sede.
+ */
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/{placa}")
     public Vehiculo getByPlaca(@PathVariable String placa, Authentication authentication) {
@@ -49,9 +61,12 @@ public class VehiculoController {
                     adminSedeGuard.assertCanAccess(adminCtx, v.getSede());
                     return v;
                 })
-                .orElseThrow(() -> new NoSuchElementException("Vehículo no encontrado: " + placa));
+                .orElseThrow(() -> new NoSuchElementException("VehÃ­culo no encontrado: " + placa));
     }
 
+/**
+ * Crea un nuevo registro de vehiculo.
+ */
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<Vehiculo> create(@RequestBody Vehiculo v, Authentication authentication) {
@@ -61,6 +76,9 @@ public class VehiculoController {
         return ResponseEntity.created(URI.create("/api/vehiculos/" + created.getPlaca())).body(created);
     }
 
+/**
+ * Actualiza un registro existente de vehiculo.
+ */
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{placa}")
     public Vehiculo update(@PathVariable String placa, @RequestBody Vehiculo v, Authentication authentication) {
@@ -75,6 +93,9 @@ public class VehiculoController {
         return service.updateVehiculo(v);
     }
 
+/**
+ * Elimina un registro de vehiculo.
+ */
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{placa}")
     public ResponseEntity<Void> delete(@PathVariable String placa, Authentication authentication) {

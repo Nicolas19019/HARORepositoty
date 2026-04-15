@@ -18,6 +18,9 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Map;
 
+/**
+ * Controlador REST para estudiante.
+ */
 @RestController
 @RequestMapping("/api/estudiantes")
 @CrossOrigin(origins = "*")
@@ -28,6 +31,9 @@ public class EstudianteController {
 	private final EstudianteModuloAccesoService estudianteModuloAccesoService;
 	private final AdminSedeGuard adminSedeGuard;
 
+	/**
+	 * Inyecta las dependencias necesarias del controlador.
+	 */
 	public EstudianteController(EstudianteService service,
 			VerificationService verificationService,
 			EstudianteModuloAccesoService estudianteModuloAccesoService,
@@ -38,8 +44,14 @@ public class EstudianteController {
 		this.adminSedeGuard = adminSedeGuard;
 	}
 
+	/**
+	 * DTO de entrada para registro modulo.
+	 */
 	public record RegistroModuloRequest(String email, String code, String password, String usuario, String origen) {}
 
+/**
+ * Lista los registros de estudiante.
+ */
 	@GetMapping
 	@PreAuthorize("hasRole('ADMIN')")
 	public List<Estudiante> getAll(Authentication authentication) {
@@ -53,6 +65,9 @@ public class EstudianteController {
 		return out;
 	}
 
+/**
+ * Obtiene un registro de estudiante por su identificador.
+ */
 	@GetMapping("/{id}")
 	@PreAuthorize("hasRole('ADMIN')")
 	public Estudiante getById(@PathVariable long id, Authentication authentication) { // <-- long
@@ -63,6 +78,9 @@ public class EstudianteController {
 		return e;
 	}
 
+/**
+ * Crea un nuevo registro de estudiante.
+ */
 	@PostMapping
 	@PreAuthorize("hasRole('ADMIN')")
 	public ResponseEntity<Estudiante> create(@RequestBody Estudiante e, Authentication authentication) {
@@ -73,6 +91,9 @@ public class EstudianteController {
 		return ResponseEntity.created(URI.create("/api/estudiantes/" + created.getId())).body(created);
 	}
 
+/**
+ * Registra el acceso del estudiante al modulo.
+ */
 	@PostMapping("/registro-modulo")
 	public ResponseEntity<?> registroModulo(@RequestBody RegistroModuloRequest req) {
 		String email = req == null ? null : req.email();
@@ -106,6 +127,9 @@ public class EstudianteController {
 		return ResponseEntity.ok(body);
 	}
 
+/**
+ * Actualiza un registro existente de estudiante.
+ */
 	@PutMapping("/{id}")
 	@PreAuthorize("hasRole('ADMIN')")
 	public Estudiante update(@PathVariable long id, @RequestBody Estudiante e, Authentication authentication) {
@@ -119,6 +143,9 @@ public class EstudianteController {
 		return service.updateEstudiante(id, e);
 	}
 
+	/**
+	 * Actualiza la foto de perfil de un estudiante.
+	 */
 	@PatchMapping("/{id}/foto-perfil")
 	@PreAuthorize("hasRole('ADMIN')")
 	public Estudiante updateFotoPerfil(@PathVariable long id,
@@ -136,6 +163,9 @@ public class EstudianteController {
 		return service.updateEstudiante(id, patch);
 	}
 
+	/**
+	 * Actualiza la marca de examen teorico aprobado del estudiante.
+	 */
 	@PatchMapping("/{id}/aprobo-examen-teorico")
 	@PreAuthorize("hasRole('ADMIN')")
 	public Estudiante updateAproboExamenTeorico(@PathVariable long id,
@@ -153,6 +183,9 @@ public class EstudianteController {
 		return service.updateEstudiante(id, patch);
 	}
 
+/**
+ * Elimina un registro de estudiante.
+ */
 	@DeleteMapping("/{id}")
 	@PreAuthorize("hasRole('ADMIN')")
 	public ResponseEntity<Void> delete(@PathVariable long id, Authentication authentication) { // <-- long
@@ -164,30 +197,45 @@ public class EstudianteController {
 		return ResponseEntity.noContent().build();
 	}
 
+/**
+ * Consulta un estudiante a partir de su numero de documento.
+ */
 	@GetMapping("/por-documento/{numeroDocumento}")
 	public ResponseEntity<?> getPorDocumento(@PathVariable String numeroDocumento) {
 		return service.buscarPorNumeroDocumento(numeroDocumento).<ResponseEntity<?>>map(ResponseEntity::ok)
 				.orElseGet(() -> ResponseEntity.notFound().build());
 	}
 
+/**
+ * Verifica si ya existe un estudiante con el documento indicado.
+ */
 	@RequestMapping(value = "/por-documento/{numeroDocumento}/existe", method = RequestMethod.HEAD)
 	public ResponseEntity<Void> existePorDocumento(@PathVariable String numeroDocumento) {
 		return service.existePorNumeroDocumento(numeroDocumento) ? ResponseEntity.ok().build()
 				: ResponseEntity.notFound().build();
 	}
 
+/**
+ * Verifica si ya existe un estudiante con el correo indicado.
+ */
 	@RequestMapping(value = "/por-correo/{email}/existe", method = RequestMethod.HEAD)
 	public ResponseEntity<Void> existePorCorreo(@PathVariable String email) {
 		return service.existePorCorreo(email) ? ResponseEntity.ok().build()
 				: ResponseEntity.notFound().build();
 	}
 
+/**
+ * Consulta un estudiante a partir de su correo.
+ */
 	@GetMapping("/por-correo/{email}")
 	public ResponseEntity<?> getPorCorreo(@PathVariable String email) {
 		return service.buscarPorCorreo(email).<ResponseEntity<?>>map(ResponseEntity::ok)
 				.orElseGet(() -> ResponseEntity.notFound().build());
 	}
 
+/**
+ * Obtiene el perfil del estudiante autenticado.
+ */
 	@GetMapping("/me")
 	public ResponseEntity<?> getPerfilPropio(Authentication authentication) {
 		if (authentication == null || !authentication.isAuthenticated()) {
@@ -195,7 +243,7 @@ public class EstudianteController {
 		}
 		Object principal = authentication.getPrincipal();
 		if (!(principal instanceof DetallesUsuarioAplicacion ud)) {
-			return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token inválido");
+			return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Token invÃ¡lido");
 		}
 		if (!"ESTUDIANTE".equalsIgnoreCase(ud.getRol())) {
 			return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Este endpoint solo aplica para estudiantes");
@@ -204,6 +252,9 @@ public class EstudianteController {
 				.orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body("Estudiante no encontrado"));
 	}
 
+/**
+ * Expone los campos requeridos para el registro de estudiantes.
+ */
 	@GetMapping("/campos-requeridos")
 	public Map<String, Object> camposRequeridos() {
 		Map<String, Object> out = new LinkedHashMap<>();
@@ -218,9 +269,9 @@ public class EstudianteController {
 		out.put("soloLectura", List.of("id", "fechaCreacion"));
 
 		Map<String, String> reglas = new LinkedHashMap<>();
-		reglas.put("numeroDocumento", "Debe ser único");
-		reglas.put("email", "Debe ser único");
-		reglas.put("usuario", "Debe ser único");
+		reglas.put("numeroDocumento", "Debe ser Ãºnico");
+		reglas.put("email", "Debe ser Ãºnico");
+		reglas.put("usuario", "Debe ser Ãºnico");
 		reglas.put("contrasena", "Opcional. Si se envia en texto plano, el backend la hashea. Si no se envia al crear, usa un valor por defecto.");
 		reglas.put("tipoPase", "Solo permite: carro, moto, carro,moto");
 		reglas.put("horas", "No puede ser negativo");

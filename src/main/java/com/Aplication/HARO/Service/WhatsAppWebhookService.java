@@ -18,6 +18,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
+/**
+ * Servicio de webhook de WhatsApp.
+ *
+ * Verifica challenge, valida firma opcional, procesa payloads entrantes y
+ * conserva mensajes recientes para diagnostico.
+ */
 @Service
 public class WhatsAppWebhookService {
 
@@ -32,6 +38,9 @@ public class WhatsAppWebhookService {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * DTO de entrada para mensajes entrantes.
+     */
     public record InboundMessage(
             Instant receivedAt,
             String messageId,
@@ -40,12 +49,18 @@ public class WhatsAppWebhookService {
             String text
     ) {}
 
+    /**
+     * Estado resumido del webhook de WhatsApp.
+     */
     public record WebhookStatus(
             boolean verifyTokenConfigured,
             boolean signatureValidationEnabled,
             int storedMessages
     ) {}
 
+    /**
+     * Devuelve un resumen de estado para consumo administrativo o diagnostico.
+     */
     public WebhookStatus status() {
         return new WebhookStatus(
                 StringUtils.hasText(props.getWebhookVerifyToken()),
@@ -54,6 +69,9 @@ public class WhatsAppWebhookService {
         );
     }
 
+    /**
+     * Verifica el codigo o token recibido y devuelve el resultado de validacion.
+     */
     public String verifyChallenge(String mode, String verifyToken, String challenge) {
         if (!"subscribe".equals(mode)) {
             throw new IllegalArgumentException("hub.mode invalido");
@@ -70,6 +88,9 @@ public class WhatsAppWebhookService {
         return challenge;
     }
 
+    /**
+     * Valida la informacion recibida y devuelve el resultado normalizado.
+     */
     public void validateSignatureIfConfigured(String signatureHeader, String rawBody) {
         if (!StringUtils.hasText(props.getAppSecret())) {
             return;
@@ -86,6 +107,9 @@ public class WhatsAppWebhookService {
         }
     }
 
+    /**
+     * Ejecuta la operacion publica del servicio.
+     */
     public List<InboundMessage> processIncomingPayload(String rawBody) {
         if (!StringUtils.hasText(rawBody)) return List.of();
         Map<String, Object> payload;
@@ -127,6 +151,9 @@ public class WhatsAppWebhookService {
         return parsedMessages;
     }
 
+    /**
+     * Ejecuta la operacion publica del servicio.
+     */
     public List<InboundMessage> lastMessages(int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 100));
         List<InboundMessage> out = new ArrayList<>(safeLimit);
@@ -139,10 +166,16 @@ public class WhatsAppWebhookService {
         return out;
     }
 
+    /**
+     * Limpia registros temporales o vencidos asociados al flujo.
+     */
     public void clearMessages() {
         recentMessages.clear();
     }
 
+    /**
+     * Persiste los cambios auxiliares generados por el servicio.
+     */
     private void storeMessage(InboundMessage message) {
         recentMessages.addFirst(message);
         while (recentMessages.size() > MAX_STORED_MESSAGES) {
@@ -150,6 +183,9 @@ public class WhatsAppWebhookService {
         }
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String extractMessageText(Map<?, ?> msg, String type) {
         if ("text".equals(type)) {
             return nestedString(msg, "text", "body");
@@ -171,6 +207,9 @@ public class WhatsAppWebhookService {
         return null;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String nestedString(Map<?, ?> root, String... path) {
         Object current = root;
         for (String key : path) {
@@ -181,14 +220,23 @@ public class WhatsAppWebhookService {
         return asString(current);
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String asString(Object v) {
         return v == null ? null : v.toString();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trim(String s) {
         return s == null ? "" : s.trim();
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String hmacSha256Hex(String secret, String body) {
         try {
             Mac hmac = Mac.getInstance("HmacSHA256");

@@ -7,6 +7,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * Controlador REST para google calendar.
+ */
 @RestController
 @RequestMapping("/api/calendar")
 @CrossOrigin(origins = "*")
@@ -14,10 +17,16 @@ public class GoogleCalendarController {
 
     private final GoogleCalendarService service;
 
+/**
+ * Inyecta las dependencias necesarias del controlador.
+ */
     public GoogleCalendarController(GoogleCalendarService service) {
         this.service = service;
     }
 
+    /**
+     * DTO de entrada para crear reunion.
+     */
     public record CrearReunionReq(
             String titulo,
             String descripcion,
@@ -29,6 +38,9 @@ public class GoogleCalendarController {
             Boolean crearMeet
     ) {}
 
+/**
+ * Crea una reunion en Google Calendar.
+ */
     @PostMapping("/reuniones")
     public ResponseEntity<GoogleCalendarService.ReunionCreada> crearReunion(@RequestBody CrearReunionReq req) {
         boolean crearMeet = req.crearMeet() != null && req.crearMeet();

@@ -11,6 +11,12 @@ import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
+/**
+ * Servicio de profesores.
+ *
+ * Gestiona altas, actualizaciones, validaciones de credenciales y eliminacion
+ * logica de profesores visibles en agenda.
+ */
 @Service
 @Transactional
 public class ProfesorService {
@@ -24,11 +30,17 @@ public class ProfesorService {
   /* ==========================
      Lecturas
      ========================== */
+  /**
+   * Obtiene el listado usado por las vistas administrativas.
+   */
   @Transactional(readOnly = true)
   public List<Profesor> getAllProfesores() {
     return repository.findByVisibleTrueOrderByIdAsc();
   }
 
+  /**
+   * Obtiene el registro solicitado por identificador o criterio de busqueda.
+   */
   @Transactional(readOnly = true)
   public Optional<Profesor> getProfesorById(long id) {
     return repository.findByIdAndVisibleTrue(id);
@@ -37,6 +49,9 @@ public class ProfesorService {
   /* ==========================
      Creación
      ========================== */
+  /**
+   * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+   */
   public Profesor createProfesor(Profesor p) {
     // si tu dominio tiene documento/email/usuario y deben ser únicos, valida aquí:
     if (p.getCedula()!= null && existsByDocumento(p.getCedula())) {
@@ -59,6 +74,9 @@ public class ProfesorService {
   /* ==========================
      Actualización
      ========================== */
+  /**
+   * Actualiza el registro existente con los datos permitidos.
+   */
   public Profesor updateProfesor(long id, Profesor incoming) {
     Profesor db = repository.findById(id)
         .orElseThrow(() -> new NoSuchElementException("Profesor no encontrado: " + id));
@@ -99,6 +117,9 @@ public class ProfesorService {
   /* ==========================
      Eliminación
      ========================== */
+  /**
+   * Elimina o desactiva el registro segun la regla del servicio.
+   */
   public void deleteProfesor(long id) {
     Profesor p = repository.findById(id)
         .orElseThrow(() -> new NoSuchElementException("Profesor no encontrado: " + id));
@@ -109,6 +130,9 @@ public class ProfesorService {
   /* ==========================
      Helpers de unicidad (declara en tu Repository)
      ========================== */
+  /**
+   * Evalua una condicion del flujo y devuelve el resultado.
+   */
   private boolean existsByDocumento(String documento) {
     try {
       // define en el repo: boolean existsByDocumento(String documento);
@@ -118,6 +142,9 @@ public class ProfesorService {
     }
   }
 
+  /**
+   * Evalua una condicion del flujo y devuelve el resultado.
+   */
   private boolean existsByEmailIgnoreCase(String email) {
     try {
       // define en el repo: boolean existsByEmailIgnoreCase(String email);
@@ -127,6 +154,9 @@ public class ProfesorService {
     }
   }
 
+  /**
+   * Evalua una condicion del flujo y devuelve el resultado.
+   */
   private boolean existsByUsuarioIgnoreCase(String usuario) {
     try {
       // define en el repo: boolean existsByUsuarioIgnoreCase(String usuario);
@@ -136,6 +166,9 @@ public class ProfesorService {
     }
   }
 
+  /**
+   * Normaliza el valor recibido para usarlo de forma consistente.
+   */
   private String normalizarCategoria(String raw) {
     String c = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
     if (c.isBlank()) {
@@ -147,6 +180,9 @@ public class ProfesorService {
     return c;
   }
 
+  /**
+   * Normaliza el valor recibido para usarlo de forma consistente.
+   */
   private String normalizarSede(String raw) {
     if (raw == null) return null;
     String sede = raw.trim().replaceAll("\\s+", " ");

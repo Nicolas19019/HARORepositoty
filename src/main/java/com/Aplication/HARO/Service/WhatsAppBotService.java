@@ -15,6 +15,12 @@ import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
+/**
+ * Servicio del bot de WhatsApp.
+ *
+ * Expone estado operativo, procesa mensajes entrantes y delega el flujo
+ * conversacional del chatbot.
+ */
 @Service
 public class WhatsAppBotService {
 
@@ -40,6 +46,9 @@ public class WhatsAppBotService {
         this.waService = waService;
     }
 
+    /**
+     * Estado resumido del bot de WhatsApp.
+     */
     public record BotStatus(
             boolean enabled,
             int processedIds,
@@ -53,6 +62,9 @@ public class WhatsAppBotService {
             String lastImageAttemptUrl
     ) {}
 
+    /**
+     * Devuelve un resumen de estado para consumo administrativo o diagnostico.
+     */
     public BotStatus status() {
         return new BotStatus(
                 props.isBotEnabled(),
@@ -68,6 +80,9 @@ public class WhatsAppBotService {
         );
     }
 
+    /**
+     * Procesa el evento recibido y actualiza el flujo relacionado.
+     */
     public void handleInboundMessages(List<WhatsAppWebhookService.InboundMessage> messages) {
         if (!props.isBotEnabled() || messages == null || messages.isEmpty()) {
             return;
@@ -85,6 +100,9 @@ public class WhatsAppBotService {
         }
     }
 
+    /**
+     * Procesa la informacion recibida y coordina las acciones internas necesarias.
+     */
     private void handleInboundMessage(WhatsAppWebhookService.InboundMessage msg) {
         if (msg == null || !StringUtils.hasText(msg.from())) {
             return;
@@ -132,10 +150,16 @@ public class WhatsAppBotService {
         }
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean isAlreadyProcessed(String messageId) {
         return processedSet.containsKey(messageId);
     }
 
+    /**
+     * Aplica el estado o valor interno correspondiente.
+     */
     private void markProcessed(String messageId) {
         if (!StringUtils.hasText(messageId)) {
             return;
@@ -149,6 +173,9 @@ public class WhatsAppBotService {
         }
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean isFirstContact(String from) {
         if (!StringUtils.hasText(from)) {
             return false;
@@ -166,12 +193,18 @@ public class WhatsAppBotService {
         return true;
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean isEnrollmentStart(String normalized) {
         return "2".equals(normalized)
                 || normalized.contains("matricula")
                 || normalized.contains("inscripcion");
     }
 
+    /**
+     * Envia la notificacion o solicitud asociada al flujo.
+     */
     private void sendEnrollmentWelcomeFlow(String to) {
         String maskedTo = maskPhone(to);
         lastImageAttemptAt = Instant.now();
@@ -212,6 +245,9 @@ public class WhatsAppBotService {
         waService.sendTextMessage(to, normalizeOutboundText("🛡️ ¿Autorizas el tratamiento de tus datos?"));
     }
 
+    /**
+     * Construye el valor auxiliar necesario para el flujo del servicio.
+     */
     private String buildReply(WhatsAppWebhookService.InboundMessage msg) {
         String normalized = normalize(msg.text());
         if (!StringUtils.hasText(normalized)) {
@@ -238,6 +274,9 @@ public class WhatsAppBotService {
         return StringUtils.hasText(fallback) ? fallback : menuText();
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String welcomeText() {
         String configured = trim(props.getBotWelcomeReply());
         if (StringUtils.hasText(configured)) {
@@ -246,6 +285,9 @@ public class WhatsAppBotService {
         return "👋 ¡Bienvenido a CEA HARO! Soy tu asistente virtual. Responde 9 para ver opciones.";
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String menuText() {
         return "🤖 Hola, soy el asistente de CEA HARO.\n"
                 + "Responde con una opción:\n"
@@ -255,6 +297,9 @@ public class WhatsAppBotService {
                 + "4️⃣ Precios";
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalize(String text) {
         String v = trim(text).toLowerCase(Locale.ROOT);
         if (!StringUtils.hasText(v)) return "";
@@ -262,14 +307,23 @@ public class WhatsAppBotService {
         return nfd.replaceAll("\\p{M}+", "");
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trim(String s) {
         return s == null ? "" : s.trim();
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private String hasTextOrNull(String value) {
         return StringUtils.hasText(value) ? value : null;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeOutboundText(String textRaw) {
         String text = trim(textRaw);
         if (!StringUtils.hasText(text)) {
@@ -278,6 +332,9 @@ public class WhatsAppBotService {
         return text;
     }
 
+    /**
+     * Evalua una condicion del flujo y devuelve el resultado.
+     */
     private boolean isSyntheticTestMessageId(String messageId) {
         if (!StringUtils.hasText(messageId)) {
             return false;
@@ -286,12 +343,18 @@ public class WhatsAppBotService {
         return id.startsWith("wamid.test") || id.startsWith("test_");
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizePhone(String from) {
         String cleaned = trim(from).replaceAll("[\\s\\-()]", "");
         if (cleaned.startsWith("+")) cleaned = cleaned.substring(1);
         return cleaned;
     }
 
+    /**
+     * Ejecuta una operacion auxiliar del servicio.
+     */
     private String maskPhone(String phone) {
         String normalized = normalizePhone(phone);
         if (!StringUtils.hasText(normalized) || normalized.length() <= 4) {

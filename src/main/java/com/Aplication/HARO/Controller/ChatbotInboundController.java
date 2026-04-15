@@ -45,6 +45,13 @@ import java.util.regex.Pattern;
 @RestController
 @RequestMapping("/api/chatbot")
 @CrossOrigin(origins = "*")
+/**
+ * Punto de entrada del chatbot inbound.
+ *
+ * Coordina el menu principal, el flujo de matricula, la firma de contratos,
+ * la validacion de estudiante por OTP y las operaciones sobre clases practicas.
+ * La clase tambien conserva el estado temporal de cada conversacion en memoria.
+ */
 public class ChatbotInboundController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatbotInboundController.class);
@@ -129,14 +136,26 @@ public class ChatbotInboundController {
     @Value("${chatbot.booking.duration.minutes:120}")
     private int bookingDurationMinutes;
 
+    /**
+     * Horas minimas de anticipacion para permitir cancelar una clase.
+     */
     @Value("${chatbot.booking.cancel.min-hours:48}")
     private long bookingCancelMinHours;
 
+    /**
+     * URL opcional de imagen para el mensaje inicial de matricula.
+     */
     @Value("${chatbot.enrollment.welcome-image-url:}")
     private String enrollmentWelcomeImageUrl;
+    /**
+     * Define si la respuesta inbound incluye acciones de imagen.
+     */
     @Value("${chatbot.inbound.include-image-action:false}")
     private boolean includeImageActionInInbound;
 
+    /**
+     * Inyecta las dependencias necesarias del controlador.
+     */
     public ChatbotInboundController(ChatbotProcesoService procesoService,
                                     PaymentSyncContextService paymentSyncContextService,
                                     ProspectoService prospectoService,
@@ -149,6 +168,7 @@ public class ChatbotInboundController {
         this.waService = waService;
     }
 
+   /** Mensaje normalizado que llega desde el proveedor de WhatsApp/chat. */
    public record InboundMessage(
         String from,
         String text,
@@ -157,6 +177,7 @@ public class ChatbotInboundController {
         String phoneNumberId,
         Boolean newConversation
 ) {}
+    /** Accion de salida que luego el integrador convierte en mensaje real al usuario. */
     public record BotAction(
             String type,
             String body,
@@ -165,12 +186,17 @@ public class ChatbotInboundController {
             List<String> params
     ) {}
 
+    /** Respuesta agrupada del bot para un turno de conversacion. */
     public record BotResponse(List<BotAction> actions) {}
 
+    /** Datos minimos de matricula capturados en un solo mensaje. */
     private record EnrollmentBasic(String nombre, String documento, String categoria) {}
+    /** Variante reducida para capturar nombre y documento antes de elegir categoria. */
     private record EnrollmentNameDoc(String nombre, String documento) {}
+    /** Fecha y hora ya separadas para agendar una clase. */
     private record BookingSlot(String fecha, String hora) {}
 
+    /** Estados principales del flujo conversacional. */
     enum ChatState {
         MAIN_MENU,
         COURSES_MENU,
@@ -204,6 +230,7 @@ public class ChatbotInboundController {
         DONE
     }
 
+    /** Acciones disponibles dentro del subflujo de estudiante autenticado. */
     enum StudentAction {
         NONE,
         VIEW_CALENDAR,
@@ -212,12 +239,14 @@ public class ChatbotInboundController {
         CANCEL_CLASS
     }
 
+    /** Acciones diferidas cuando el usuario confirma cancelar o salir del flujo. */
     enum EnrollmentAbortAction {
         NONE,
         CANCEL_TO_MENU,
         END_CONVERSATION
     }
 
+    /** Estado en memoria de una conversacion activa. */
     static class SessionData {
         ChatState state = ChatState.MAIN_MENU;
         boolean courseOptionsExpanded = false;
@@ -257,8 +286,17 @@ public class ChatbotInboundController {
         Instant lastSeen = Instant.now();
     }
 
+    /**
+     * Sesiones activas en memoria del chatbot por numero de telefono.
+     */
     private final Map<String, SessionData> sessions = new ConcurrentHashMap<>();
 
+    /**
+     * Endpoint principal del chatbot.
+     *
+     * Resuelve la sesion activa, enruta el mensaje al handler correspondiente
+     * y devuelve la lista de acciones que el canal debe entregar al usuario.
+     */
     @PostMapping(value = "/inbound", produces = MediaType.APPLICATION_JSON_VALUE + ";charset=UTF-8")
     public ResponseEntity<BotResponse> inbound(@RequestBody InboundMessage msg) {
         evictStaleSessions();
@@ -370,6 +408,7 @@ public class ChatbotInboundController {
     // HANDLERS
     // =========================
 
+    /** Atiende las opciones del menu principal y abre el flujo seleccionado. */
     private void handleMainMenu(String text, String from, SessionData session, List<BotAction> actions) {
         String cmd = normalizeCommandText(text);
 
@@ -486,8 +525,8 @@ public class ChatbotInboundController {
                             "📄 *Enlace de contrato*\n\n" +
                                     link + "\n\n" +
                                     buildContractExpiryHint(expiresAt) + "\n\n" +
-                                    "Cuando termines de firmar, responde 1.\n" +
-                                    "Si necesitas el enlace nuevamente, responde 2."
+                                    "✍️ Cuando termines de firmar, responde 1.\n" +
+                                    "🔁 Si necesitas el enlace nuevamente, responde 2."
                     ));
                     actions.add(textMsg("Opciones: 1 | 2 | " + CMD_MENU));
                 } catch (Exception e) {
@@ -503,6 +542,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Atiende el submenu de cursos, categorias y servicios complementarios. */
     private void handleCoursesMenu(String text, String from, SessionData session, List<BotAction> actions) {
         String cmd = normalizeCommandText(text);
         // "ver todas/combos" por compatibilidad
@@ -621,12 +661,14 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Inicia la autorizacion para tratar datos antes de capturar la matricula. */
     private void startEnrollmentAuthorization(SessionData session, List<BotAction> actions) {
         clearEnrollmentData(session);
         session.state = ChatState.ENROLLMENT_DATA_AUTH_WAIT;
         addEnrollmentIntro(actions);
     }
 
+    /** Procesa la respuesta del usuario frente a la autorizacion de datos. */
     private void handleEnrollmentDataAuthWait(String text, SessionData session, List<BotAction> actions) {
         String cmd = normalizeCommandText(text);
         if (isEnrollmentDataAuthRejected(cmd)) {
@@ -650,6 +692,7 @@ public class ChatbotInboundController {
         actions.add(textMsg("Opciones: 1 | 2 | " + CMD_MENU));
     }
 
+    /** Captura nombre y documento del aspirante desde un solo mensaje. */
     private void handleEnrollmentCapture(String from, String rawText, SessionData session, List<BotAction> actions) {
         EnrollmentBasic basic = parseEnrollmentBasicOption(rawText);
 
@@ -663,7 +706,7 @@ public class ChatbotInboundController {
             trackProspectServiceSafe(from, session, prospectServiceFromCategoria(session.categoria));
 
             actions.add(textMsg(
-                    "Paso 2 de 8: envía tu edad en años.\n\n" +
+                    "🎂 Paso 2 de 8: envía tu edad en años.\n\n" +
                             "Ejemplo: 18\n\n" +
                             "Importante: debes tener mínimo 16 años para matricularte."
             ));
@@ -693,6 +736,7 @@ public class ChatbotInboundController {
         actions.add(textMsg("Opciones: 1 | 2 | 3 | 4 | 5 | " + CMD_MENU));
     }
 
+    /** Guarda la categoria elegida y mueve el flujo al siguiente dato obligatorio. */
     private void handleEnrollmentCategorySelect(String from, String text, SessionData session, List<BotAction> actions) {
         String cmd = normalizeCommandText(text);
         if (cmd.isBlank()) {
@@ -724,13 +768,14 @@ public class ChatbotInboundController {
         trackProspectServiceSafe(from, session, prospectServiceFromCategoria(session.categoria));
 
         actions.add(textMsg(
-                "Paso 2 de 8: envía tu edad en años.\n\n" +
+                "🎂 Paso 2 de 8: envía tu edad en años.\n\n" +
                         "Ejemplo: 18\n\n" +
                         "Importante: debes tener mínimo 16 años para matricularte."
         ));
         actions.add(textMsg("Opciones: " + CMD_MENU));
     }
 
+    /** Valida y guarda la edad para completar el perfil de matricula. */
     private void handleEnrollmentAgeCapture(String text, SessionData session, List<BotAction> actions) {
         String digits = trim(text).replaceAll("\\D+", "");
         if (digits.isBlank()) {
@@ -782,12 +827,13 @@ public class ChatbotInboundController {
         session.state = ChatState.ENROLLMENT_EMAIL_CAPTURE;
 
         actions.add(textMsg(
-                "Paso 3 de 8: envia tu correo electronico.\n" +
+                "📧 Paso 3 de 8: envia tu correo electronico.\n" +
                         "Ejemplo: usuario@correo.com"
         ));
         actions.add(textMsg("Opciones: " + CMD_MENU));
     }
 
+    /** Valida y guarda el correo del aspirante. */
     private void handleEnrollmentEmailCapture(String text, SessionData session, List<BotAction> actions) {
         String email = trim(text).toLowerCase(Locale.ROOT);
         if (!EMAIL_PATTERN.matcher(email).matches()) {
@@ -803,12 +849,13 @@ public class ChatbotInboundController {
         session.state = ChatState.ENROLLMENT_PHONE_CAPTURE;
 
         actions.add(textMsg(
-                "Paso 4 de 8: envia tu telefono de contacto.\n" +
+                "📱 Paso 4 de 8: envia tu telefono de contacto.\n" +
                         "Ejemplo: 3001112233 (sin +57)"
         ));
         actions.add(textMsg("Opciones: " + CMD_MENU));
     }
 
+    /** Valida y normaliza el telefono del aspirante. */
     private void handleEnrollmentPhoneCapture(String text, SessionData session, List<BotAction> actions) {
         String digits = trim(text).replaceAll("\\D+", "");
         if (digits.startsWith("00")) {
@@ -832,13 +879,14 @@ public class ChatbotInboundController {
         session.telefono = digits;
         session.state = ChatState.ENROLLMENT_ADDRESS_CAPTURE;
         actions.add(textMsg(
-                "Paso 5 de 8: envia tu direccion de residencia.\n\n" +
+                "🏠 Paso 5 de 8: envia tu direccion de residencia.\n\n" +
                         "Escríbela completa con barrio, nomenclatura o apartamento si aplica.\n\n" +
                         "Ejemplo: Cra 80 #12-45 Apto 302, Av. 1 de Mayo, Bogota"
         ));
         actions.add(textMsg("Opciones: " + CMD_MENU));
     }
 
+    /** Guarda la direccion reportada por el usuario. */
     private void handleEnrollmentAddressCapture(String rawText, SessionData session, List<BotAction> actions) {
         String address = collapseSpaces(rawText);
         if (address.length() < 8) {
@@ -854,14 +902,15 @@ public class ChatbotInboundController {
         session.direccion = address;
         session.state = ChatState.ENROLLMENT_SEDE_CAPTURE;
         actions.add(textMsg(
-                "Paso 6 de 8: selecciona tu sede.\n\n" +
+                "📍 Paso 6 de 8: selecciona tu sede.\n\n" +
                         "1) Av. 1 de Mayo #68D-23 Piso 2\n" +
                         "2) El Eden - Local L2-094A\n\n" +
-                        "Responde con 1 o 2."
+                        "🔢 Responde con 1 o 2."
         ));
         actions.add(textMsg("Opciones: " + CMD_MENU));
     }
 
+    /** Guarda la sede seleccionada y presenta el resumen final del proceso. */
     private void handleEnrollmentSedeCapture(String from, String text, SessionData session, List<BotAction> actions) {
         String sede = resolveSedeSelection(text);
         if (sede.isBlank()) {
@@ -869,7 +918,7 @@ public class ChatbotInboundController {
                     "Debes seleccionar una sede valida.\n\n" +
                             "1) Av. 1 de Mayo\n" +
                             "2) El Eden\n\n" +
-                            "Responde con 1 o 2."
+                            "🔢 Responde con 1 o 2."
             ));
             actions.add(textMsg("Opciones: " + CMD_MENU));
             return;
@@ -902,7 +951,7 @@ public class ChatbotInboundController {
         session.state = ChatState.ENROLLMENT_CONFIRM;
 
         actions.add(textMsg(
-                "Paso 7 de 8: revisa tus datos y confirma.\n\n" +
+                "📝 Paso 7 de 8: revisa tus datos y confirma.\n\n" +
                         "Nombre: " + safe(session.nombre) + "\n" +
                         "Documento: " + safe(session.documento) + "\n" +
                         "Categoria: " + safe(session.categoria) + "\n" +
@@ -918,6 +967,7 @@ public class ChatbotInboundController {
         ));
         actions.add(textMsg("Opciones: 1 | 2 | 3 | " + CMD_MENU));
     }
+    /** Confirma la matricula y abre el paso de pago. */
     private void handleEnrollmentConfirm(String text, SessionData session, List<BotAction> actions) {
         String cmd = normalizeCommandText(text);
         switch (cmd) {
@@ -940,7 +990,7 @@ public class ChatbotInboundController {
                     session.state = ChatState.PAYMENT_METHOD_SELECT;
 
                     actions.add(textMsg(
-                            "Paso 8 de 8: selecciona tu metodo de pago.\n\n" +
+                            "💳 Paso 8 de 8: selecciona tu metodo de pago.\n\n" +
                                     "1) Pagar por ePayco (en linea)\n" +
                                     "2) Pagar en efectivo en la academia\n\n" +
                                     "Responde 1 o 2."
@@ -974,6 +1024,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Decide el medio de pago con el que continuara el aspirante. */
     private void handlePaymentMethodSelect(String text, SessionData session, List<BotAction> actions) {
         String cmd = normalizeCommandText(text);
 
@@ -1024,6 +1075,7 @@ public class ChatbotInboundController {
         actions.add(textMsg("Opciones: " + CMD_MENU));
     }
 
+    /** Define el plan de pago y registra el contexto para retomar el flujo despues. */
     private void handlePaymentPlanSelect(String text, SessionData session, List<BotAction> actions) {
         String cmd = normalizeCommandText(text);
         final String plan;
@@ -1054,7 +1106,7 @@ public class ChatbotInboundController {
             session.state = ChatState.PAYMENT_WAIT;
 
             actions.add(textMsg(
-                    "Paso 8 de 8: realiza el pago para continuar (" + planLabel + ").\n\n" +
+                    "💸 Paso 8 de 8: realiza el pago para continuar (" + planLabel + ").\n\n" +
                             "Enlace de pago:\n" + link + "\n\n" +
                             "Cuando lo realices, vuelve a este chat.\n" +
                             "Si necesitas el enlace otra vez, responde 1.\n" +
@@ -1083,6 +1135,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Mantiene informado al usuario mientras la academia confirma un pago en efectivo. */
     private void handlePaymentCashWait(String text, SessionData session, List<BotAction> actions) {
         String cmd = normalizeCommandText(text);
         if ("1".equals(cmd)) {
@@ -1103,6 +1156,7 @@ public class ChatbotInboundController {
         actions.add(textMsg("Opciones: 1 | " + CMD_MENU));
     }
 
+    /** Mantiene el flujo a la espera de confirmacion del pago electronico. */
     private void handlePaymentWait(String text, SessionData session, List<BotAction> actions) {
         String cmd = normalizeCommandText(text);
 
@@ -1126,7 +1180,7 @@ public class ChatbotInboundController {
         if ("2".equals(cmd)) {
             actions.add(textMsg(
                     "✅ Perfecto.\n\n" +
-                            "Estamos validando tu pago con la pasarela.\n\n" +
+                            "🛰️ Estamos validando tu pago con la pasarela.\n\n" +
                             "📩 Cuando el pago sea confirmado te enviaremos el siguiente paso en este chat."
             ));
             actions.add(textMsg("Opciones: 1 | 2 | " + CMD_MENU));
@@ -1143,6 +1197,7 @@ public class ChatbotInboundController {
         actions.add(textMsg("Opciones: 1 | 2 | " + CMD_MENU));
     }
 
+    /** Extrae datos utiles desde el link de pago para poder sincronizar estados luego. */
     private void capturePaymentContextFromChat(String paymentLink, SessionData session, String source) {
         if (session == null) {
             return;
@@ -1210,6 +1265,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Lee un query param puntual desde una URL sin depender del orden del query string. */
     private String queryParam(String rawUrl, String key) {
         String url = trim(rawUrl);
         String searchKey = trim(key);
@@ -1241,6 +1297,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Decide si el mensaje recibido amerita rehidratar el flujo de matricula desde backend. */
     private boolean shouldSyncEnrollmentFlow(ChatState state, String text) {
         if (state == ChatState.PAYMENT_WAIT) {
             return true;
@@ -1261,6 +1318,7 @@ public class ChatbotInboundController {
                 || "continuar".equals(cmd);
     }
 
+    /** Recompone la sesion despues de un pago o de una reentrada al proceso. */
     private boolean resumeEnrollmentAfterExternalPayment(String from, SessionData session, List<BotAction> actions) {
         Optional<ChatbotMatriculaProceso> procesoOpt = procesoService.findLatestProcesoByPhone(from);
         if (procesoOpt.isEmpty()) {
@@ -1305,7 +1363,7 @@ public class ChatbotInboundController {
                             "Antes de finalizar, selecciona tu sede:\n\n" +
                             "1) Av. 1 de Mayo - Av. 1 de Mayo #68D-23 Piso 2\n" +
                             "2) El Eden - Local L2-094A\n\n" +
-                            "Responde con 1 o 2."
+                            "🔢 Responde con 1 o 2."
             ));
             actions.add(textMsg("Opciones: " + CMD_MENU + ""));
             return true;
@@ -1363,7 +1421,7 @@ public class ChatbotInboundController {
                             "Siguiente paso: firma tus contratos en este enlace:\n" + contractLink + "\n\n" +
                             expiryHint + "\n\n" +
                             "Cuando termines, responde 1 para activar la matrícula.\n" +
-                            "Si necesitas el enlace nuevamente, responde 2."
+                            "🔁 Si necesitas el enlace nuevamente, responde 2."
             ));
         } else {
             actions.add(textMsg(
@@ -1376,6 +1434,7 @@ public class ChatbotInboundController {
         return true;
     }
 
+    /** Controla el estado del paso en el que el usuario debe firmar contratos. */
     private void handleContractWait(String from, String text, SessionData session, List<BotAction> actions) {
         String cmd = normalizeCommandText(text);
 
@@ -1451,13 +1510,14 @@ public class ChatbotInboundController {
                 actions.add(textMsg(
                         "📄 Debes completar la firma del contrato.\n\n" +
                                 "Cuando termines, responde 1.\n" +
-                                "Si necesitas el enlace nuevamente, responde 2."
+                                "🔁 Si necesitas el enlace nuevamente, responde 2."
                 ));
                 actions.add(textMsg("Opciones: 1 | 2 | " + CMD_MENU));
             }
         }
     }
 
+    /** Traduce la opcion numerica de sede al valor que se persiste en el proceso. */
     private String resolveSedeSelection(String text) {
         String t = normalizeCommandText(text);
         if ("1".equals(t)) {
@@ -1469,6 +1529,7 @@ public class ChatbotInboundController {
         return "";
     }
 
+        /** Crea el estudiante al final del flujo cuando la firma ya esta completa. */
         private void handleSedeSelection(String from, String text, SessionData session, List<BotAction> actions) {
 
         String sede = resolveSedeSelection(text);
@@ -1515,6 +1576,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Router principal del submenu de estudiante autenticado. */
     private void handleStudentMenu(String text, SessionData session, List<BotAction> actions) {
         if (session.studentId == null) {
             session.state = ChatState.STUDENT_DOC_CAPTURE;
@@ -1642,6 +1704,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Captura el documento del estudiante y dispara el OTP al correo registrado. */
     private void handleStudentDocCapture(String text, SessionData session, List<BotAction> actions) {
         String doc = trim(text).replaceAll("\\D+", "");
         if (!DOCUMENT_PATTERN.matcher(doc).matches()) {
@@ -1724,6 +1787,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Verifica el OTP y habilita el acceso al menu del estudiante. */
     private void handleStudentOtpVerify(String text, SessionData session, List<BotAction> actions) {
         String code = trim(text);
         if (!OTP_PATTERN.matcher(code).matches()) {
@@ -1765,6 +1829,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Permite escoger el tipo de pase antes de consultar o reservar. */
     private void handleStudentBookingType(String text, SessionData session, List<BotAction> actions) {
         if (session.studentId == null || !session.studentOtpVerified) {
             session.state = ChatState.STUDENT_DOC_CAPTURE;
@@ -1831,6 +1896,7 @@ public class ChatbotInboundController {
         actions.add(textMsg(studentNavigationOptionsText()));
     }
 
+    /** Procesa la fecha y la hora de una reserva de clase practica. */
     private void handleStudentBookingSlot(String rawText, SessionData session, List<BotAction> actions) {
         if (session.studentId == null || !session.studentOtpVerified) {
             session.state = ChatState.STUDENT_DOC_CAPTURE;
@@ -1927,6 +1993,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Permite escoger una clase ya agendada para cancelarla. */
     private void handleStudentCancelClassPick(String text, SessionData session, List<BotAction> actions) {
         if (session.studentId == null || !session.studentOtpVerified) {
             session.state = ChatState.STUDENT_DOC_CAPTURE;
@@ -1998,6 +2065,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Confirma el cierre de sesion del estudiante autenticado. */
     private void handleStudentLogoutConfirm(String text, SessionData session, List<BotAction> actions) {
         String cmd = normalizeCommandText(text);
         if ("si".equals(cmd) || "1".equals(cmd) || "confirmar".equals(cmd)) {
@@ -2057,6 +2125,7 @@ public class ChatbotInboundController {
         actions.add(textMsg("Opciones: 1 | 2 | " + CMD_MENU + ""));
     }
 
+    /** Confirma si el usuario realmente quiere abortar o salir del proceso actual. */
     private void handleEnrollmentAbortConfirm(String from, String text, SessionData session, List<BotAction> actions) {
         EnrollmentAbortAction action = session.pendingEnrollmentAbortAction;
         ChatState returnState = session.pendingEnrollmentAbortReturnState;
@@ -2096,6 +2165,7 @@ public class ChatbotInboundController {
         actions.add(textMsg("Opciones: 1 | 2 | " + CMD_MENU + ""));
     }
 
+    /** Genera el mensaje de reanudacion cuando el usuario retoma una matricula incompleta. */
     private void renderEnrollmentResumePrompt(ChatState state, SessionData session, List<BotAction> actions) {
         if (state == null) {
             actions.add(textMsg(mainMenuText()));
@@ -2118,7 +2188,7 @@ public class ChatbotInboundController {
             }
             case ENROLLMENT_AGE_CAPTURE -> {
                 actions.add(textMsg(
-                        "Paso 2 de 8: envía tu edad en años.\n\n" +
+                        "🎂 Paso 2 de 8: envía tu edad en años.\n\n" +
                                 "Ejemplo: 18\n\n" +
                                 "Importante: debes tener mínimo 16 años para matricularte."
                 ));
@@ -2126,21 +2196,21 @@ public class ChatbotInboundController {
             }
             case ENROLLMENT_EMAIL_CAPTURE -> {
                 actions.add(textMsg(
-                        "Paso 3 de 8: envia tu correo electronico.\n" +
+                        "📧 Paso 3 de 8: envia tu correo electronico.\n" +
                                 "Ejemplo: usuario@correo.com"
                 ));
                 actions.add(textMsg("Opciones: " + CMD_MENU));
             }
             case ENROLLMENT_PHONE_CAPTURE -> {
                 actions.add(textMsg(
-                        "Paso 4 de 8: envia tu telefono de contacto.\n" +
+                        "📱 Paso 4 de 8: envia tu telefono de contacto.\n" +
                                 "Ejemplo: 3001112233 (sin +57)"
                 ));
                 actions.add(textMsg("Opciones: " + CMD_MENU));
             }
             case ENROLLMENT_ADDRESS_CAPTURE -> {
                 actions.add(textMsg(
-                        "Paso 5 de 8: envia tu direccion de residencia.\n\n" +
+                        "🏠 Paso 5 de 8: envia tu direccion de residencia.\n\n" +
                                 "Escribela completa con barrio, nomenclatura o apartamento si aplica.\n\n" +
                                 "Ejemplo: Cra 80 #12-45 Apto 302, Av. 1 de Mayo, Bogota"
                 ));
@@ -2148,16 +2218,16 @@ public class ChatbotInboundController {
             }
             case ENROLLMENT_SEDE_CAPTURE -> {
                 actions.add(textMsg(
-                        "Paso 6 de 8: selecciona tu sede.\n\n" +
+                        "📍 Paso 6 de 8: selecciona tu sede.\n\n" +
                                 "1) Av. 1 de Mayo - Av. 1 de Mayo #68D-23 Piso 2\n" +
                                 "2) El Eden - Local L2-094A\n\n" +
-                                "Responde con 1 o 2."
+                                "🔢 Responde con 1 o 2."
                 ));
                 actions.add(textMsg("Opciones: " + CMD_MENU));
             }
             case ENROLLMENT_CONFIRM -> {
                 actions.add(textMsg(
-                        "Paso 7 de 8: revisa tus datos y confirma.\n\n" +
+                        "📝 Paso 7 de 8: revisa tus datos y confirma.\n\n" +
                                 "Nombre: " + safe(session.nombre) + "\n" +
                                 "Documento: " + safe(session.documento) + "\n" +
                                 "Categoria: " + safe(session.categoria) + "\n" +
@@ -2175,7 +2245,7 @@ public class ChatbotInboundController {
             }
             case PAYMENT_METHOD_SELECT -> {
                 actions.add(textMsg(
-                        "Paso 8 de 8: selecciona tu metodo de pago.\n\n" +
+                        "💳 Paso 8 de 8: selecciona tu metodo de pago.\n\n" +
                                 "1) Pagar por ePayco (en linea)\n" +
                                 "2) Pagar en efectivo en la academia\n\n" +
                                 "Responde 1 o 2."
@@ -2232,13 +2302,23 @@ public class ChatbotInboundController {
     // LINKS / PARSING / FORMAT
     // =========================
 
+    // Zona horaria usada para mostrar vigencia de enlaces de contrato.
+    /**
+     * Zona horaria usada para calcular y mostrar vencimientos contractuales.
+     */
     private static final ZoneId CONTRACT_ZONE = ZoneId.of("America/Bogota");
+    /**
+     * Formato usado para mostrar la expiracion del enlace contractual.
+     */
     private static final DateTimeFormatter CONTRACT_EXPIRES_FMT =
             DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(CONTRACT_ZONE);
 
+    /** Representa el enlace final del usuario y su expiración. */
     private record ContractUserLink(String url, Instant expiresAt) {}
+    /** Contiene los datos mínimos requeridos para validar acceso al contrato. */
     private record ContractAccessParams(String email, String code) {}
 
+    /** Genera un enlace nuevo de contratos y lo registra sobre el proceso activo. */
     private ContractUserLink createAndStoreContractLink(String documento) {
         ChatbotMatriculaProceso proceso = procesoService.findProcesoByDocumento(documento)
                 .orElseThrow(() -> new IllegalStateException("No existe proceso de matrícula para generar contrato"));
@@ -2252,6 +2332,7 @@ public class ChatbotInboundController {
         return new ContractUserLink(userLink, out == null ? null : out.expiresAt());
     }
 
+    /** Verifica si un enlace existente sigue siendo válido sin consumirlo. */
     private VerificationService.ContractAccessResult peekContractLinkAccess(String contractLinkRaw) {
         ContractAccessParams params = parseContractAccessParams(contractLinkRaw);
         if (params.email().isBlank() || params.code().isBlank()) {
@@ -2260,6 +2341,7 @@ public class ChatbotInboundController {
         return verificationService.peekContractAccessCode(params.email(), params.code());
     }
 
+    /** Extrae email y código desde la URL del contrato. */
     private ContractAccessParams parseContractAccessParams(String contractLinkRaw) {
         String link = trim(contractLinkRaw);
         if (link.isBlank()) {
@@ -2271,6 +2353,7 @@ public class ChatbotInboundController {
         );
     }
 
+    /** Lee un parámetro puntual del query string sin depender del frontend. */
     private String readQueryParam(String urlRaw, String keyRaw) {
         String url = trim(urlRaw);
         String key = trim(keyRaw);
@@ -2298,6 +2381,7 @@ public class ChatbotInboundController {
         return "";
     }
 
+    /** Devuelve el texto que informa la vigencia del enlace enviado al usuario. */
     private String buildContractExpiryHint(Instant expiresAt) {
         if (expiresAt == null) {
             return "⏳ Este enlace es temporal. Si se vence, responde 2 para generar otro.";
@@ -2306,6 +2390,7 @@ public class ChatbotInboundController {
         return "⏳ Vigente hasta: " + until + " (hora Colombia). Si se vence, responde 2 para generar otro.";
     }
 
+    /** Convierte el resultado del backend en el enlace final que abre el HTML de contratos. */
     private String buildContractUserLink(VerificationService.ContractLinkResult out) {
         if (out == null) return "";
         String ui = resolveContractUiUrl(out);
@@ -2316,6 +2401,7 @@ public class ChatbotInboundController {
         return link;
     }
 
+    /** Resuelve la URL pública del frontend de contratos a partir de la configuración disponible. */
     private String resolveContractUiUrl(VerificationService.ContractLinkResult out) {
         String ui = normalizeContractUiUrl(contractUiUrl);
         if (!ui.isBlank()) return ui;
@@ -2336,6 +2422,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Distingue entre una URL del backend y una URL del sitio web público. */
     private boolean looksLikeBackendBaseUrl(String raw) {
         String v = trim(raw).toLowerCase(java.util.Locale.ROOT);
         if (v.isBlank()) return false;
@@ -2344,6 +2431,7 @@ public class ChatbotInboundController {
                 || v.matches(".*:\\d{2,5}$");
     }
 
+    /** Decide si el enlace guardado debe regenerarse por expiración o desalineación de UI. */
     private boolean shouldRefreshContractLink(String contractLinkRaw) {
         String contractLink = normalizeStoredContractLink(contractLinkRaw);
         if (contractLink.isBlank()) {
@@ -2367,6 +2455,7 @@ public class ChatbotInboundController {
         return !contractLink.startsWith(expectedUi);
     }
 
+    /** Normaliza la ruta esperada del HTML de contratos. */
     private String normalizeContractUiUrl(String rawUiUrl) {
         String ui = trim(rawUiUrl);
         if (ui.isBlank()) {
@@ -2375,10 +2464,12 @@ public class ChatbotInboundController {
         return ui.replaceFirst("(?i)(?:/Contratos)*/contrato\\.html(?=($|[?#]))", "/Contratos/contrato.html");
     }
 
+    /** Aplica la misma normalización al enlace persistido. */
     private String normalizeStoredContractLink(String rawContractLink) {
         return normalizeContractUiUrl(trim(rawContractLink));
     }
 
+    /** Añade parámetros al enlace final conservando el query ya existente. */
     private String appendQueryParam(String baseUrl, String key, String value) {
         String base = trim(baseUrl);
         if (base.isBlank() || trim(key).isBlank() || trim(value).isBlank()) {
@@ -2391,6 +2482,7 @@ public class ChatbotInboundController {
                 + URLEncoder.encode(trim(value), StandardCharsets.UTF_8);
     }
 
+    /** Interpreta la captura libre con nombre, documento y categoría. */
     private EnrollmentBasic parseEnrollmentBasic(String rawText) {
         Matcher matcher = ENROLLMENT_BASIC_PATTERN.matcher(trim(rawText));
         if (!matcher.matches()) return null;
@@ -2407,6 +2499,7 @@ public class ChatbotInboundController {
         return new EnrollmentBasic(nombre, documento, categoria);
     }
 
+    /** Interpreta la variante guiada donde la categoría llega como opción numérica. */
     private EnrollmentBasic parseEnrollmentBasicOption(String rawText) {
         Matcher matcher = ENROLLMENT_NAME_DOC_OPTION_PATTERN.matcher(trim(rawText));
         if (!matcher.matches()) return null;
@@ -2432,6 +2525,7 @@ public class ChatbotInboundController {
         return new EnrollmentBasic(nombre, documento, categoria);
     }
 
+    /** Extrae solo nombre y documento cuando la categoría se solicita aparte. */
     private EnrollmentNameDoc parseEnrollmentNameDoc(String rawText) {
         Matcher matcher = ENROLLMENT_NAME_DOC_PATTERN.matcher(trim(rawText));
         if (!matcher.matches()) return null;
@@ -2446,6 +2540,7 @@ public class ChatbotInboundController {
         return new EnrollmentNameDoc(nombre, documento);
     }
 
+    /** Valida un mensaje que trae fecha y hora para agendamiento. */
     private BookingSlot parseBookingSlot(String rawText) {
         Matcher matcher = BOOKING_SLOT_PATTERN.matcher(trim(rawText));
         if (!matcher.matches()) return null;
@@ -2462,6 +2557,7 @@ public class ChatbotInboundController {
         return new BookingSlot(fecha, hora);
     }
 
+    /** Convierte una fecha ingresada por el usuario en LocalDate. */
     private LocalDate parseBookingDate(String rawText) {
         String n = normalizeInput(rawText);
         if ("hoy".equals(n)) return LocalDate.now();
@@ -2488,6 +2584,7 @@ public class ChatbotInboundController {
         return null;
     }
 
+    /** Traduce opciones numéricas de horario o una hora escrita manualmente. */
     private LocalTime parseBookingTime(String rawText) {
         String n = normalizeCommandText(rawText);
         return switch (n) {
@@ -2501,6 +2598,7 @@ public class ChatbotInboundController {
         };
     }
 
+    /** Intenta leer una hora manual en formato H:mm. */
     private LocalTime parseHourValue(String rawText) {
         String value = trim(rawText);
         if (value.isBlank()) return null;
@@ -2511,6 +2609,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Construye el resumen de disponibilidad de una fecha específica. */
     private String bookingSlotsAvailabilityText(SessionData session, LocalDate fecha) {
         try {
             Long studentId = session == null ? null : session.studentId;
@@ -2549,6 +2648,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Formatea las clases futuras que el estudiante puede cancelar. */
     private String formatCancelableClasses(List<Clase> clases) {
         if (clases == null || clases.isEmpty()) {
             return "No hay clases futuras para cancelar.";
@@ -2574,11 +2674,13 @@ public class ChatbotInboundController {
         return sb.toString();
     }
 
+    /** Muestra valores monetarios sin decimales innecesarios. */
     private String formatMoney(java.math.BigDecimal value) {
         if (value == null) return "0";
         return value.stripTrailingZeros().toPlainString();
     }
 
+    /** Finaliza el flujo de agendamiento y devuelve el resumen al estudiante. */
     private void completeStudentBooking(LocalDate fecha,
                                         LocalTime hora,
                                         SessionData session,
@@ -2636,6 +2738,7 @@ public class ChatbotInboundController {
         actions.add(textMsg(studentNavigationOptionsText()));
     }
 
+    /** Genera un texto legible con la agenda actual del estudiante. */
     private String formatAgenda(String documento, List<Clase> agenda) {
         if (agenda == null || agenda.isEmpty()) {
             return "📅 No encontramos clases programadas para el documento " + documento + ".";
@@ -2670,6 +2773,7 @@ public class ChatbotInboundController {
     // SESSION MGMT
     // =========================
 
+    /** Elimina sesiones vencidas y recorta el mapa cuando supera el límite permitido. */
     private void evictStaleSessions() {
         Instant cutoff = Instant.now().minus(Duration.ofMinutes(Math.max(1, inactivityTimeoutMinutes)));
         sessions.entrySet().removeIf(entry -> entry.getValue().lastSeen.isBefore(cutoff));
@@ -2685,6 +2789,7 @@ public class ChatbotInboundController {
                 .forEach(sessions::remove);
     }
 
+    /** Regresa la conversación al menú principal conservando solo lo imprescindible. */
     private void resetToMain(SessionData session) {
         session.state = ChatState.MAIN_MENU;
         session.courseOptionsExpanded = false;
@@ -2693,11 +2798,13 @@ public class ChatbotInboundController {
         session.pendingEnrollmentAbortAction = EnrollmentAbortAction.NONE;
     }
 
+    /** Regresa al menú principal y limpia también el acceso del estudiante autenticado. */
     private void resetToMainAndClearStudent(SessionData session) {
         resetToMain(session);
         clearStudentAccessData(session);
     }
 
+    /** Limpia los datos temporales del proceso de matrícula. */
     private void clearEnrollmentData(SessionData session) {
         session.nombre = null;
         session.documento = null;
@@ -2709,6 +2816,7 @@ public class ChatbotInboundController {
         session.sedeSeleccionada = null;
     }
 
+    /** Limpia la identidad y el contexto operativo del estudiante autenticado. */
     private void clearStudentAccessData(SessionData session) {
         session.pendingStudentAction = StudentAction.NONE;
         session.studentId = null;
@@ -2723,6 +2831,7 @@ public class ChatbotInboundController {
         session.studentOtpVerified = false;
         session.pendingStudentLogoutReturnState = null;
     }
+    /** Resume al estudiante cómo funciona el proceso de clases prácticas. */
     private String practicalProcessText() {
         return "Proceso practico:\n" +
                 "1) Tu pago debe estar aprobado y tu contrato firmado.\n" +
@@ -2732,14 +2841,17 @@ public class ChatbotInboundController {
                 "5) Si cancelas con menos de " + Math.max(1, bookingCancelMinHours) + " horas, se aplica multa.";
     }
 
+    /** Detecta el comando global para volver al menú principal. */
     private boolean isMenuCommand(String text) {
         return CMD_MENU.equals(normalizeCommandText(text));
     }
 
+    /** Detecta el comando para regresar dentro del flujo de estudiante. */
     private boolean isStudentBackCommand(String text) {
         return CMD_BACK.equals(normalizeCommandText(text));
     }
 
+    /** Indica si el estado actual pertenece al módulo de estudiantes. */
     private boolean isStudentState(ChatState state) {
         if (state == null) return false;
         return switch (state) {
@@ -2754,6 +2866,7 @@ public class ChatbotInboundController {
         };
     }
 
+    /** Define en qué pasos conviene pedir confirmación antes de abortar matrícula. */
     private boolean shouldConfirmEnrollmentAbort(ChatState state) {
         if (state == null) return false;
         return switch (state) {
@@ -2773,14 +2886,17 @@ public class ChatbotInboundController {
         };
     }
 
+    /** Evalúa si el usuario autorizó el tratamiento de datos. */
     private boolean isEnrollmentDataAuthAccepted(String cmd) {
         return "si".equals(cmd) || "1".equals(cmd);
     }
 
+    /** Evalúa si el usuario rechazó el tratamiento de datos. */
     private boolean isEnrollmentDataAuthRejected(String cmd) {
         return "no".equals(cmd) || "2".equals(cmd);
     }
 
+    /** Normaliza texto libre para compararlo como comando del bot. */
     private String normalizeCommandText(String text) {
         String lower = trim(text).toLowerCase(Locale.ROOT);
         if (lower.isBlank()) {
@@ -2793,24 +2909,28 @@ public class ChatbotInboundController {
         return collapseSpaces(withoutDiacritics.replaceAll("[^a-z0-9\\s]+", " "));
     }
 
+    /** Revisa si la sesión ya superó el tiempo máximo de inactividad. */
     private boolean isConversationExpired(SessionData session, Instant now) {
         if (session == null || now == null) return false;
         long minutes = Math.max(1, inactivityTimeoutMinutes);
         return now.isAfter(session.lastSeen.plus(Duration.ofMinutes(minutes)));
     }
 
+    /** Mensaje estándar cuando la sesión caduca por inactividad. */
     private String inactivityTimeoutText() {
         long minutes = Math.max(1, inactivityTimeoutMinutes);
         return "⏰ Conversación expirada por inactividad (" + minutes + " minutos).\n\n" +
                 "Responde " + CMD_MENU + " para iniciar de nuevo.";
     }
 
+    /** Mensaje estándar cuando la conversación termina de forma explícita. */
     private String conversationEndedText() {
         return "👋 Conversación finalizada.\n\n" +
                 "Gracias por escribir a CEA HARO.\n" +
                 "Si deseas iniciar de nuevo, responde " + CMD_MENU + ".";
     }
 
+    /** Invita al usuario a diligenciar la encuesta opcional de experiencia. */
     private String feedbackSurveyText() {
         return "📋 Encuesta (opcional)\n\n" +
                 "¿Quieres contarnos cómo te fue en el proceso?\n" +
@@ -2819,6 +2939,7 @@ public class ChatbotInboundController {
                 FEEDBACK_FORM_URL;
     }
 
+    /** Personaliza el saludo inicial del menú de estudiante. */
     private String studentGreetingText(String studentName) {
         String displayName = collapseSpaces(trim(studentName));
         if (displayName.isBlank()) {
@@ -2827,10 +2948,12 @@ public class ChatbotInboundController {
         return "👋 Hola " + displayName + ", ¿qué quieres hacer hoy?";
     }
 
+    /** Muestra los atajos de navegación válidos en el módulo de estudiante. */
     private String studentNavigationOptionsText() {
         return "Opciones: " + CMD_BACK + " | " + CMD_MENU;
     }
 
+    /** Construye la confirmación de cierre de sesión del estudiante. */
     private String studentLogoutConfirmText(String studentName) {
         String displayName = collapseSpaces(trim(studentName));
         if (displayName.isBlank()) {
@@ -2843,6 +2966,7 @@ public class ChatbotInboundController {
                 "Responda: 1 (SI) o 2 (NO).";
     }
 
+    /** Construye la confirmación para cancelar matrícula en curso. */
     private String enrollmentAbortConfirmText(boolean endsConversation) {
         if (endsConversation) {
             return "⚠️ ¿Seguro que desea terminar su proceso de matricula y finalizar la conversacion?\n\n" +
@@ -2854,10 +2978,12 @@ public class ChatbotInboundController {
                 "Responda 1 (SI) para confirmar o 2 (NO) para continuar.";
     }
 
+    /** Devuelve el acceso rápido al asesor con mensaje sugerido por defecto. */
     private String advisorContactText() {
         return advisorContactText(null);
     }
 
+    /** Devuelve el acceso rápido al asesor con un mensaje sugerido configurable. */
     private String advisorContactText(String predefinedMessage) {
         String suggestedMessage = buildAdvisorSuggestedMessage(predefinedMessage);
         String link = buildAdvisorLink(predefinedMessage);
@@ -2865,11 +2991,13 @@ public class ChatbotInboundController {
                 "Mensaje sugerido:\n" + suggestedMessage;
     }
 
+    /** Genera el enlace de WhatsApp del asesor con el texto precargado. */
     private String buildAdvisorLink(String predefinedMessage) {
         String suggestedMessage = buildAdvisorSuggestedMessage(predefinedMessage);
         return ADVISOR_WHATSAPP_LINK + "?text=" + URLEncoder.encode(suggestedMessage, StandardCharsets.UTF_8);
     }
 
+    /** Construye el mensaje base que el usuario enviará al asesor. */
     private String buildAdvisorSuggestedMessage(String predefinedMessage) {
         String normalized = collapseSpaces(predefinedMessage);
         String baseMessage = normalized.isBlank()
@@ -2882,6 +3010,7 @@ public class ChatbotInboundController {
     // PROSPECTOS (NO ESTUDIANTE)
     // =========================
 
+    /** Registra consultas de prospectos sin afectar sesiones ya autenticadas como estudiante. */
     private void trackProspectServiceSafe(String from, SessionData session, String servicio) {
         if (from == null || from.isBlank()) return;
         String srv = servicio == null ? "" : servicio.trim();
@@ -2899,6 +3028,7 @@ public class ChatbotInboundController {
         }
     }
 
+    /** Traduce una categoría comercial al código interno usado en prospectos. */
     private String prospectServiceFromCategoria(String categoria) {
         String cat = normalizeCategory(categoria);
         return switch (cat) {
@@ -2917,6 +3047,7 @@ public class ChatbotInboundController {
     // NORMALIZATION HELPERS
     // =========================
 
+    /** Normaliza texto libre para validaciones funcionales. */
     private String normalizeInput(String text) {
         String base = trim(text).toLowerCase(Locale.ROOT);
         if (base.isBlank()) return "";
@@ -2927,6 +3058,7 @@ public class ChatbotInboundController {
         return collapseSpaces(normalized);
     }
 
+    /** Lleva múltiples variantes de escritura a una categoría canónica. */
     private String normalizeCategory(String value) {
         String n = normalizeInput(value)
                 .replace(" ", "")
@@ -2953,6 +3085,7 @@ public class ChatbotInboundController {
         return "A2";
     }
 
+    /** Detecta si un campo supuestamente alfabético trae números. */
     private boolean containsDigit(String value) {
         if (value == null || value.isBlank()) {
             return false;
@@ -2965,10 +3098,12 @@ public class ChatbotInboundController {
         return false;
     }
 
+    /** Reduce espacios repetidos y recorta extremos. */
     private String collapseSpaces(String value) {
         return trim(value).replaceAll("\\s+", " ");
     }
 
+    /** Retorna el primer valor útil dentro de una lista de candidatos. */
     private String firstNotBlank(String... values) {
         if (values == null) {
             return "";
@@ -2982,20 +3117,24 @@ public class ChatbotInboundController {
         return "";
     }
 
+    /** Evita nulos al recortar texto. */
     private String trim(String value) {
         return value == null ? "" : value.trim();
     }
 
+    /** Reemplaza nulos por cadena vacía para respuestas y logs. */
     private String safe(String value) {
         return value == null ? "" : value;
     }
 
+    /** Oculta parcialmente un teléfono antes de enviarlo a logs. */
     private String maskPhone(String phone) {
         String digits = trim(phone).replaceAll("\\D+", "");
         if (digits.length() <= 4) return "****";
         return "*".repeat(digits.length() - 4) + digits.substring(digits.length() - 4);
     }
 
+    /** Oculta parcialmente un correo antes de enviarlo a logs. */
     private String maskEmail(String email) {
         String e = trim(email).toLowerCase(Locale.ROOT);
         int at = e.indexOf('@');
@@ -3003,10 +3142,12 @@ public class ChatbotInboundController {
         return e.charAt(0) + "***" + e.substring(at);
     }
 
+    /** Crea una acción de texto aplicando normalización de salida. */
     private BotAction textMsg(String body) {
         return new BotAction("text", normalizeOutboundText(body), null, null, null);
     }
 
+    /** Ajusta prefijos y formato visual de los mensajes salientes. */
     private String normalizeOutboundText(String textRaw) {
         String text = trim(textRaw);
         if (text.isBlank()) {
@@ -3020,6 +3161,7 @@ public class ChatbotInboundController {
         return fixed;
     }
 
+    /** Crea una acción de imagen solo cuando existe una URL válida. */
     private BotAction imageMsg(String imageUrl) {
         if (imageUrl == null || imageUrl.isBlank()) {
             return null;
@@ -3027,6 +3169,7 @@ public class ChatbotInboundController {
         return new BotAction("image", imageUrl, null, null, null);
     }
 
+    /** Inserta la introducción visual y textual del flujo de matrícula. */
     private void addEnrollmentIntro(List<BotAction> actions) {
         if (includeImageActionInInbound) {
             BotAction image = imageMsg(enrollmentWelcomeImageUrl);
@@ -3047,9 +3190,10 @@ public class ChatbotInboundController {
     // TEXTOS (PLANTILLAS + QUITAR REPETICIÓN DE "CATEGORÍA ...")
     // =========================
 
+    /** Plantilla del menú principal del bot. */
     private String mainMenuText() {
         return "👋 Hola, soy Ha-Rot, asistente virtual de CEA HARO.\n\n" +
-                "¿Qué deseas hacer hoy?\n\n" +
+                "✨ ¿Qué deseas hacer hoy?\n\n" +
                 "1) Nuestros servicios (cursos, refuerzos y recategorización)\n" +
                 "2) Iniciar matrícula\n" +
                 "3) Horarios de atención y sedes\n" +
@@ -3059,9 +3203,10 @@ public class ChatbotInboundController {
                 "✍️ Responde con el número de la opción.";
     }
 
+    /** Plantilla del menú de servicios y cursos disponibles. */
     private String coursesMenuText() {
         return "🧾 Nuestros Servicios\n" +
-                "Selecciona el servicio que deseas conocer o solicitar.\n\n" +
+                "🧭 Selecciona el servicio que deseas conocer o solicitar.\n\n" +
                 "1) 🏍️ Licencia A2\n" +
                 "2) 🚗 Licencia B1\n" +
                 "3) 🚕 Licencia C1\n" +
@@ -3073,9 +3218,10 @@ public class ChatbotInboundController {
                 "✍️ Responde con un número del 1 al 8.";
     }
 
+    /** Variante del menú de servicios usada cuando se necesita reiterar todas las categorías. */
     private String allCategoriesMenuText() {
         return "🧾 Nuestros Servicios\n" +
-                "Selecciona el servicio que deseas conocer o solicitar.\n\n" +
+                "🧭 Selecciona el servicio que deseas conocer o solicitar.\n\n" +
                 "1) 🏍️ Categoría A2\n" +
                 "2) 🚗 Categoría B1\n" +
                 "3) 🚕 Categoría C1\n" +
@@ -3088,6 +3234,7 @@ public class ChatbotInboundController {
     }
 
     // Quitado: "Categoría A2"
+    /** Ficha comercial breve del curso A2. */
     private String courseA2Text() {
         return "🏍️ *Categoría A2*\n\n" +
                 "Para motocicletas de cualquier tipo de cilindraje.\n\n" +
@@ -3101,6 +3248,7 @@ public class ChatbotInboundController {
     }
 
     // Quitado: "Categoría B1"
+    /** Ficha comercial breve del curso B1. */
     private String courseB1Text() {
         return "🚗 *Categoría B1*\n\n" +
                 "Para vehículos de placa amarilla.\n\n" +
@@ -3114,6 +3262,7 @@ public class ChatbotInboundController {
     }
 
     // Quitado: "Categoría C1"
+    /** Ficha comercial breve del curso C1. */
     private String courseC1Text() {
         return "🚕 *Categoría C1*\n\n" +
                 "Para vehículos de placa blanca y amarilla.\n\n" +
@@ -3127,6 +3276,7 @@ public class ChatbotInboundController {
     }
 
     // Quitado: "Categoría A2 y B1"
+    /** Ficha comercial breve del paquete A2 y B1. */
     private String courseA2B1Text() {
         return "🏍️🚗 *Categoría A2 y B1*\n\n" +
                 "Para motocicleta y vehículo particular.\n\n" +
@@ -3141,6 +3291,7 @@ public class ChatbotInboundController {
     }
 
     // Quitado: "Categoría A2, B1 y C1"
+    /** Ficha comercial breve del paquete A2, B1 y C1. */
     private String courseA2B1C1Text() {
         return "🏍️🚗🚕 *Categoría A2, B1 y C1*\n\n" +
                 "Para moto, servicio particular y público.\n\n" +
@@ -3155,6 +3306,7 @@ public class ChatbotInboundController {
     }
 
     // Quitado: título duplicado ("Recategorización..." dos veces)
+    /** Ficha comercial breve de la recategorización B1 a C1. */
     private String courseRecategorizacionText() {
         return "🔄 *Recategorización B1 a C1*\n\n" +
                 "Es para servicio particular B1 a servicio público C1\n\n" +
@@ -3166,6 +3318,7 @@ public class ChatbotInboundController {
                 "⏰ + Certificado 👨🏻‍🎓";
     }
 
+    /** Información de la clase de refuerzo para carro. */
     private String serviceRefuerzoCarroText() {
         return "🚘 *Clase de refuerzo - Carro*\n\n" +
                 "Refuerza tus habilidades al volante 🚘\n\n" +
@@ -3175,6 +3328,7 @@ public class ChatbotInboundController {
                 "✅ Al solicitar, dirígete al carrito para agregar la cantidad de clases que desees.";
     }
 
+    /** Información de la clase de refuerzo para moto. */
     private String serviceRefuerzoMotoText() {
         return "🏍️ *Clase de refuerzo - Moto*\n\n" +
                 "Refuerza tus habilidades de conducción 🏍\n\n" +
@@ -3184,6 +3338,7 @@ public class ChatbotInboundController {
                 "✅ Al solicitar, dirígete al carrito para agregar la cantidad de clases que desees.";
     }
 
+    /** Primer mensaje operativo del flujo de matrícula. */
     private String enrollmentInitialPromptText() {
         return "📝 Perfecto. Vamos a iniciar tu matrícula en CEA HARO.\n\n" +
                 "Para continuar, envíame esta información *en un solo mensaje*:\n\n" +
@@ -3194,8 +3349,9 @@ public class ChatbotInboundController {
                 "Después te mostraré un menú para seleccionar la categoría (A2, B1, C1, A2 y B1, A2, B1 y C1).";
     }
 
+    /** Menú de categorías mostrado durante la captura de matrícula. */
     private String enrollmentCategoryMenuText() {
-        return "📌 Selecciona la categoría que deseas realizar:\n\n" +
+        return "📌 🏁 Selecciona la categoría que deseas realizar:\n\n" +
                 "1) 🏍️ A2\n" +
                 "2) 🚗 B1\n" +
                 "3) 🚕 C1\n" +
@@ -3204,6 +3360,7 @@ public class ChatbotInboundController {
                 "✍️ Responde con un número del 1 al 5.";
     }
 
+    /** Resumen de horarios de atención y sedes. */
     private String infoText() {
         return "📌 *Horarios de Atención*\n\n" +
                 "*🗂️ Administrativo*\n" +
@@ -3227,6 +3384,7 @@ public class ChatbotInboundController {
                 "2) CC El Edén – Local L2-094A";
     }
 
+    /** Menú principal disponible para estudiantes autenticados. */
     private String studentMenuText() {
         return "🎓✨ Soy estudiante CEA HARO\n\n" +
                 "1) Consultar calendario de prácticas\n" +

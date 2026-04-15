@@ -6,6 +6,9 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+/**
+ * Inicializador de arranque para soporte ticket schema.
+ */
 @Component
 public class SoporteTicketSchemaInitializer implements CommandLineRunner {
 

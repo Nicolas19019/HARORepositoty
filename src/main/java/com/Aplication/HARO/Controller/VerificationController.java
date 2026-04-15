@@ -19,6 +19,9 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * Controlador REST para verification.
+ */
 @Validated
 @RestController
 @RequestMapping("/api/verification")
@@ -33,18 +36,30 @@ public class VerificationController {
   // Feature flags (can be overridden via env vars on Cloud Run):
   // - app.contract.complete.use-v2 -> APP_CONTRACT_COMPLETE_USE_V2
   // - app.contract.complete.enable-recovery -> APP_CONTRACT_COMPLETE_ENABLE_RECOVERY
+  /**
+   * Habilita la ruta v2 para finalizar el flujo contractual.
+   */
   @Value("${app.contract.complete.use-v2:true}")
   private boolean contractCompleteUseV2;
 
+  /**
+   * Habilita la recuperacion automatica cuando falla el cierre contractual.
+   */
   @Value("${app.contract.complete.enable-recovery:true}")
   private boolean contractCompleteEnableRecovery;
 
+/**
+ * Inyecta las dependencias necesarias del controlador.
+ */
   public VerificationController(VerificationService svc, EstudianteService estudianteService) {
     this.svc = svc;
     this.estudianteService = estudianteService;
   }
 
   // El body es un JSON string: "user@example.com"
+/**
+ * Envia un codigo de verificacion.
+ */
   @PostMapping("/email/send")
   public ResponseEntity<?> send(@RequestBody String emailRaw) {
     // Dejamos que el service sanee y valide; si esta mal, lanzara IllegalArgumentException
@@ -52,16 +67,28 @@ public class VerificationController {
     return ResponseEntity.ok().build();
   }
 
+/**
+ * Envia el codigo de activacion para el estudiante.
+ */
   @PostMapping("/email/send/student-activation")
   public ResponseEntity<?> sendStudentActivation(@RequestBody String emailRaw) {
     svc.sendStudentActivationEmailVerification(emailRaw);
     return ResponseEntity.ok().build();
   }
 
+  /**
+   * DTO de entrada con correo y codigo de verificacion.
+   */
   public static record VerifyReq(@Email String email, @NotBlank String code) {}
 
+  /**
+   * DTO de entrada para solicitar un enlace de contratos.
+   */
   public static record ContractLinkReq(@Email String email, String baseUrl) {}
 
+/**
+ * Verifica un codigo enviado al usuario.
+ */
   @PostMapping("/email/verify")
   public ResponseEntity<?> verify(@RequestBody VerifyReq req) {
     boolean ok = svc.verifyEmailOtp(req.email(), req.code());
@@ -69,12 +96,18 @@ public class VerificationController {
               : ResponseEntity.badRequest().body("Codigo invalido o vencido");
   }
 
+/**
+ * Genera un enlace de acceso al flujo de contratos.
+ */
   @PostMapping("/contract/link")
   public ResponseEntity<VerificationService.ContractLinkResult> createContractLink(@RequestBody ContractLinkReq req) {
     VerificationService.ContractLinkResult out = svc.createContractVerificationLink(req.email(), req.baseUrl());
     return ResponseEntity.ok(out);
   }
 
+/**
+ * Valida el acceso a un enlace contractual.
+ */
   @PostMapping("/contract/access")
   public ResponseEntity<?> validateContractAccess(@RequestBody VerifyReq req) {
     VerificationService.ContractAccessResult out = svc.validateContractAccessCode(req.email(), req.code());
@@ -110,6 +143,9 @@ public class VerificationController {
     return ResponseEntity.badRequest().body(body);
   }
 
+/**
+ * Marca el flujo contractual como completado.
+ */
 @PostMapping("/contract/complete")
 public ResponseEntity<?> completeContract(@RequestBody VerifyReq req) {
     VerificationService.ContractCompletionResult result;
@@ -165,6 +201,9 @@ public ResponseEntity<?> completeContract(@RequestBody VerifyReq req) {
             : ResponseEntity.badRequest().body(body);
 }
 
+  /**
+   * Recibe y registra un contrato firmado cargado desde el frontend.
+   */
   @PostMapping(value = "/contract/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   public ResponseEntity<?> uploadContractSigned(@RequestParam @Email String email,
                                                 @RequestParam @NotBlank String code,
@@ -190,6 +229,9 @@ public ResponseEntity<?> completeContract(@RequestBody VerifyReq req) {
     }
   }
 
+  /**
+   * Verifica si un enlace contractual sigue siendo valido.
+   */
   @GetMapping("/contract/verify")
   public ResponseEntity<?> verifyContract(@RequestParam @Email String email,
                                           @RequestParam @NotBlank String code) {

@@ -5,6 +5,12 @@ import jakarta.persistence.*;
 import java.time.Instant;
 import java.time.LocalDate;
 
+/**
+ * Progreso academico de un estudiante por modulo.
+ *
+ * Almacena puntajes, avances, tiempos, intentos y banderas de aprobacion para
+ * medir el estado del estudiante dentro del curso.
+ */
 @Entity
 @Table(
         name = "modulo_aprendizaje",
@@ -84,6 +90,9 @@ public class ModuloAprendizaje {
     @Column(name = "actualizado_en", nullable = false)
     private Instant actualizadoEn;
 
+    /**
+     * Inicializa fechas, contadores y banderas por defecto al crear el modulo.
+     */
     @PrePersist
     public void prePersist() {
         Instant now = Instant.now();
@@ -94,6 +103,9 @@ public class ModuloAprendizaje {
         if (favorito == null) favorito = false;
     }
 
+    /**
+     * Actualiza la fecha de modificacion del progreso en el modulo.
+     */
     @PreUpdate
     public void preUpdate() {
         actualizadoEn = Instant.now();

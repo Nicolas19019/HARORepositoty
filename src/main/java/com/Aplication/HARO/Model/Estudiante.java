@@ -7,6 +7,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDate;
 import java.time.ZoneId;
 
+/**
+ * Estudiante matriculado en la academia.
+ *
+ * Centraliza datos personales, credenciales, categoria, sede y estado visible
+ * para consultas administrativas y acceso del estudiante.
+ */
 @Entity
 @Table(name = "estudiante", indexes = {
 		@Index(name = "idx_estudiante_numdoc", columnList = "numero_documento", unique = true) })
@@ -15,7 +21,7 @@ public class Estudiante {
 	@Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_estudiante")
-    @JsonProperty(access = JsonProperty.Access.READ_ONLY) // <-- evita que el cliente setee
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
 	private Long id;
 
 	@Column(name = "consecutivo")
@@ -38,7 +44,7 @@ public class Estudiante {
 	@Column(name = "horas")
 	private Integer horas;
 	@Column(name = "tipo_pase", length = 20)
-	private String tipoPase; // valores permitidos: carro, moto, carro,moto
+	private String tipoPase; // carro, moto o carro,moto
 	@Column(name = "aprobo_examen_teorico")
 	private Boolean aproboExamenTeorico = false;
 	@Column(name = "telefono")
@@ -254,6 +260,9 @@ public class Estudiante {
 		this.aproboExamenTeorico = aproboExamenTeorico;
 	}
 
+	/**
+	 * Normaliza visibilidad y asigna fecha de creacion local al crear el estudiante.
+	 */
 	@PrePersist
 	public void onCreate() {
 		if (visible == null) visible = true;
@@ -262,6 +271,9 @@ public class Estudiante {
 		}
 	}
 
+	/**
+	 * Evita que la visibilidad quede nula cuando el registro se actualiza.
+	 */
 	@PreUpdate
 	public void onUpdate() {
 		if (visible == null) visible = true;

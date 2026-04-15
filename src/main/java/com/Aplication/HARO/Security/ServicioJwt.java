@@ -12,6 +12,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.UUID;
 
+/**
+ * Servicio para emitir y validar tokens JWT.
+ *
+ * Construye tokens de acceso y refresco firmados con HS256, extrae claims y
+ * valida vigencia contra el usuario autenticado.
+ */
 @Service
 public class ServicioJwt {
 
@@ -30,7 +36,7 @@ public class ServicioJwt {
     if (secreto.startsWith("base64:")) {
       raw = Decoders.BASE64.decode(secreto.substring("base64:".length()));
     } else {
-      raw = secreto.getBytes(StandardCharsets.UTF_8); // recomienda ≥32 bytes reales
+      raw = secreto.getBytes(StandardCharsets.UTF_8); // recomendado: minimo 32 bytes reales
     }
     this.llave = Keys.hmacShaKeyFor(raw);
     this.milisAcceso = minutosAcceso * 60_000L;
@@ -38,7 +44,9 @@ public class ServicioJwt {
     this.emisor = emisor;
   }
 
-  // ACCESS: typ=access + jti; incluye rol/uid si se pasan
+  /**
+   * Emite un token de acceso con tipo, jti, rol y uid opcionales.
+   */
   public String emitirTokenAcceso(String login, String rol, Long uid, String jti) {
     long ahora = System.currentTimeMillis();
     JwtBuilder b = Jwts.builder()
@@ -55,7 +63,9 @@ public class ServicioJwt {
     return b.compact();
   }
 
-  // REFRESH: typ=refresh + jti
+  /**
+   * Emite un token de refresco para renovar la sesion.
+   */
   public String emitirTokenRefresco(String login) {
     long ahora = System.currentTimeMillis();
     return Jwts.builder()
@@ -69,15 +79,24 @@ public class ServicioJwt {
         .compact();
   }
 
+  /**
+   * Valida la firma del token y devuelve sus claims.
+   */
   public Claims claims(String token) {
     return Jwts.parserBuilder().setSigningKey(llave).build().parseClaimsJws(token).getBody();
   }
 
+  /**
+   * Extrae el subject del token o null si el token no es valido.
+   */
   public String extraerLogin(String token) {
     try { return claims(token).getSubject(); }
     catch (JwtException | IllegalArgumentException e) { return null; }
   }
 
+  /**
+   * Confirma que el token pertenezca al usuario y no este vencido.
+   */
   public boolean tokenValido(String token, org.springframework.security.core.userdetails.UserDetails user) {
     try {
       Claims c = claims(token);

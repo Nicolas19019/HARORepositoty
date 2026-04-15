@@ -6,6 +6,9 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+/**
+ * Inicializador de arranque para QR scan schema.
+ */
 @Component
 public class QrScanSchemaInitializer implements CommandLineRunner {
 

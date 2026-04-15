@@ -10,6 +10,12 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
+/**
+ * Servicio de clases del modulo de aprendizaje.
+ *
+ * Administra publicacion, visibilidad, filtros por curso y area, y eliminacion
+ * logica o fisica de clases academicas.
+ */
 @Service
 @Transactional
 public class ClaseAprendizajeService {
@@ -24,11 +30,17 @@ public class ClaseAprendizajeService {
         this.repository = repository;
     }
 
+    /**
+     * Obtiene el listado usado por las vistas administrativas.
+     */
     @Transactional(readOnly = true)
     public List<ClaseAprendizaje> getAllAdmin() {
         return repository.findAllByOrderByIdDesc();
     }
 
+    /**
+     * Ejecuta la operacion publica del servicio.
+     */
     @Transactional(readOnly = true)
     public List<ClaseAprendizaje> getPublicadas(String curso, String area) {
         String cursoNorm = trim(curso);
@@ -48,6 +60,9 @@ public class ClaseAprendizajeService {
         return repository.findByPublicadaTrueAndVisibleTrueOrderByFechaPublicacionDescIdDesc();
     }
 
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     public ClaseAprendizaje create(ClaseAprendizaje in) {
         if (in == null) throw new IllegalArgumentException("La clase es requerida");
         in.setId(null);
@@ -55,6 +70,9 @@ public class ClaseAprendizajeService {
         return repository.save(in);
     }
 
+    /**
+     * Actualiza el registro existente con los datos permitidos.
+     */
     public ClaseAprendizaje update(Long id, ClaseAprendizaje in) {
         if (in == null) throw new IllegalArgumentException("La clase es requerida");
         ClaseAprendizaje db = repository.findById(id)
@@ -72,6 +90,9 @@ public class ClaseAprendizajeService {
         return repository.save(db);
     }
 
+    /**
+     * Actualiza el registro existente con los datos permitidos.
+     */
     public ClaseAprendizaje patchEstado(Long id, Boolean publicada, Boolean visible) {
         ClaseAprendizaje db = repository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Clase no encontrada: " + id));
@@ -82,6 +103,9 @@ public class ClaseAprendizajeService {
         return repository.save(db);
     }
 
+    /**
+     * Elimina o desactiva el registro segun la regla del servicio.
+     */
     public void deleteLogico(Long id) {
         ClaseAprendizaje db = repository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Clase no encontrada: " + id));
@@ -91,6 +115,9 @@ public class ClaseAprendizajeService {
         repository.save(db);
     }
 
+    /**
+     * Elimina o desactiva el registro segun la regla del servicio.
+     */
     public void deleteFisico(Long id) {
         ClaseAprendizaje db = repository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Clase no encontrada: " + id));
@@ -98,12 +125,18 @@ public class ClaseAprendizajeService {
         repository.flush();
     }
 
+    /**
+     * Obtiene la informacion requerida o lanza excepcion si no existe.
+     */
     @Transactional(readOnly = true)
     public ClaseAprendizaje requireById(Long id) {
         return repository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Clase no encontrada: " + id));
     }
 
+    /**
+     * Valida la informacion recibida antes de continuar el proceso.
+     */
     private void validarYNormalizar(ClaseAprendizaje c, boolean creando) {
         String curso = trim(c.getCurso());
         String area = normalizeAreaRequired(c.getArea());
@@ -127,6 +160,9 @@ public class ClaseAprendizajeService {
         }
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeAreaRequired(String area) {
         String norm = trim(area).toLowerCase();
         if (norm.isBlank()) {
@@ -138,6 +174,9 @@ public class ClaseAprendizajeService {
         return norm;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String normalizeAreaOptional(String area) {
         String norm = trim(area).toLowerCase();
         if (norm.isBlank()) return "";
@@ -147,10 +186,16 @@ public class ClaseAprendizajeService {
         return norm;
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trim(String s) {
         return s == null ? "" : s.trim();
     }
 
+    /**
+     * Normaliza el valor recibido para usarlo de forma consistente.
+     */
     private String trimToNull(String s) {
         String out = trim(s);
         return out.isBlank() ? null : out;

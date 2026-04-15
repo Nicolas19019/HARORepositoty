@@ -25,6 +25,12 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.List;
 
+/**
+ * Configuracion principal de Spring Security.
+ *
+ * Define el encoder de contrasenas, autenticacion combinada, filtro JWT, CORS,
+ * respuestas 401 y la cadena de filtros HTTP de la API.
+ */
 @Configuration
 @EnableMethodSecurity
 public class SeguridadConfig {
@@ -33,30 +39,29 @@ public class SeguridadConfig {
      Helpers
      =========================== */
 
-  // ¿Es HEX (solo [0-9A-Fa-f]) después de normalizar?
+  // Verifica si el texto es HEX despues de normalizarlo.
   private static boolean isHexEvenLength(String s) {
     if (s == null) return false;
     String norm = s.trim();
-    // quita prefijo 0x y espacios internos
     norm = norm.replaceFirst("(?i)^0x", "");
     norm = norm.replaceAll("\\s+", "");
     if ((norm.length() & 1) != 0) return false;
     return norm.matches("[0-9A-Fa-f]*");
   }
 
-  // Decodifica HEX tolerante (0x, espacios). Lanza IllegalArgumentException si no es HEX válido.
+  // Decodifica HEX tolerante a prefijo 0x y espacios.
   private static byte[] hexToBytesStrict(String s) {
     if (s == null) throw new IllegalArgumentException("HEX nulo");
     String hex = s.trim().replaceFirst("(?i)^0x", "").replaceAll("\\s+", "");
     if ((hex.length() & 1) != 0 || !hex.matches("[0-9A-Fa-f]*")) {
-      throw new IllegalArgumentException("HEX inválido");
+      throw new IllegalArgumentException("HEX invalido");
     }
     int len = hex.length();
     byte[] out = new byte[len / 2];
     for (int i = 0; i < len; i += 2) {
       int hi = Character.digit(hex.charAt(i), 16);
       int lo = Character.digit(hex.charAt(i + 1), 16);
-      if (hi < 0 || lo < 0) throw new IllegalArgumentException("HEX inválido");
+      if (hi < 0 || lo < 0) throw new IllegalArgumentException("HEX invalido");
       out[i / 2] = (byte) ((hi << 4) + lo);
     }
     return out;
@@ -76,13 +81,16 @@ public class SeguridadConfig {
   }
 
   /* ===========================================================
-     Encoder: BCrypt(  Base64( SHA256( clientInput + PEPPER ) )  )
+     Encoder: BCrypt( Base64( SHA256( clientInput + PEPPER ) ) )
      - clientInput puede ser:
-       a) HEX de SHA-256(password)  -> lo decodificamos (modo "legacy/cliente")
-       b) password en texto plano   -> le hacemos SHA-256 aquí (modo "tolerante")
+       a) HEX de SHA-256(password) -> lo decodificamos (modo legacy/cliente)
+       b) password en texto plano -> le hacemos SHA-256 aqui (modo tolerante)
      - PEPPER (texto) se concatena en bytes UTF-8
      =========================================================== */
 
+  /**
+   * Crea el encoder principal: normaliza entrada, aplica pepper y guarda BCrypt.
+   */
   @Bean
   @Primary
   public PasswordEncoder passwordEncoder(@Value("${app.auth.pepper:}") String pepper) {
@@ -148,6 +156,9 @@ public class SeguridadConfig {
      Auth & Security
      =========================== */
 
+  /**
+   * Conecta el servicio de usuarios combinado con el encoder principal.
+   */
   @Bean
   public DaoAuthenticationProvider authenticationProvider(ServicioUsuariosCombinado uds,
                                                           PasswordEncoder encoder) {
@@ -158,16 +169,25 @@ public class SeguridadConfig {
     return p;
   }
 
+  /**
+   * Expone el AuthenticationManager configurado por Spring Security.
+   */
   @Bean
   public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
     return cfg.getAuthenticationManager();
   }
 
+  /**
+   * Crea el filtro JWT que se instala antes del filtro de usuario y contrasena.
+   */
   @Bean
   public FiltroJwt filtroJwt(ServicioJwt servicioJwt, ServicioUsuariosCombinado usuarios) {
     return new FiltroJwt(servicioJwt, usuarios);
   }
 
+  /**
+   * Configura CORS para el sitio publico, pagos, contratos y desarrollo local.
+   */
   @Bean
   public CorsConfigurationSource corsConfigurationSource() {
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -200,13 +220,16 @@ public class SeguridadConfig {
     source.registerCorsConfiguration("/response", siteCors);
     source.registerCorsConfiguration("/confirmation", siteCors);
 
-    // La pagina de contratos (Prueba) valida y completa firma contra estos endpoints.
+    // La pagina de contratos valida y completa firma contra estos endpoints.
     source.registerCorsConfiguration("/api/verification/contract/**", siteCors);
 
     source.registerCorsConfiguration("/**", localCors);
     return source;
   }
 
+  /**
+   * Respuesta uniforme para solicitudes no autenticadas.
+   */
   @Bean
   public AuthenticationEntryPoint api401EntryPoint() {
     return (req, res, ex) -> {
@@ -216,6 +239,9 @@ public class SeguridadConfig {
     };
   }
 
+  /**
+   * Define la cadena HTTP stateless y registra el filtro JWT.
+   */
   @Bean
   public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                  DaoAuthenticationProvider dao,

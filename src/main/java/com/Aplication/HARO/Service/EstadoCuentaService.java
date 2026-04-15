@@ -12,6 +12,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.Aplication.HARO.Model.EstadoCuenta;
 import com.Aplication.HARO.Repository.EstadoCuentaRepository;
 
+/**
+ * Servicio de estado de cuenta.
+ *
+ * Administra saldos, pagos acumulados, multas y validaciones financieras antes
+ * de persistir el estado contable del estudiante.
+ */
 @Service
 public class EstadoCuentaService {
 
@@ -21,16 +27,25 @@ public class EstadoCuentaService {
         this.repository = repository;
     }
 
+    /**
+     * Obtiene el listado usado por las vistas administrativas.
+     */
     @Transactional(readOnly = true)
     public List<EstadoCuenta> getAllEstadosCuenta() {
         return repository.findAll();
     }
 
+    /**
+     * Obtiene el registro solicitado por identificador o criterio de busqueda.
+     */
     @Transactional(readOnly = true)
     public Optional<EstadoCuenta> getEstadoCuentaById(Long id) {
         return repository.findById(id);
     }
 
+    /**
+     * Crea o registra la informacion recibida aplicando las validaciones del servicio.
+     */
     @Transactional
     public EstadoCuenta createEstadoCuenta(EstadoCuenta e) {
         // Normaliza id nulo para INSERT
@@ -55,6 +70,9 @@ public class EstadoCuentaService {
         }
     }
 
+    /**
+     * Actualiza el registro existente con los datos permitidos.
+     */
     @Transactional
     public EstadoCuenta updateEstadoCuenta(Long id, EstadoCuenta e) {
         EstadoCuenta actual = repository.findById(id)
@@ -93,6 +111,9 @@ public class EstadoCuentaService {
         }
     }
 
+    /**
+     * Elimina o desactiva el registro segun la regla del servicio.
+     */
     @Transactional
     public void deleteEstadoCuenta(Long id) {
         try {

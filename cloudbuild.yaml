@@ -46,9 +46,10 @@ steps:
         gcloud run deploy ${_SERVICE} \
           --region ${_REGION} \
           --platform managed \
+          --execution-environment gen2 \
           --allow-unauthenticated \
           --service-account ${_RUN_SERVICE_ACCOUNT} \
-          --port 8082 \
+          --port 8081 \
           --image "$IMAGE_REF" \
           --command "" \
           --args "" \
